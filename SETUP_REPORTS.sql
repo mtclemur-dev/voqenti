@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS public.tagesbericht (
   customer_feedback text,
   customer_feedback_de text,
   client_signature_data_url text,
+  customer_signature_data text,
+  customer_signed_at timestamptz,
+  customer_signed_name text,
+  locked_by_signature boolean DEFAULT false,
+  locked_at timestamptz,
+  locked_reason text,
+  locked_by uuid,
   end_time timestamptz,
   worker_email text,
   total_minutes integer DEFAULT 0,
@@ -68,6 +75,13 @@ ALTER TABLE public.tagesbericht
   ADD COLUMN IF NOT EXISTS customer_feedback text,
   ADD COLUMN IF NOT EXISTS customer_feedback_de text,
   ADD COLUMN IF NOT EXISTS client_signature_data_url text,
+  ADD COLUMN IF NOT EXISTS customer_signature_data text,
+  ADD COLUMN IF NOT EXISTS customer_signed_at timestamptz,
+  ADD COLUMN IF NOT EXISTS customer_signed_name text,
+  ADD COLUMN IF NOT EXISTS locked_by_signature boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS locked_at timestamptz,
+  ADD COLUMN IF NOT EXISTS locked_reason text,
+  ADD COLUMN IF NOT EXISTS locked_by uuid,
   ADD COLUMN IF NOT EXISTS end_time timestamptz,
   ADD COLUMN IF NOT EXISTS worker_email text,
   ADD COLUMN IF NOT EXISTS total_minutes integer DEFAULT 0,
@@ -126,6 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_tages_worker_ids ON public.tagesbericht USING gin
 -- Enable RLS and policies
 ALTER TABLE public.tagesbericht ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.workers
+  ADD COLUMN IF NOT EXISTS role text DEFAULT 'mitarbeiter';
+
 DROP POLICY IF EXISTS "Select own reports" ON public.tagesbericht;
 DROP POLICY IF EXISTS "Select allowed reports" ON public.tagesbericht;
 DROP POLICY IF EXISTS "Insert own reports" ON public.tagesbericht;
@@ -148,7 +165,34 @@ CREATE POLICY "Select allowed reports"
     )
   );
 CREATE POLICY "Insert own reports" ON public.tagesbericht FOR INSERT TO authenticated WITH CHECK (auth.uid() IS NOT NULL AND user_id = auth.uid());
-CREATE POLICY "Update own reports" ON public.tagesbericht FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() IS NOT NULL AND user_id = auth.uid());
+CREATE POLICY "Update own reports" ON public.tagesbericht
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (
+      lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+      OR EXISTS (
+        SELECT 1
+        FROM public.workers
+        WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+          AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+      )
+      OR (auth.uid() = user_id AND COALESCE(locked_by_signature, false) = false)
+    )
+  )
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND (
+      user_id = auth.uid()
+      OR lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+      OR EXISTS (
+        SELECT 1
+        FROM public.workers
+        WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+          AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+      )
+    )
+  );
 CREATE POLICY "Delete own reports" ON public.tagesbericht FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
 INSERT INTO storage.buckets (id, name, public)

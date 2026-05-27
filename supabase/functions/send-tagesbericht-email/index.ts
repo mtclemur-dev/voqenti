@@ -32,6 +32,8 @@ type EmailOutbox = {
     customer_feedback?: string | null
     customer_feedback_de?: string | null
     client_signature_data_url?: string | null
+    customer_signed_at?: string | null
+    status?: string | null
     entry_type?: string | null
     correction_reason?: string | null
     checklist?: {
@@ -358,6 +360,9 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
   page.drawText('Voqenti', { x: 42, y: height - 52, size: 12, font: helveticaBold, color: rgb(0.68, 0.9, 0.96) })
   page.drawText('Tagesbericht', { x: 42, y: height - 84, size: 27, font: helveticaBold, color: rgb(1, 1, 1) })
   page.drawText(`Bericht Nr. ${email.id}`, { x: width - 150, y: height - 54, size: 10, font: helvetica, color: rgb(0.82, 0.88, 0.94) })
+  if (payload.status) {
+    page.drawText(`Status: ${sanitizePdfText(payload.status)}`, { x: width - 150, y: height - 72, size: 9, font: helveticaBold, color: rgb(0.82, 0.88, 0.94) })
+  }
 
   const left = 42
   const right = width - 42
@@ -497,6 +502,15 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
       const signature = await pdfDoc.embedPng(signatureBytes)
       page.drawText('Unterschrift Kunde', { x: right - 190, y: footerY + 58, size: 8, font: helveticaBold, color: rgb(0.38, 0.45, 0.55) })
       page.drawImage(signature, { x: right - 190, y: footerY, width: 170, height: 45 })
+      if (payload.customer_signed_at) {
+        page.drawText(`Signiert: ${toGermanDate(payload.customer_signed_at.slice(0, 10))} ${toGermanTime(payload.customer_signed_at)} Uhr`, {
+          x: right - 190,
+          y: footerY - 12,
+          size: 7,
+          font: helvetica,
+          color: rgb(0.38, 0.45, 0.55),
+        })
+      }
     }
   }
 

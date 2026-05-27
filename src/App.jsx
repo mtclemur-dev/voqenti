@@ -138,6 +138,15 @@ const translations = {
     checklistEquipmentBack: 'Geraete sauber & funktionsfaehig zurueck',
     checklistMaterialsBack: 'Materialien sauber & funktionsfaehig zurueck',
     done: 'erledigt',
+    signedLocked: 'Bericht wurde vom Kunden unterschrieben und ist gesperrt.',
+    saveAndLockConfirm: 'Nach der Kundenunterschrift kann der Bericht nicht mehr von Mitarbeitern geaendert werden. Moechten Sie speichern und sperren?',
+    saveAndLock: 'Speichern & sperren',
+    signatureOpen: 'Unterschrift gross oeffnen',
+    apply: 'Uebernehmen',
+    cancel: 'Abbrechen',
+    signedAt: 'Unterschrieben am',
+    unlockReport: 'Bericht entsperren',
+    adminEdit: 'Als Admin bearbeiten',
   },
   ro: {
     appTag: 'Pontaj digital',
@@ -434,9 +443,16 @@ function App() {
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
+  const [reportSignatureDataUrl, setReportSignatureDataUrl] = useState(null)
+  const [customerSignedAt, setCustomerSignedAt] = useState(null)
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false)
+  const [isModalSigning, setIsModalSigning] = useState(false)
   const signatureRef = useRef(null)
+  const modalSignatureRef = useRef(null)
   const isAdmin = user?.email?.toLowerCase() === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
+  const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
+  const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
   const materialCategories = ['chemie', 'geraete', 'materialien']
   const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
@@ -696,7 +712,7 @@ function App() {
   const incarcaWorkers = useCallback(async () => {
     const { data, error } = await supabase
       .from('workers')
-      .select('id, name, email, active')
+      .select('id, name, email, role, active')
       .eq('active', true)
       .order('name', { ascending: true })
 
@@ -879,8 +895,79 @@ function App() {
   }, [incarcaDashboardSummary, user])
 
   const getSignatureDataUrl = () => {
-    if (!hasSignature || !signatureRef.current) return null
-    return signatureRef.current.toDataURL('image/png')
+    return reportSignatureDataUrl
+  }
+
+  const signatureIsLocked = Boolean(editingReportId && customerSignedAt && !canEditLockedReports)
+
+  const openSignatureModal = () => {
+    if (signatureIsLocked) {
+      alert(t('signedLocked'))
+      return
+    }
+    setSignatureModalOpen(true)
+    setTimeout(() => {
+      const canvas = modalSignatureRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (reportSignatureDataUrl) {
+        const img = new Image()
+        img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        img.src = reportSignatureDataUrl
+      }
+    }, 0)
+  }
+
+  const getModalCanvasPoint = (event) => {
+    const canvas = modalSignatureRef.current
+    const rect = canvas.getBoundingClientRect()
+    const source = event.touches?.[0] ?? event
+    return {
+      x: (source.clientX - rect.left) * (canvas.width / rect.width),
+      y: (source.clientY - rect.top) * (canvas.height / rect.height),
+    }
+  }
+
+  const startModalSignature = (event) => {
+    event.preventDefault()
+    const canvas = modalSignatureRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const point = getModalCanvasPoint(event)
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 4
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(point.x, point.y)
+    setIsModalSigning(true)
+  }
+
+  const drawModalSignature = (event) => {
+    if (!isModalSigning) return
+    event.preventDefault()
+    const canvas = modalSignatureRef.current
+    const ctx = canvas.getContext('2d')
+    const point = getModalCanvasPoint(event)
+    ctx.lineTo(point.x, point.y)
+    ctx.stroke()
+  }
+
+  const stopModalSignature = () => setIsModalSigning(false)
+
+  const clearModalSignature = () => {
+    const canvas = modalSignatureRef.current
+    if (!canvas) return
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  const applyModalSignature = () => {
+    const canvas = modalSignatureRef.current
+    if (!canvas) return
+    setReportSignatureDataUrl(canvas.toDataURL('image/png'))
+    setCustomerSignedAt(new Date().toISOString())
+    setHasSignature(true)
+    setSignatureModalOpen(false)
   }
 
   const getCanvasPoint = (event) => {
@@ -921,10 +1008,12 @@ function App() {
   const stopSignature = () => setIsSigning(false)
 
   const clearSignature = () => {
-    const canvas = signatureRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    if (signatureIsLocked) {
+      alert(t('signedLocked'))
+      return
+    }
+    setReportSignatureDataUrl(null)
+    setCustomerSignedAt(null)
     setHasSignature(false)
     setIsSigning(false)
   }
@@ -947,14 +1036,18 @@ function App() {
     setReportEntryType('automatic')
     setReportCorrectionReason('')
     setReportChecklist({ workTime: false, workDone: false, equipmentBack: false, materialsBack: false })
+    setReportSignatureDataUrl(null)
+    setCustomerSignedAt(null)
+    setSignatureModalOpen(false)
     setSelectedWorkerIds([])
     setReportStart(new Date().toISOString().slice(0,16))
     clearSignature()
   }
 
   const handleEditReport = (report) => {
-    if (report.email_sent || report.status === 'Versendet') {
-      alert(isAdmin ? 'Bericht ist versendet. Admin-Aenderung spaeter separat moeglich.' : t('sentAlready'))
+    const lockedBySignature = Boolean(report.locked_by_signature || report.customer_signed_at)
+    if ((report.email_sent || report.status === 'Versendet' || lockedBySignature) && !canEditLockedReports) {
+      alert(lockedBySignature ? t('signedLocked') : t('sentAlready'))
       return
     }
     setEditingReportId(report.id)
@@ -973,6 +1066,9 @@ function App() {
     setReportPauseMinutes(String(report.pause_minutes ?? 0))
     setReportEntryType(report.entry_type ?? 'automatic')
     setReportCorrectionReason(report.correction_reason ?? '')
+    setReportSignatureDataUrl(report.customer_signature_data ?? report.client_signature_data_url ?? null)
+    setCustomerSignedAt(report.customer_signed_at ?? null)
+    setHasSignature(Boolean(report.customer_signature_data ?? report.client_signature_data_url))
     setReportChecklist({
       workTime: Boolean(report.checklist_work_time ?? report.checklist?.workTime),
       workDone: Boolean(report.checklist_work_done ?? report.checklist?.workDone),
@@ -1158,6 +1254,13 @@ function App() {
     e?.preventDefault()
     if (!user) return alert('Bitte anmelden')
     try {
+      const hasCustomerSignature = Boolean(reportSignatureDataUrl)
+      if (hasCustomerSignature && !editingReportId && !window.confirm(t('saveAndLockConfirm'))) {
+        return
+      }
+      if (hasCustomerSignature && editingReportId && !customerSignedAt && !window.confirm(t('saveAndLockConfirm'))) {
+        return
+      }
       let damageImageUrl = existingDamageImageUrl
       let damageImagePath = null
 
@@ -1210,7 +1313,13 @@ function App() {
         pause_minutes: pauseMinutes,
         fahrzeit_minutes: fahrzeitMinutes,
         client_signature_data_url: getSignatureDataUrl(),
-        status: 'Gespeichert',
+        customer_signature_data: getSignatureDataUrl(),
+        customer_signed_at: hasCustomerSignature ? (customerSignedAt ?? new Date().toISOString()) : null,
+        locked_by_signature: hasCustomerSignature,
+        locked_at: hasCustomerSignature ? new Date().toISOString() : null,
+        locked_reason: hasCustomerSignature ? 'Kundenunterschrift' : null,
+        locked_by: hasCustomerSignature ? user.id : null,
+        status: hasCustomerSignature ? 'Vom Kunden unterschrieben' : 'Gespeichert',
         entry_type: reportEntryType,
         correction_reason: reportEntryType === 'manual' ? (reportCorrectionReason || null) : null,
         checklist_work_time: reportChecklist.workTime,
@@ -1223,20 +1332,35 @@ function App() {
       if (selectedObjectId) {
         reportPayload.object_id = selectedObjectId
       }
+      if (editingReportId) {
+        delete reportPayload.user_id
+      }
       if (currentId) {
         reportPayload.pontaj_id = currentId
       }
 
-      const reportRequest = editingReportId
+      let reportRequest = editingReportId
         ? supabase
             .from('tagesbericht')
             .update(reportPayload)
             .eq('id', editingReportId)
-            .eq('user_id', user.id)
-            .neq('status', 'Versendet')
             .select()
             .single()
         : supabase.from('tagesbericht').insert([reportPayload]).select().single()
+      if (editingReportId && !canEditLockedReports) {
+        reportRequest = reportRequest.eq('user_id', user.id)
+      }
+      if (editingReportId && !canEditLockedReports) {
+        reportRequest = supabase
+          .from('tagesbericht')
+          .update(reportPayload)
+          .eq('id', editingReportId)
+          .eq('user_id', user.id)
+          .eq('locked_by_signature', false)
+          .neq('status', 'Versendet')
+          .select()
+          .single()
+      }
 
       const { data, error } = await reportRequest
       if (error) {
@@ -1373,6 +1497,8 @@ function App() {
       customer_feedback_de: reportData?.customer_feedback_de ?? null,
       task_de: reportData?.task_de ?? null,
       client_signature_data_url: reportData?.client_signature_data_url ?? null,
+      customer_signed_at: reportData?.customer_signed_at ?? null,
+      status: reportData?.status ?? null,
       entry_type: reportData?.entry_type ?? reportData?.time_entry_type ?? 'automatic',
       correction_reason: reportData?.correction_reason ?? null,
       checklist: {
@@ -1998,19 +2124,20 @@ function App() {
 	                    <p className="mt-1 text-xs text-slate-400">
 	                      {t('signatureText')}
 	                    </p>
-	                    <canvas
-	                      ref={signatureRef}
-	                      width={560}
-	                      height={150}
-	                      onMouseDown={startSignature}
-	                      onMouseMove={drawSignature}
-	                      onMouseUp={stopSignature}
-	                      onMouseLeave={stopSignature}
-	                      onTouchStart={startSignature}
-	                      onTouchMove={drawSignature}
-	                      onTouchEnd={stopSignature}
-	                      className="mt-1 w-full rounded-md bg-slate-800 border border-slate-700 touch-none"
-	                    />
+                      <button
+                        type="button"
+                        onClick={openSignatureModal}
+                        className="mt-1 w-full rounded-md bg-slate-800 border border-slate-700 min-h-[120px] p-3 text-left"
+                      >
+                        {reportSignatureDataUrl ? (
+                          <img src={reportSignatureDataUrl} alt="Unterschrift Kunde" className="w-full max-h-28 object-contain rounded-md bg-slate-900" />
+                        ) : (
+                          <span className="block py-10 text-center text-slate-400">{t('signatureOpen')}</span>
+                        )}
+                      </button>
+                      {customerSignedAt && (
+                        <p className="mt-2 text-xs text-emerald-300">{t('signedAt')}: {formatDateBerlin(customerSignedAt)} {formatTimeBerlin(customerSignedAt)}</p>
+                      )}
 	                    <button type="button" onClick={clearSignature} className="mt-2 px-3 py-2 bg-slate-700 rounded-md text-white text-sm">{t('clearSignature')}</button>
 	                  </div>
 	                    <div className="flex gap-2">
@@ -2341,9 +2468,14 @@ function App() {
 		                        </div>
 		                      )}
                           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {(!r.email_sent && r.status !== 'Versendet') && (
+                            {(r.locked_by_signature || r.customer_signed_at) && !canEditLockedReports && (
+                              <div className="px-3 py-2 rounded-md bg-amber-500/10 text-amber-200 text-sm font-semibold text-center">
+                                {t('signedLocked')}
+                              </div>
+                            )}
+                            {(!r.email_sent && r.status !== 'Versendet' && (!(r.locked_by_signature || r.customer_signed_at) || canEditLockedReports)) && (
                               <button type="button" onClick={() => handleEditReport(r)} className="px-3 py-2 rounded-md bg-slate-700 text-white text-sm font-semibold">
-                                {t('edit')}
+                                {(r.locked_by_signature || r.customer_signed_at) && canEditLockedReports ? t('adminEdit') : t('edit')}
                               </button>
                             )}
                             {(!r.email_sent && r.status !== 'Versendet') ? (
@@ -2461,6 +2593,43 @@ function App() {
             </div>
           </div>
         </div>
+        {signatureModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/95 p-4 flex flex-col">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-white font-semibold">{t('clientSignature')}</div>
+                <div className="text-xs text-slate-400">{t('signatureText')}</div>
+              </div>
+              <button type="button" onClick={() => setSignatureModalOpen(false)} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100">
+                {t('cancel')}
+              </button>
+            </div>
+            <canvas
+              ref={modalSignatureRef}
+              width={1100}
+              height={620}
+              onMouseDown={startModalSignature}
+              onMouseMove={drawModalSignature}
+              onMouseUp={stopModalSignature}
+              onMouseLeave={stopModalSignature}
+              onTouchStart={startModalSignature}
+              onTouchMove={drawModalSignature}
+              onTouchEnd={stopModalSignature}
+              className="flex-1 min-h-0 w-full rounded-2xl bg-slate-900 border border-slate-700 touch-none"
+            />
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button type="button" onClick={clearModalSignature} className="px-4 py-3 rounded-xl bg-slate-800 text-white font-semibold">
+                {t('clearSignature')}
+              </button>
+              <button type="button" onClick={() => setSignatureModalOpen(false)} className="px-4 py-3 rounded-xl bg-slate-700 text-white font-semibold">
+                {t('cancel')}
+              </button>
+              <button type="button" onClick={applyModalSignature} className="px-4 py-3 rounded-xl bg-cyan-600 text-white font-semibold">
+                {t('apply')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

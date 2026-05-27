@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.workers (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL,
   email text,
+  role text DEFAULT 'mitarbeiter',
   phone text,
   active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.workers (
 ALTER TABLE public.workers
   ADD COLUMN IF NOT EXISTS name text,
   ADD COLUMN IF NOT EXISTS email text,
+  ADD COLUMN IF NOT EXISTS role text DEFAULT 'mitarbeiter',
   ADD COLUMN IF NOT EXISTS phone text,
   ADD COLUMN IF NOT EXISTS active boolean DEFAULT true,
   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();

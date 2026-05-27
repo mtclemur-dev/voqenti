@@ -4,10 +4,6 @@
 ALTER TABLE public.pontaj
   ADD COLUMN IF NOT EXISTS entry_type text DEFAULT 'automatic',
   ADD COLUMN IF NOT EXISTS correction_reason text,
-  ADD COLUMN IF NOT EXISTS checklist_work_time boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS checklist_work_done boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS checklist_equipment_back boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS checklist_materials_back boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 UPDATE public.pontaj
@@ -19,18 +15,65 @@ ALTER TABLE public.tagesbericht
   ADD COLUMN IF NOT EXISTS email_sent boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS email_sent_at timestamptz,
   ADD COLUMN IF NOT EXISTS pdf_url text,
+  ADD COLUMN IF NOT EXISTS customer_signature_data text,
+  ADD COLUMN IF NOT EXISTS customer_signed_at timestamptz,
+  ADD COLUMN IF NOT EXISTS customer_signed_name text,
+  ADD COLUMN IF NOT EXISTS locked_by_signature boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS locked_at timestamptz,
+  ADD COLUMN IF NOT EXISTS locked_reason text,
+  ADD COLUMN IF NOT EXISTS locked_by uuid,
   ADD COLUMN IF NOT EXISTS entry_type text DEFAULT 'automatic',
   ADD COLUMN IF NOT EXISTS correction_reason text,
+  ADD COLUMN IF NOT EXISTS checklist_work_time boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_work_done boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_equipment_back boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_materials_back boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 UPDATE public.tagesbericht
 SET
   status = COALESCE(status, 'Gespeichert'),
   email_sent = COALESCE(email_sent, false),
+  locked_by_signature = COALESCE(locked_by_signature, false),
   entry_type = COALESCE(entry_type, 'automatic')
 WHERE status IS NULL
    OR email_sent IS NULL
+   OR locked_by_signature IS NULL
    OR entry_type IS NULL;
+
+ALTER TABLE public.workers
+  ADD COLUMN IF NOT EXISTS role text DEFAULT 'mitarbeiter';
+
+DROP POLICY IF EXISTS "Update own reports" ON public.tagesbericht;
+
+CREATE POLICY "Update own reports" ON public.tagesbericht
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (
+      lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+      OR EXISTS (
+        SELECT 1
+        FROM public.workers
+        WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+          AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+      )
+      OR (auth.uid() = user_id AND COALESCE(locked_by_signature, false) = false)
+    )
+  )
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND (
+      user_id = auth.uid()
+      OR lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+      OR EXISTS (
+        SELECT 1
+        FROM public.workers
+        WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+          AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+      )
+    )
+  );
 
 DROP FUNCTION IF EXISTS public.start_work_session(text, bigint, timestamptz);
 
