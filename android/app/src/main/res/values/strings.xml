@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Voqenti</string>
+    <string name="title_activity_main">Voqenti</string>
+    <string name="package_name">com.mentol.digitalwork</string>
+    <string name="custom_url_scheme">com.mentol.digitalwork</string>
+</resources>
