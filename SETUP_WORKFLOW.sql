@@ -4,6 +4,10 @@
 ALTER TABLE public.pontaj
   ADD COLUMN IF NOT EXISTS entry_type text DEFAULT 'automatic',
   ADD COLUMN IF NOT EXISTS correction_reason text,
+  ADD COLUMN IF NOT EXISTS checklist_work_time boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_work_done boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_equipment_back boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS checklist_materials_back boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 UPDATE public.pontaj

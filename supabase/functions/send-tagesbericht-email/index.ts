@@ -34,6 +34,12 @@ type EmailOutbox = {
     client_signature_data_url?: string | null
     entry_type?: string | null
     correction_reason?: string | null
+    checklist?: {
+      work_time?: boolean
+      work_done?: boolean
+      equipment_back?: boolean
+      materials_back?: boolean
+    }
     totals?: {
       total_minutes?: number
       pause_minutes?: number
@@ -403,6 +409,27 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
   })
 
   y -= 82
+  page.drawText('Offene Aufgaben', { x: left, y, size: 11, font: helveticaBold, color: rgb(0.08, 0.11, 0.18) })
+  y -= 18
+  const checklistRows: Array<[boolean | undefined, string]> = [
+    [payload.checklist?.work_time, 'Arbeitszeit erfasst'],
+    [payload.checklist?.work_done, 'Arbeit ausgefuehrt'],
+    [payload.checklist?.equipment_back, 'Geraete sauber & funktionsfaehig zurueck'],
+    [payload.checklist?.materials_back, 'Materialien sauber & funktionsfaehig zurueck'],
+  ]
+  checklistRows.forEach(([checked, label], index) => {
+    const x = left + (index % 2) * 250
+    const rowY = y - Math.floor(index / 2) * 16
+    page.drawText(`${checked ? '[x]' : '[ ]'} ${label}`, {
+      x,
+      y: rowY,
+      size: 8,
+      font: checked ? helveticaBold : helvetica,
+      color: checked ? rgb(0.05, 0.5, 0.26) : rgb(0.38, 0.45, 0.55),
+    })
+  })
+
+  y -= 48
   page.drawText('Beschreibung der Arbeiten', { x: left, y, size: 13, font: helveticaBold, color: rgb(0.08, 0.11, 0.18) })
   y -= 23
   const description = [

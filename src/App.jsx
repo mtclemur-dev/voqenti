@@ -131,6 +131,13 @@ const translations = {
     saveCorrection: 'Nachtrag speichern',
     automatic: 'Automatisch',
     manual: 'Manuell',
+    timeTrackingType: 'Zeiterfassung',
+    correctionNote: 'Korrekturgrund / Bemerkung',
+    checklistWorkTime: 'Arbeitszeit erfasst',
+    checklistWorkDone: 'Arbeit ausgefuehrt',
+    checklistEquipmentBack: 'Geraete sauber & funktionsfaehig zurueck',
+    checklistMaterialsBack: 'Materialien sauber & funktionsfaehig zurueck',
+    done: 'erledigt',
   },
   ro: {
     appTag: 'Pontaj digital',
@@ -403,6 +410,16 @@ function App() {
   const [reportFahrzeitMinutes, setReportFahrzeitMinutes] = useState('')
   const [reportAuftragsnummer, setReportAuftragsnummer] = useState('')
   const [reportStart, setReportStart] = useState(new Date().toISOString().slice(0,16))
+  const [reportEnd, setReportEnd] = useState('')
+  const [reportPauseMinutes, setReportPauseMinutes] = useState('0')
+  const [reportEntryType, setReportEntryType] = useState('automatic')
+  const [reportCorrectionReason, setReportCorrectionReason] = useState('')
+  const [reportChecklist, setReportChecklist] = useState({
+    workTime: false,
+    workDone: false,
+    equipmentBack: false,
+    materialsBack: false,
+  })
   const [editingReportId, setEditingReportId] = useState(null)
   const [existingDamageImageUrl, setExistingDamageImageUrl] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
@@ -417,17 +434,18 @@ function App() {
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
-  const [showManualTimeForm, setShowManualTimeForm] = useState(false)
-  const [manualStart, setManualStart] = useState(new Date().toISOString().slice(0,16))
-  const [manualEnd, setManualEnd] = useState(new Date().toISOString().slice(0,16))
-  const [manualPauseMinutes, setManualPauseMinutes] = useState('0')
-  const [manualReason, setManualReason] = useState('Start vergessen')
   const signatureRef = useRef(null)
   const isAdmin = user?.email?.toLowerCase() === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
   const materialCategories = ['chemie', 'geraete', 'materialien']
   const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
+  const reportChecklistItems = [
+    ['workTime', t('checklistWorkTime')],
+    ['workDone', t('checklistWorkDone')],
+    ['equipmentBack', t('checklistEquipmentBack')],
+    ['materialsBack', t('checklistMaterialsBack')],
+  ]
 
   const secondsBetween = (start, end) => {
     if (!start) return 0
@@ -589,7 +607,7 @@ function App() {
 
     const { data: reportData, error: reportError } = await supabase
       .from('tagesbericht')
-      .select('id, start_time, end_time, object_name, auftragsnummer, damage_image_url, pontaj_id, status, email_sent, email_sent_at, created_at')
+      .select('id, start_time, end_time, object_name, auftragsnummer, damage_image_url, pontaj_id, status, email_sent, email_sent_at, checklist_work_time, checklist_work_done, checklist_equipment_back, checklist_materials_back, created_at')
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -924,6 +942,11 @@ function App() {
     setCustomerFeedback('')
     setReportFahrzeitMinutes('')
     setReportAuftragsnummer('')
+    setReportEnd('')
+    setReportPauseMinutes('0')
+    setReportEntryType('automatic')
+    setReportCorrectionReason('')
+    setReportChecklist({ workTime: false, workDone: false, equipmentBack: false, materialsBack: false })
     setSelectedWorkerIds([])
     setReportStart(new Date().toISOString().slice(0,16))
     clearSignature()
@@ -946,9 +969,27 @@ function App() {
     setCustomerFeedback(report.customer_feedback ?? '')
     setReportFahrzeitMinutes(String(report.fahrzeit_minutes ?? ''))
     setReportAuftragsnummer(report.auftragsnummer ?? '')
+    setReportEnd(report.end_time ? DateTime.fromISO(report.end_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : '')
+    setReportPauseMinutes(String(report.pause_minutes ?? 0))
+    setReportEntryType(report.entry_type ?? 'automatic')
+    setReportCorrectionReason(report.correction_reason ?? '')
+    setReportChecklist({
+      workTime: Boolean(report.checklist_work_time ?? report.checklist?.workTime),
+      workDone: Boolean(report.checklist_work_done ?? report.checklist?.workDone),
+      equipmentBack: Boolean(report.checklist_equipment_back ?? report.checklist?.equipmentBack),
+      materialsBack: Boolean(report.checklist_materials_back ?? report.checklist?.materialsBack),
+    })
     setSelectedWorkerIds(Array.isArray(report.worker_ids) ? report.worker_ids : [])
     setReportStart(report.start_time ? DateTime.fromISO(report.start_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : new Date().toISOString().slice(0,16))
     setView('reports')
+  }
+
+  const markReportTimeManual = () => {
+    setReportEntryType('manual')
+  }
+
+  const handleReportChecklistToggle = (key) => {
+    setReportChecklist(current => ({ ...current, [key]: !current[key] }))
   }
 
   const translateToGerman = async (text) => {
@@ -1136,9 +1177,11 @@ function App() {
       }
 
       const startIso = new Date(reportStart).toISOString()
+      const endIsoFromForm = reportEnd ? new Date(reportEnd).toISOString() : null
       const selectedObj = objects.find(o => o.id === selectedObjectId)
       const objectName = selectedObj ? selectedObj.name : reportObject
       const fahrzeitMinutes = Math.max(0, Math.round(Number(reportFahrzeitMinutes || 0)))
+      const pauseMinutes = Math.max(0, Math.round(Number(reportPauseMinutes || 0)))
       const selectedWorkers = workers.filter(worker => selectedWorkerIds.includes(worker.id))
       const taskTranslation = await translateToGerman(reportTask)
       const damageTranslation = reportDamage ? await translateToGerman(reportDamageDescription) : null
@@ -1151,6 +1194,7 @@ function App() {
         auftragsnummer: reportAuftragsnummer,
         worker_ids: selectedWorkerIds,
         worker_names: selectedWorkers.map(worker => worker.name),
+        end_time: endIsoFromForm,
         task: reportTask,
         task_de: taskTranslation?.translated_text ?? null,
         damage_present: reportDamage,
@@ -1163,11 +1207,16 @@ function App() {
         translated_at: (taskTranslation?.translated_text || damageTranslation?.translated_text || customerFeedbackTranslation?.translated_text) ? new Date().toISOString() : null,
         damage_image_url: damageImageUrl,
         damage_image_path: damageImagePath,
+        pause_minutes: pauseMinutes,
         fahrzeit_minutes: fahrzeitMinutes,
         client_signature_data_url: getSignatureDataUrl(),
         status: 'Gespeichert',
-        entry_type: editingReportId ? undefined : 'automatic',
-        correction_reason: editingReportId ? undefined : null,
+        entry_type: reportEntryType,
+        correction_reason: reportEntryType === 'manual' ? (reportCorrectionReason || null) : null,
+        checklist_work_time: reportChecklist.workTime,
+        checklist_work_done: reportChecklist.workDone,
+        checklist_equipment_back: reportChecklist.equipmentBack,
+        checklist_materials_back: reportChecklist.materialsBack,
         updated_at: new Date().toISOString(),
       }
 
@@ -1209,13 +1258,18 @@ function App() {
             setActiveSession(session => session ? { ...session, report_id: data.id } : session)
           }
         }
-        if (!inLucru && data?.id) {
-          const endIso = new Date().toISOString()
-          const totals = calculateStandaloneReportTotals(startIso, endIso, minutesToSeconds(fahrzeitMinutes))
+        if (!inLucru && data?.id && endIsoFromForm) {
+          const totalSeconds = secondsBetween(startIso, endIsoFromForm)
+          const totals = {
+            total_seconds: totalSeconds,
+            pause_seconds: minutesToSeconds(pauseMinutes),
+            auto_pause_seconds: 0,
+            fahrzeit_seconds: minutesToSeconds(fahrzeitMinutes),
+            effective_seconds: Math.max(0, totalSeconds - minutesToSeconds(pauseMinutes)),
+          }
           const { error: updateReportError } = await supabase
             .from('tagesbericht')
             .update({
-              end_time: endIso,
               ...buildMinuteTotals(totals),
             })
             .eq('id', data.id)
@@ -1223,14 +1277,14 @@ function App() {
 
           const finishedReport = {
             ...data,
-            end_time: endIso,
+            end_time: endIsoFromForm,
             ...buildMinuteTotals(totals),
           }
 
           if (updateReportError) {
             alert('Bericht gespeichert, aber Zeiten konnten nicht aktualisiert werden: ' + updateReportError.message)
           } else {
-            await saveWorkerTimeEntries(data.id, finishedReport, totals, endIso)
+            await saveWorkerTimeEntries(data.id, finishedReport, totals, endIsoFromForm)
           }
         }
         resetReportForm()
@@ -1321,6 +1375,12 @@ function App() {
       client_signature_data_url: reportData?.client_signature_data_url ?? null,
       entry_type: reportData?.entry_type ?? reportData?.time_entry_type ?? 'automatic',
       correction_reason: reportData?.correction_reason ?? null,
+      checklist: {
+        work_time: Boolean(reportData?.checklist_work_time),
+        work_done: Boolean(reportData?.checklist_work_done),
+        equipment_back: Boolean(reportData?.checklist_equipment_back),
+        materials_back: Boolean(reportData?.checklist_materials_back),
+      },
       totals: buildMinuteTotals(totals),
       pdf_note: 'PDF wird aus dem aktuellen Voqenti-Layout erzeugt.',
     }
@@ -1435,83 +1495,6 @@ function App() {
       incarcaIstoric()
       incarcaDashboardSummary()
     }
-  }
-
-  const handleSaveManualTime = async (event) => {
-    event?.preventDefault()
-    if (!user) return alert('Bitte anmelden')
-    const startIso = new Date(manualStart).toISOString()
-    const endIso = new Date(manualEnd).toISOString()
-    if (new Date(endIso) <= new Date(startIso)) {
-      alert('Arbeitsende muss nach Arbeitsbeginn liegen.')
-      return
-    }
-
-    const pauseSeconds = minutesToSeconds(Math.max(0, Number(manualPauseMinutes || 0)))
-    const totalSeconds = secondsBetween(startIso, endIso)
-    const totals = {
-      total_seconds: totalSeconds,
-      pause_seconds: pauseSeconds,
-      auto_pause_seconds: 0,
-      fahrzeit_seconds: 0,
-      effective_seconds: Math.max(0, totalSeconds - pauseSeconds),
-    }
-
-    const { data, error } = await supabase
-      .from('pontaj')
-      .insert([{
-        user_id: user.id,
-        name_nutzer: user.email ?? 'Benutzer',
-        Uhrzeit_Start: startIso,
-        Uhrzeit_Ende: endIso,
-        status: 'finalizat',
-        current_mode: 'work',
-        mode_changed_at: endIso,
-        entry_type: 'manual',
-        correction_reason: manualReason,
-        updated_at: new Date().toISOString(),
-        report_id: activeReportId,
-        ...buildMinuteTotals(totals),
-      }])
-      .select()
-      .single()
-
-    if (error) {
-      alert('Nachtrag konnte nicht gespeichert werden: ' + error.message)
-      return
-    }
-
-    if (activeReportId) {
-      const { data: reportData } = await supabase
-        .from('tagesbericht')
-        .select('*')
-        .eq('id', activeReportId)
-        .eq('user_id', user.id)
-        .single()
-
-      if (reportData && reportData.status !== 'Versendet') {
-        await supabase
-          .from('tagesbericht')
-          .update({
-            start_time: startIso,
-            end_time: endIso,
-            pontaj_id: data.id,
-            status: 'Gespeichert',
-            entry_type: 'manual',
-            correction_reason: manualReason,
-            updated_at: new Date().toISOString(),
-            ...buildMinuteTotals(totals),
-          })
-          .eq('id', activeReportId)
-          .eq('user_id', user.id)
-        await saveWorkerTimeEntries(activeReportId, reportData, totals, endIso)
-      }
-    }
-
-    setShowManualTimeForm(false)
-    incarcaIstoric()
-    incarcaDashboardSummary()
-    incarcaReports()
   }
 
   const handleStop = async () => {
@@ -1683,19 +1666,16 @@ function App() {
           ? t('draft')
           : (latestReport.status ?? t('saved'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
-  const openTaskItems = [
-    todayEffectiveSeconds > 0 ? t('workTimeOk') : t('unreportedTime'),
-    latestReport ? reportStatusText : t('reportOpen'),
-    todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('photosMissing'),
-    dashboardMaterialCount > 0 ? t('materialReported') : t('noMaterial'),
-  ]
+  const checklistDoneCount = latestReport
+    ? [latestReport.checklist_work_time, latestReport.checklist_work_done, latestReport.checklist_equipment_back, latestReport.checklist_materials_back].filter(Boolean).length
+    : 0
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
     { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
     { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
-    { label: t('openTasks'), value: openTaskItems.join(' · '), tone: 'text-slate-100', wide: true },
+    { label: t('openTasks'), value: `${checklistDoneCount}/4 ${t('done')}`, tone: checklistDoneCount === 4 ? 'text-emerald-300' : 'text-slate-100', wide: true },
   ]
 
   return (
@@ -1809,34 +1789,6 @@ function App() {
                     </button>
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowManualTimeForm(current => !current)}
-                  className="mt-3 w-full px-4 py-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-100 font-semibold ring-1 ring-slate-700"
-                >
-                  {t('timeCorrection')}
-                </button>
-                {showManualTimeForm && (
-                  <form onSubmit={handleSaveManualTime} className="mt-3 rounded-2xl bg-slate-900/80 ring-1 ring-slate-700 p-4 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <label className="text-xs text-slate-400">
-                        {t('workStart')}
-                        <input type="datetime-local" value={manualStart} onChange={e => setManualStart(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
-                      </label>
-                      <label className="text-xs text-slate-400">
-                        {t('workEnd')}
-                        <input type="datetime-local" value={manualEnd} onChange={e => setManualEnd(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
-                      </label>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input type="number" min="0" step="1" value={manualPauseMinutes} onChange={e => setManualPauseMinutes(e.target.value)} placeholder={t('pause')} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
-                      <select value={manualReason} onChange={e => setManualReason(e.target.value)} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100">
-                        {correctionReasons.map(reason => <option key={reason} value={reason}>{reason}</option>)}
-                      </select>
-                    </div>
-                    <button type="submit" className="w-full px-4 py-3 rounded-xl bg-cyan-600 text-white font-semibold">{t('saveCorrection')}</button>
-                  </form>
-                )}
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {dashboardCards.map(card => (
                     <div key={card.label} className={`rounded-xl bg-slate-900/80 p-3 min-h-[82px] ${card.wide ? 'col-span-2 sm:col-span-3' : ''}`}>
@@ -1850,8 +1802,52 @@ function App() {
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
 	                <h3 className="text-white font-semibold mb-3">{editingReportId ? t('updateReport') : t('addReport')}</h3>
 	                <form onSubmit={handleCreateReport} className="space-y-3">
-                  <div className="flex gap-2">
-                      <input type="datetime-local" value={reportStart} onChange={e=>setReportStart(e.target.value)} className="flex-1 px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
+                  <div className="rounded-md bg-slate-800 p-3 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="text-xs text-slate-400">
+                        {t('workStart')}
+                        <input
+                          type="datetime-local"
+                          value={reportStart}
+                          onChange={e => { setReportStart(e.target.value); markReportTimeManual() }}
+                          className="mt-1 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-400">
+                        {t('workEnd')}
+                        <input
+                          type="datetime-local"
+                          value={reportEnd}
+                          onChange={e => { setReportEnd(e.target.value); markReportTimeManual() }}
+                          className="mt-1 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={reportPauseMinutes}
+                        onChange={e => { setReportPauseMinutes(e.target.value); markReportTimeManual() }}
+                        placeholder={t('pause')}
+                        className="px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      />
+                      <select value={reportEntryType} onChange={e => setReportEntryType(e.target.value)} className="px-3 py-2 rounded-md bg-slate-900 text-slate-100">
+                        <option value="automatic">{t('automatic')}</option>
+                        <option value="manual">{t('manual')}</option>
+                      </select>
+                      <input
+                        list="correction-reasons"
+                        value={reportCorrectionReason}
+                        onChange={e => { setReportCorrectionReason(e.target.value); setReportEntryType('manual') }}
+                        placeholder={t('correctionNote')}
+                        className="px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      />
+                      <datalist id="correction-reasons">
+                        {correctionReasons.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                      </datalist>
+                    </div>
                   </div>
 	                  <div className="mt-2">
 	                    <label className="text-slate-300 text-sm">{t('object')}</label>
@@ -1911,6 +1907,21 @@ function App() {
 		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
 		                  />
 		                  <textarea placeholder={t('taskPlaceholder')} value={reportTask} onChange={e=>setReportTask(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" rows={4} />
+                  <div className="rounded-md bg-slate-800 p-3">
+                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('openTasks')}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {reportChecklistItems.map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(reportChecklist[key])}
+                            onChange={() => handleReportChecklistToggle(key)}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
 	                  <div className="rounded-md bg-slate-800 p-3">
 	                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 	                      <label className="text-slate-300 text-sm">{t('damage')}</label>
@@ -2263,6 +2274,32 @@ function App() {
 	                      </div>
 			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">Mitarbeiter: {r.worker_email}</div>}
                           <div className="text-xs text-slate-500 mt-1">Zeiterfassung: {r.entry_type === 'manual' ? `${t('manual')} - ${r.correction_reason ?? ''}` : t('automatic')}</div>
+                          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                            <div className="rounded-lg bg-slate-950/70 p-2">
+                              <span className="block text-slate-500">{t('workStart')}</span>
+                              <span className="font-semibold text-slate-200">{formatTimeBerlin(r.start_time)}</span>
+                            </div>
+                            <div className="rounded-lg bg-slate-950/70 p-2">
+                              <span className="block text-slate-500">{t('workEnd')}</span>
+                              <span className="font-semibold text-slate-200">{r.end_time ? formatTimeBerlin(r.end_time) : '-'}</span>
+                            </div>
+                            <div className="rounded-lg bg-slate-950/70 p-2">
+                              <span className="block text-slate-500">{t('pause')}</span>
+                              <span className="font-semibold text-amber-300">{formatDurationMinutes(r.pause_minutes)}</span>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {[
+                              [r.checklist_work_time, t('checklistWorkTime')],
+                              [r.checklist_work_done, t('checklistWorkDone')],
+                              [r.checklist_equipment_back, t('checklistEquipmentBack')],
+                              [r.checklist_materials_back, t('checklistMaterialsBack')],
+                            ].map(([checked, label]) => (
+                              <div key={label} className={`rounded-lg border px-2 py-2 ${checked ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100' : 'border-slate-700 bg-slate-950/60 text-slate-400'}`}>
+                                {checked ? '[x]' : '[ ]'} {label}
+                              </div>
+                            ))}
+                          </div>
 		                      <div className="text-slate-300 text-sm mt-2">{r.task}</div>
 		                      {isAdmin && r.task_de && r.task_de !== r.task && (
 		                        <div className="mt-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-sm text-cyan-100 whitespace-pre-wrap">
