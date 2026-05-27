@@ -1,419 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import { DateTime } from 'luxon'
-
-const languages = [
-  { code: 'de', label: 'Deutsch' },
-  { code: 'ro', label: 'Romana' },
-  { code: 'ru', label: 'Русский' },
-]
-
-const translations = {
-  de: {
-    appTag: 'Voqenti Zeiterfassung',
-    subtitle: 'Erfasse Arbeitsbeginn und Arbeitsende schnell und verfolge die Aktivitaet in Echtzeit.',
-    signedIn: 'Angemeldet',
-    signOut: 'Abmelden',
-    email: 'Email',
-    password: 'Passwort (min. 6 Zeichen)',
-    signIn: 'Anmelden',
-    signUp: 'Registrieren',
-    language: 'Sprache',
-    timeTracking: 'Zeiterfassung',
-    report: 'Tagesbericht',
-    reports: 'Tagesberichte',
-    chat: 'Chat',
-    history: 'Verlauf',
-    materials: 'Inventar & Bedarf',
-    workTimes: 'Arbeitszeiten',
-    currentStatus: 'Aktueller Status',
-    working: 'ARBEITET',
-    stopped: 'GESTOPPT',
-    start: 'Start',
-    startWork: 'Arbeit starten',
-    stopWork: 'Arbeit stoppen',
-    confirmStart: 'Moechtest du die Arbeitszeit wirklich starten?',
-    confirmStop: 'Moechtest du die Arbeitszeit wirklich stoppen?',
-    confirmStopWithoutReport: 'Du hast noch keinen Tagesbericht verbunden. Wirklich stoppen? Diese Zeit wird als nicht pontiert markiert.',
-    missingReport: 'Kein Tagesbericht',
-    unreportedTime: 'Zeit nicht pontiert',
-    total: 'Total',
-    effective: 'Effektiv',
-    pause: 'Pause',
-    workTimeToday: 'Arbeitszeit heute',
-    currentOrder: 'Aktueller Auftrag',
-    reportStatus: 'Tagesbericht',
-    photosToday: 'Fotos heute',
-    openTasks: 'Offene Aufgaben',
-    completionCheck: 'Abschlusskontrolle',
-    noActiveOrder: 'Kein aktiver Auftrag',
-    reportOpen: 'Tagesbericht offen',
-    noPhotos: 'Keine Fotos',
-    draft: 'Entwurf',
-    saved: 'Gespeichert',
-    readyToSend: 'Bereit zum Versand',
-    sent: 'Versendet',
-    workTimeOk: 'Arbeitszeit OK',
-    photosMissing: 'Fotos fehlen',
-    materialReported: 'Material gemeldet',
-    noMaterial: 'kein Material',
-    auto: 'autom.',
-    addReport: 'Tagesbericht hinzufuegen',
-    object: 'Objekt',
-    objectPlaceholder: 'Objekt auswaehlen oder frei eingeben',
-    workers: 'Mitarbeiter',
-    noWorkers: 'Keine Mitarbeiter hinterlegt.',
-    orderNumber: 'Auftragsnummer',
-    drivingTime: 'Fahrzeit (Minuten)',
-    taskPlaceholder: 'Was wurde gemacht? (Aufgabe)',
-    damage: 'Schaden',
-    damageQuestion: 'Mangel oder Schaden festgestellt?',
-    damageYes: 'Ja',
-    damageNo: 'Nein',
-    damageDescription: 'Welcher Schaden?',
-    damageDescriptionPlaceholder: 'Schaden beschreiben',
-    damagePhoto: 'Foto vom Schaden',
-    photo: 'Foto',
-    description: 'Beschreibung',
-    clientSignature: 'Unterschrift Kunde',
-    signatureText: 'Die Arbeiten wurden ordnungsgemaess ausgefuehrt und hiermit abgenommen.',
-    customerAcceptance: 'Kundenabnahme',
-    customerSatisfied: 'Arbeiten abgenommen',
-    customerComplaint: 'Beanstandung',
-    customerFeedbackPlaceholder: 'Was ist der Kunde nicht zufrieden?',
-    checklist: 'Materialien / Chemikalien / Geraete',
-    chemie: 'Eingesetzte Chemikalien',
-    geraete: 'Verwendete Geraete',
-    materialien: 'Benoetigte Materialien',
-    hinweise: 'Hinweise',
-    warning: 'Achtung',
-    safetySheet: 'Sicherheitsdatenblatt',
-    addChecklistItem: 'Eintrag hinzufuegen',
-    materialCatalog: 'Katalog',
-    showCategory: 'Kategorie anzeigen',
-    selectedItems: 'Ausgewaehlt',
-    saveUsage: 'Verbrauch speichern',
-    usageSaved: 'Verbrauch gespeichert',
-    quantity: 'Menge',
-    unit: 'Einheit',
-    itemName: 'Name',
-    itemDescription: 'Beschreibung',
-    itemWarning: 'Warnung / Unvertraeglichkeit',
-    itemSafetyUrl: 'Link Sicherheitsblatt',
-    clearSignature: 'Unterschrift loeschen',
-    saveReport: 'Bericht speichern',
-    reset: 'Zuruecksetzen',
-    searchWorkTimes: 'Arbeitszeiten suchen',
-    allWorkers: 'Alle Mitarbeiter',
-    onlyOwnTimes: 'Du siehst nur deine eigenen Arbeitszeiten.',
-    search: 'Suchen',
-    noEntries: 'Keine aktuellen Eintraege.',
-    noReports: 'Keine Berichte vorhanden.',
-    noTimes: 'Keine Arbeitszeiten fuer diese Suche.',
-    currentActivity: 'Aktuelle Aktivitaet',
-    teamChat: 'Team Chat',
-    messagePlaceholder: 'Nachricht oder Problem schreiben',
-    sendMessage: 'Nachricht senden',
-    noMessages: 'Noch keine Nachrichten.',
-    duration: 'Dauer',
-    date: 'Datum',
-    team: 'Team',
-    order: 'Auftrag',
-    workedEffective: 'Effektiv gearbeitet',
-    pauseDriving: 'Pause + Fahrzeit',
-    noObjects: 'Keine Objekte aus Supabase erhalten. Bitte die RLS-Policy fuer die Tabelle objects pruefen.',
-    objectsLoadError: 'Objekte konnten nicht geladen werden',
-    edit: 'Bearbeiten',
-    send: 'Versenden',
-    sentAlready: 'Bereits versendet',
-    updateReport: 'Bericht aktualisieren',
-    cancelEdit: 'Bearbeiten abbrechen',
-    timeCorrection: 'Zeit korrigieren',
-    correctionReason: 'Grund',
-    workStart: 'Arbeitsbeginn',
-    workEnd: 'Arbeitsende',
-    saveCorrection: 'Nachtrag speichern',
-    automatic: 'Automatisch',
-    manual: 'Manuell',
-    timeTrackingType: 'Zeiterfassung',
-    correctionNote: 'Korrekturgrund / Bemerkung',
-    checklistWorkTime: 'Arbeitszeit erfasst',
-    checklistWorkDone: 'Arbeit ordnungsgemaess ausgefuehrt',
-    checklistEquipmentBack: 'Firmengeraete sauber und funktionsfaehig',
-    checklistMaterialsBack: 'Materialien sauber & funktionsfaehig zurueck',
-    selectWorkers: 'Mitarbeiter auswaehlen',
-    selectedCount: 'ausgewaehlt',
-    workerSearch: 'Mitarbeiter suchen',
-    confirmSelection: 'Auswahl uebernehmen',
-    objectSelect: 'Objekt auswaehlen',
-    additionalNotes: 'Zusaetzliche Bemerkungen',
-    workTemplates: 'Was wurde gemacht',
-    selectWorkDone: 'Arbeit auswaehlen',
-    materialNeed: 'Materialbedarf melden',
-    materialNeedOverview: 'Materialbedarf Uebersicht',
-    requestedMaterials: 'Materiale benoetigt',
-    miscMaterial: 'Sonstiges / Freitext',
-    note: 'Bemerkung',
-    status: 'Status',
-    reportedBy: 'Gemeldet von',
-    saveRequest: 'Bedarf speichern',
-    updateRequest: 'Bedarf aktualisieren',
-    editRequest: 'Bearbeiten',
-    savedRequests: 'Gespeicherter Bedarf',
-    send: 'Senden',
-    sendMaterialSummary: 'Materialbedarf senden',
-    materialSummarySent: 'Materialbedarf wurde gesendet',
-    requestSaved: 'Materialbedarf gespeichert',
-    takeEquipment: 'Geraete mitnehmen',
-    availableEquipment: 'Verfuegbare Geraete',
-    takenEquipment: 'Mitgenommene Geraete',
-    equipmentReturn: 'Geraete-Rueckgabe',
-    equipmentReturnAllOk: 'Geraete sauber & funktionsfaehig zurueckgebracht',
-    take: 'Mitnehmen',
-    back: 'zurueckgebracht',
-    clean: 'sauber',
-    functional: 'funktionsfaehig',
-    damageNote: 'Schaden / Bemerkung',
-    noEquipment: 'Keine Geraete verfuegbar',
-    adminInventory: 'Geraete unterwegs',
-    done: 'erledigt',
-    signedLocked: 'Bericht wurde vom Kunden unterschrieben und ist gesperrt.',
-    saveAndLockConfirm: 'Nach der Kundenunterschrift kann der Bericht nicht mehr von Mitarbeitern geaendert werden. Moechten Sie speichern und sperren?',
-    saveAndLock: 'Speichern & sperren',
-    signatureOpen: 'Unterschrift gross oeffnen',
-    apply: 'Uebernehmen',
-    cancel: 'Abbrechen',
-    signedAt: 'Unterschrieben am',
-    unlockReport: 'Bericht entsperren',
-    adminEdit: 'Als Admin bearbeiten',
-  },
-  ro: {
-    appTag: 'Pontaj digital',
-    subtitle: 'Inregistreaza rapid inceputul si sfarsitul lucrului si urmareste activitatea in timp real.',
-    signedIn: 'Autentificat',
-    signOut: 'Deconectare',
-    email: 'Email',
-    password: 'Parola (min. 6 caractere)',
-    signIn: 'Autentificare',
-    signUp: 'Inregistrare',
-    language: 'Limba',
-    timeTracking: 'Pontaj',
-    report: 'Raport zilnic',
-    reports: 'Rapoarte zilnice',
-    chat: 'Chat',
-    history: 'Istoric',
-    materials: 'Materiale',
-    workTimes: 'Ore lucrate',
-    currentStatus: 'Status curent',
-    working: 'LUCREAZA',
-    stopped: 'OPRIT',
-    start: 'Start',
-    startWork: 'Porneste lucrul',
-    stopWork: 'Opreste lucrul',
-    confirmStart: 'Sigur vrei sa pornesti timpul de lucru?',
-    confirmStop: 'Sigur vrei sa opresti timpul de lucru?',
-    confirmStopWithoutReport: 'Nu exista Tagesbericht legat. Sigur opresti? Timpul va fi marcat ca nepontat in raport.',
-    missingReport: 'Fara Tagesbericht',
-    unreportedTime: 'Timp nepontat',
-    total: 'Total',
-    effective: 'Efectiv',
-    pause: 'Pauza',
-    auto: 'automat',
-    addReport: 'Adauga raport zilnic',
-    object: 'Obiect',
-    objectPlaceholder: 'Alege obiectul sau scrie manual',
-    workers: 'Muncitori',
-    noWorkers: 'Nu sunt muncitori introdusi.',
-    orderNumber: 'Numar comanda',
-    drivingTime: 'Timp drum (minute)',
-    taskPlaceholder: 'Ce s-a facut? (lucrare)',
-    damage: 'Dauna',
-    damageYes: 'Da',
-    damageNo: 'Nu',
-    damageDescription: 'Care dauna?',
-    damageDescriptionPlaceholder: 'Descrie dauna',
-    damagePhoto: 'Poza cu dauna',
-    clientSignature: 'Semnatura client',
-    signatureText: 'Lucrarile au fost executate corespunzator si acceptate.',
-    customerAcceptance: 'Acceptare client',
-    customerSatisfied: 'Lucrari acceptate',
-    customerComplaint: 'Nemultumire',
-    customerFeedbackPlaceholder: 'Cu ce nu este clientul multumit?',
-    checklist: 'Materiale / chimicale / utilaje',
-    chemie: 'Chimicale folosite',
-    geraete: 'Utilaje folosite',
-    materialien: 'Materiale necesare',
-    hinweise: 'Observatii',
-    warning: 'Atentie',
-    safetySheet: 'Fisa de siguranta',
-    addChecklistItem: 'Adauga pozitie',
-    materialCatalog: 'Catalog',
-    showCategory: 'Arata categoria',
-    selectedItems: 'Selectate',
-    saveUsage: 'Salveaza consumul',
-    usageSaved: 'Consumul a fost salvat',
-    quantity: 'Cantitate',
-    unit: 'Unitate',
-    itemName: 'Denumire',
-    itemDescription: 'Descriere',
-    itemWarning: 'Avertizare / incompatibilitate',
-    itemSafetyUrl: 'Link fisa siguranta',
-    clearSignature: 'Sterge semnatura',
-    saveReport: 'Salveaza raport',
-    reset: 'Reseteaza',
-    searchWorkTimes: 'Cauta ore lucrate',
-    allWorkers: 'Toti muncitorii',
-    onlyOwnTimes: 'Vezi doar orele tale.',
-    search: 'Cauta',
-    noEntries: 'Nu exista inregistrari.',
-    noReports: 'Nu exista rapoarte.',
-    noTimes: 'Nu exista ore pentru cautarea aceasta.',
-    currentActivity: 'Activitate curenta',
-    teamChat: 'Chat echipa',
-    messagePlaceholder: 'Scrie mesaj sau problema',
-    sendMessage: 'Trimite mesaj',
-    noMessages: 'Inca nu sunt mesaje.',
-    duration: 'Durata',
-    date: 'Data',
-    team: 'Echipa',
-    order: 'Comanda',
-    workedEffective: 'Lucrat efectiv',
-    pauseDriving: 'Pauza + drum',
-    noObjects: 'Nu s-au primit obiecte din Supabase. Verifica RLS pentru tabela objects.',
-    objectsLoadError: 'Obiectele nu au putut fi incarcate',
-  },
-  ru: {
-    appTag: 'Цифровой учет времени',
-    subtitle: 'Быстро отмечайте начало и конец работы и следите за активностью в реальном времени.',
-    signedIn: 'Вход выполнен',
-    signOut: 'Выйти',
-    email: 'Email',
-    password: 'Пароль (мин. 6 символов)',
-    signIn: 'Войти',
-    signUp: 'Регистрация',
-    language: 'Язык',
-    timeTracking: 'Учет времени',
-    report: 'Дневной отчет',
-    reports: 'Дневные отчеты',
-    chat: 'Чат',
-    history: 'История',
-    workTimes: 'Рабочее время',
-    currentStatus: 'Текущий статус',
-    working: 'РАБОТАЕТ',
-    stopped: 'ОСТАНОВЛЕНО',
-    start: 'Старт',
-    startWork: 'Начать работу',
-    stopWork: 'Остановить работу',
-    total: 'Всего',
-    effective: 'Эффективно',
-    pause: 'Пауза',
-    auto: 'авто',
-    addReport: 'Добавить дневной отчет',
-    object: 'Объект',
-    objectPlaceholder: 'Выберите объект или введите вручную',
-    workers: 'Работники',
-    noWorkers: 'Работники не добавлены.',
-    orderNumber: 'Номер заказа',
-    drivingTime: 'Время в пути (минуты)',
-    taskPlaceholder: 'Что было сделано? (работа)',
-    damage: 'Повреждение',
-    damageYes: 'Да',
-    damageNo: 'Нет',
-    damageDescription: 'Какое повреждение?',
-    damageDescriptionPlaceholder: 'Опишите повреждение',
-    damagePhoto: 'Фото повреждения',
-    clientSignature: 'Подпись клиента',
-    signatureText: 'Работы выполнены надлежащим образом и приняты.',
-    clearSignature: 'Удалить подпись',
-    saveReport: 'Сохранить отчет',
-    reset: 'Сбросить',
-    searchWorkTimes: 'Искать рабочее время',
-    allWorkers: 'Все работники',
-    onlyOwnTimes: 'Вы видите только свое рабочее время.',
-    search: 'Искать',
-    noEntries: 'Нет записей.',
-    noReports: 'Нет отчетов.',
-    noTimes: 'Нет рабочих часов для этого поиска.',
-    currentActivity: 'Текущая активность',
-    teamChat: 'Командный чат',
-    messagePlaceholder: 'Напишите сообщение или проблему',
-    sendMessage: 'Отправить сообщение',
-    noMessages: 'Сообщений пока нет.',
-    duration: 'Длительность',
-    date: 'Дата',
-    team: 'Команда',
-    order: 'Заказ',
-    workedEffective: 'Эффективно отработано',
-    pauseDriving: 'Пауза + дорога',
-    noObjects: 'Объекты не получены из Supabase. Проверьте RLS для таблицы objects.',
-    objectsLoadError: 'Объекты не удалось загрузить',
-  },
-}
-
-const WorkMoodIcon = ({ seconds = 0, active = false }) => {
-  const hours = seconds / 3600
-  const level = !active ? 0 : hours >= 9 ? 4 : hours >= 5 ? 3 : hours >= 2 ? 2 : 1
-  const hardShift = active && level >= 3
-  const mood = [
-    { bg: 'from-slate-600 to-slate-800', face: '#cbd5e1', mouth: 'M35 48 Q50 48 65 48', brow: 0, sweat: false, tilt: 0 },
-    { bg: 'from-cyan-400 to-emerald-400', face: '#ecfeff', mouth: 'M35 48 Q50 58 65 48', brow: 0, sweat: false, tilt: -1 },
-    { bg: 'from-emerald-400 to-amber-300', face: '#fffbeb', mouth: 'M35 50 Q50 54 65 50', brow: 2, sweat: false, tilt: 2 },
-    { bg: 'from-amber-300 to-orange-500', face: '#fff7ed', mouth: 'M35 55 Q50 47 65 55', brow: 5, sweat: true, tilt: 5 },
-    { bg: 'from-orange-500 to-rose-600', face: '#fff1f2', mouth: 'M35 57 Q50 43 65 57', brow: 8, sweat: true, tilt: 8 },
-  ][level]
-
-  return (
-    <div className={`relative h-24 w-24 shrink-0 rounded-3xl bg-gradient-to-br ${mood.bg} p-2 shadow-lg ${active ? 'animate-pulse' : ''}`}>
-      <style>{`
-        @keyframes pickaxeSwing {
-          0%, 18%, 100% { transform: rotate(-24deg); }
-          8% { transform: rotate(18deg); }
-        }
-        @keyframes sweatWipe {
-          0%, 56%, 100% { transform: rotate(0deg); opacity: 0; }
-          64% { transform: rotate(-38deg); opacity: 1; }
-          74% { transform: rotate(-18deg); opacity: 1; }
-          84% { transform: rotate(0deg); opacity: 0; }
-        }
-        @keyframes sweatDrop {
-          0%, 55%, 100% { transform: translateY(0); opacity: 0; }
-          66% { opacity: 1; }
-          82% { transform: translateY(9px); opacity: 0; }
-        }
-        .pickaxe-swing { transform-box: fill-box; transform-origin: 54px 72px; animation: pickaxeSwing 2.4s ease-in-out infinite; }
-        .sweat-wipe { transform-box: fill-box; transform-origin: 59px 70px; animation: sweatWipe 5.2s ease-in-out infinite; }
-        .sweat-drop { animation: sweatDrop 5.2s ease-in-out infinite; }
-      `}</style>
-      <div className="absolute inset-x-5 bottom-2 h-6 rounded-full bg-slate-950/25" />
-      <svg viewBox="0 0 100 100" className="relative h-full w-full" style={{ transform: `rotate(${mood.tilt}deg)` }} aria-hidden="true">
-        {active && (
-          <g className={hardShift ? 'sweat-wipe' : 'pickaxe-swing'}>
-            <path d="M62 68 L88 42" stroke="#78350f" strokeWidth="5" strokeLinecap="round" />
-            {!hardShift && <path d="M77 36 L94 49" stroke="#cbd5e1" strokeWidth="6" strokeLinecap="round" />}
-            {hardShift && <path d="M82 39 L92 43" stroke="#e2e8f0" strokeWidth="5" strokeLinecap="round" />}
-          </g>
-        )}
-        <circle cx="50" cy="38" r="24" fill={mood.face} />
-        <path d="M28 34 Q50 15 72 34" fill="none" stroke="#0f172a" strokeWidth="7" strokeLinecap="round" />
-        <path d={`M34 ${34 + mood.brow} L44 ${32 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-        <path d={`M56 ${32 + mood.brow} L66 ${34 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-        <circle cx="40" cy="41" r="3.5" fill="#0f172a" />
-        <circle cx="60" cy="41" r="3.5" fill="#0f172a" />
-        <path d={mood.mouth} fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-        {mood.sweat && <path className="sweat-drop" d="M72 35 C82 45 74 55 68 50 C63 46 68 39 72 35Z" fill="#67e8f9" />}
-        <path d="M31 65 Q50 75 69 65 L76 90 H24Z" fill="#0f172a" opacity="0.9" />
-        <path d="M35 66 L50 79 L65 66" fill="none" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-        {active && (
-          <g>
-            <path d="M34 69 L18 82" stroke={hardShift ? '#fca5a5' : '#ecfeff'} strokeWidth="6" strokeLinecap="round" />
-            <path d="M66 69 L82 82" stroke={hardShift ? '#fca5a5' : '#ecfeff'} strokeWidth="6" strokeLinecap="round" />
-          </g>
-        )}
-      </svg>
-      <span className={`absolute right-2 top-2 h-3 w-3 rounded-full ${active ? 'bg-emerald-300' : 'bg-slate-400'}`} />
-    </div>
-  )
-}
+import { languages as i18nLanguages, uiTranslations } from './i18n'
 
 function App() {
   const [oraStart, setOraStart] = useState(null)
@@ -495,7 +83,7 @@ function App() {
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
-  const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
+  const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
@@ -1195,7 +783,7 @@ function App() {
       .single()
 
     if (error || !fullReport) {
-      alert('Bericht konnte nicht geladen werden: ' + (error?.message ?? ''))
+      alert(`${t('reportLoadError')} ${error?.message ?? ''}`)
       return
     }
 
@@ -1297,9 +885,9 @@ function App() {
 
   const handleSaveMaterialRequest = async (event) => {
     event?.preventDefault()
-    if (!user) return alert('Bitte anmelden')
-    if (!materialRequestObject.trim()) return alert('Objekt auswaehlen')
-    if (selectedMaterialRequestIds.length === 0 && !materialRequestFreeText.trim()) return alert('Material oder Freitext eingeben')
+    if (!user) return alert(t('loginRequired'))
+    if (!materialRequestObject.trim()) return alert(t('objectRequired'))
+    if (selectedMaterialRequestIds.length === 0 && !materialRequestFreeText.trim()) return alert(t('materialRequired'))
 
     const selectedItems = materialItems.filter(item => selectedMaterialRequestIds.includes(item.id))
     const requestPayload = {
@@ -1335,7 +923,7 @@ function App() {
     const { data: requestData, error: requestError } = await requestQuery
 
     if (requestError) {
-      alert('Materialbedarf konnte nicht gespeichert werden: ' + requestError.message)
+      alert(`${t('materialSaveError')} ${requestError.message}`)
       return
     }
 
@@ -1363,7 +951,7 @@ function App() {
         .delete()
         .eq('material_request_id', requestData.id)
       if (deleteError) {
-        alert('Alte Positionen konnten nicht ersetzt werden: ' + deleteError.message)
+        alert(`${t('materialPositionsError')} ${deleteError.message}`)
         return
       }
     }
@@ -1371,7 +959,7 @@ function App() {
     if (rows.length > 0) {
       const { error: itemError } = await supabase.from('material_request_items').insert(rows)
       if (itemError) {
-        alert('Bedarf gespeichert, aber Positionen konnten nicht gespeichert werden: ' + itemError.message)
+        alert(`${t('materialPositionsError')} ${itemError.message}`)
         return
       }
     }
@@ -1389,7 +977,7 @@ function App() {
 
   const handleEditMaterialRequest = (request) => {
     if (request.summary_sent) {
-      alert('Dieser Bedarf wurde bereits gesendet.')
+      alert(t('materialSentAlready'))
       return
     }
     setEditingMaterialRequestId(request.id)
@@ -1435,14 +1023,14 @@ function App() {
       .eq('id', requestId)
 
     if (error) {
-      alert('Status konnte nicht gespeichert werden: ' + error.message)
+      alert(`${t('statusSaveError')} ${error.message}`)
       return
     }
     incarcaMaterialbedarf()
   }
 
   const handleSendMaterialSummary = async () => {
-    if (!user) return alert('Bitte anmelden')
+    if (!user) return alert(t('loginRequired'))
     setMaterialSummarySending(true)
     try {
       const { data, error } = await supabase.functions.invoke('send-materialbedarf-summary', {
@@ -1450,11 +1038,11 @@ function App() {
       })
 
       if (error) {
-        alert('Materialbedarf konnte nicht gesendet werden: ' + error.message)
+        alert(`${t('materialSendError')} ${error.message}`)
         return
       }
       if (data?.ok === false) {
-        alert('Materialbedarf konnte nicht gesendet werden: ' + (data?.error ?? 'Unbekannter Fehler'))
+        alert(`${t('materialSendError')} ${data?.error ?? ''}`)
         return
       }
 
@@ -1466,7 +1054,7 @@ function App() {
   }
 
   const handleTakeEquipment = async (item) => {
-    if (!user) return alert('Bitte anmelden')
+    if (!user) return alert(t('loginRequired'))
     const selectedObject = currentObjectForEquipment
     const { error: checkoutError } = await supabase.from('inventory_checkouts').insert([{
       inventory_item_id: item.id,
@@ -1480,7 +1068,7 @@ function App() {
     }])
 
     if (checkoutError) {
-      alert('Geraet konnte nicht mitgenommen werden: ' + checkoutError.message)
+      alert(`${t('equipmentTakeError')} ${checkoutError.message}`)
       return
     }
 
@@ -1491,7 +1079,7 @@ function App() {
       .eq('status', 'verfuegbar')
 
     if (updateError) {
-      alert('Geraet wurde gebucht, Status konnte aber nicht aktualisiert werden: ' + updateError.message)
+      alert(`${t('equipmentStatusError')} ${updateError.message}`)
     }
     incarcaInventory()
   }
@@ -1541,7 +1129,11 @@ function App() {
 
   const handleCreateReport = async (e) => {
     e?.preventDefault()
-    if (!user) return alert('Bitte anmelden')
+    if (!user) return alert(t('loginRequired'))
+    if (!reportChecklist.workDone || !reportChecklist.workTime) {
+      alert(t('completionRequired'))
+      return
+    }
     try {
       const hasCustomerSignature = Boolean(reportSignatureDataUrl)
       if (hasCustomerSignature && !editingReportId && !window.confirm(t('saveAndLockConfirm'))) {
@@ -1564,7 +1156,7 @@ function App() {
           })
 
         if (uploadError) {
-          alert('Schadenfoto konnte nicht hochgeladen werden: ' + uploadError.message)
+          alert(`${t('imageUploadError')} ${uploadError.message}`)
           return
         }
 
@@ -1659,7 +1251,7 @@ function App() {
       const { data, error } = await reportRequest
       if (error) {
         console.error(error)
-        alert('Fehler beim Speichern des Berichts: ' + error.message)
+        alert(`${t('reportSaveError')} ${error.message}`)
       } else {
         await saveEquipmentReturns()
         if (!editingReportId && inLucru && currentId && data?.id) {
@@ -1671,7 +1263,7 @@ function App() {
 
           if (updateError) {
             console.error(updateError)
-            alert('Der Bericht wurde gespeichert, aber die Zeiterfassung konnte nicht verknuepft werden: ' + updateError.message)
+            alert(`${t('reportTimeLinkWarning')} ${updateError.message}`)
           } else {
             setActiveReportId(data.id)
             setActiveSession(session => session ? { ...session, report_id: data.id } : session)
@@ -1701,7 +1293,7 @@ function App() {
           }
 
           if (updateReportError) {
-            alert('Bericht gespeichert, aber Zeiten konnten nicht aktualisiert werden: ' + updateReportError.message)
+            alert(`${t('reportTimeUpdateWarning')} ${updateReportError.message}`)
           } else {
             await saveWorkerTimeEntries(data.id, finishedReport, totals, endIsoFromForm)
           }
@@ -1710,10 +1302,11 @@ function App() {
         incarcaReports()
         incarcaDashboardSummary()
         setView('reports')
+        alert(t('savedReportSuccess'))
       }
     } catch (err) {
       console.error(err)
-      alert('Unerwarteter Fehler')
+        alert(t('unexpectedError'))
     }
   }
 
@@ -1751,7 +1344,7 @@ function App() {
 
     if (error) {
       console.error('Worker time entries save error:', error)
-      alert('Arbeitszeiten pro Mitarbeiter konnten nicht gespeichert werden: ' + error.message)
+      alert(`${t('workerTimeSaveError')} ${error.message}`)
     }
   }
 
@@ -1821,7 +1414,7 @@ function App() {
 
     if (error) {
       console.error('Email outbox error:', error)
-      alert('Bericht gespeichert, aber Email-Auftrag konnte nicht angelegt werden: ' + error.message)
+      alert(`${t('emailJobCreateWarning')} ${error.message}`)
       return
     }
 
@@ -1831,7 +1424,7 @@ function App() {
 
     if (sendError) {
       console.error('Email send function error:', sendError)
-      alert('Email-Auftrag wurde angelegt, aber noch nicht versendet: ' + sendError.message)
+      alert(`${t('emailJobSendWarning')} ${sendError.message}`)
     } else {
       await supabase
         .from('tagesbericht')
@@ -1855,7 +1448,7 @@ function App() {
       .single()
 
     if (reportLoadError || !fullReport) {
-      alert('Bericht konnte nicht geladen werden: ' + (reportLoadError?.message ?? ''))
+        alert(`${t('reportLoadError')} ${(reportLoadError?.message ?? '')}`)
       return
     }
 
@@ -1903,7 +1496,7 @@ function App() {
     const sessionUser = sessionData?.session?.user
 
     if (!sessionUser) {
-      alert('Bitte zuerst anmelden.')
+      alert(t('loginRequired'))
       return
     }
     if (!window.confirm(t('confirmStart'))) return
@@ -1916,7 +1509,7 @@ function App() {
       })
 
     if (error) {
-      alert('Fehler: ' + error.message)
+      alert(`${t('errorPrefix')} ${error.message}`)
     } else {
       const startedSession = Array.isArray(data) ? data[0] : data
       setCurrentId(startedSession.id)
@@ -1976,7 +1569,7 @@ function App() {
       .eq('user_id', user.id)
 
     if (error) {
-      alert('Fehler: ' + error.message)
+      alert(`${t('errorPrefix')} ${error.message}`)
     } else {
       if (reportId) {
         const { error: reportError } = await supabase
@@ -1995,7 +1588,7 @@ function App() {
           .eq('user_id', user.id)
 
         if (reportError) {
-          alert('Die Zeiterfassung wurde gestoppt, aber der Bericht wurde nicht aktualisiert: ' + reportError.message)
+          alert(`${t('reportStopUpdateWarning')} ${reportError.message}`)
         } else if (linkedReport) {
           await saveWorkerTimeEntries(reportId, linkedReport, reportTotals, acumISO)
         }
@@ -2015,11 +1608,11 @@ function App() {
   // Auth helpers
   const handleSignUp = async () => {
     if (!authEmail || !authPassword) {
-      alert('E-Mail und Passwort eingeben')
+      alert(t('authMissing'))
       return
     }
     if (authPassword.length < 6) {
-      alert('Das Passwort muss mindestens 6 Zeichen haben')
+      alert(t('authPasswordShort'))
       return
     }
     try {
@@ -2032,35 +1625,35 @@ function App() {
       })
       if (error) {
         console.error('Sign up error:', error)
-        alert('Fehler bei der Registrierung: ' + error.message)
+        alert(`${t('signUpError')} ${error.message}`)
       } else {
-        alert('Registrierung erfolgreich! Du kannst dich jetzt anmelden.')
+        alert(t('authSignUpSuccess'))
         setAuthEmail('')
         setAuthPassword('')
       }
     } catch (err) {
       console.error('Unexpected error:', err)
-      alert('Unerwarteter Fehler: ' + (err?.message || 'Verbindung pruefen'))
+      alert(`${t('unexpectedError')} ${err?.message || t('connectionCheck')}`)
     }
   }
 
   const handleSignIn = async () => {
     if (!authEmail || !authPassword) {
-      alert('E-Mail und Passwort eingeben')
+      alert(t('authMissing'))
       return
     }
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
       if (error) {
         console.error('Sign in error:', error)
-        alert('Fehler bei der Anmeldung: ' + error.message)
+        alert(`${t('signInError')} ${error.message}`)
       } else {
         setAuthPassword('')
         setAuthEmail('')
       }
     } catch (err) {
       console.error('Unexpected error:', err)
-      alert('Unerwarteter Fehler: ' + (err?.message || 'Verbindung pruefen'))
+      alert(`${t('unexpectedError')} ${err?.message || t('connectionCheck')}`)
     }
   }
 
@@ -2114,6 +1707,11 @@ function App() {
       }}
     >
       <div className="relative w-full max-w-5xl">
+        <img
+          src="/heico-logo.jpg"
+          alt="HEICO Service GmbH"
+          className="pointer-events-none absolute -right-10 top-4 hidden w-72 opacity-[0.07] mix-blend-screen sm:block lg:w-96"
+        />
         <div className="absolute inset-0 rounded-[2.5rem] bg-white/5 shadow-[inset_0_0_120px_rgba(255,255,255,0.06)] pointer-events-none" />
         <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.95fr]">
           <div className="bg-white/10 border border-white/10 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] rounded-[2rem] p-8 backdrop-blur-xl text-left overflow-hidden">
@@ -2130,7 +1728,7 @@ function App() {
                     <div>{t('signedIn')}: <span className="font-semibold text-white">{user.email}</span></div>
                     <div className="flex gap-2">
                       <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 bg-slate-800 rounded-md text-slate-100 text-sm">
-                        {languages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+                        {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
                       </select>
                       <button onClick={handleSignOut} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-100 text-sm w-full sm:w-auto">{t('signOut')}</button>
                     </div>
@@ -2153,7 +1751,7 @@ function App() {
                         className="px-3 py-2 rounded-md bg-slate-800 text-slate-100 text-sm flex-1"
                       />
                       <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100 text-sm">
-                        {languages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+                        {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
                       </select>
                     </div>
                     <div className="flex gap-2">
@@ -2306,7 +1904,7 @@ function App() {
                       {workers.length === 0 && <div className="mt-2 text-xs text-slate-400">{t('noWorkers')}</div>}
 	                  </div>
                   <label className="block text-xs text-slate-400">
-                    Datum / Uhrzeit
+                    {t('dateTime')}
                     <input
                       type="date"
                       value={reportStart ? reportStart.slice(0, 10) : ''}
@@ -2334,7 +1932,7 @@ function App() {
 		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
 		                  />
                   <div className="rounded-md bg-slate-800 p-3 space-y-3">
-                    <div className="text-slate-100 font-semibold text-sm">Arbeitszeit von / bis</div>
+                    <div className="text-slate-100 font-semibold text-sm">{t('workTimeRange')}</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <label className="text-xs text-slate-400">
                         {t('workStart')}
@@ -2534,7 +2132,7 @@ function App() {
                         workTime: e.target.checked,
                       }))}
                     />
-                    <span>{t('checklistWorkDone')} und {t('checklistWorkTime').toLowerCase()}</span>
+                    <span>{t('completionCheckText')}</span>
                   </label>
 	                    <div className="flex gap-2">
 	                      <button type="submit" className="flex-1 px-4 py-2 bg-cyan-600 rounded-md text-white">{editingReportId ? t('updateReport') : t('saveReport')}</button>
@@ -2758,7 +2356,7 @@ function App() {
 		                          )}
 		                        </div>
 	                      </div>
-			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">Mitarbeiter: {r.worker_email}</div>}
+			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">{t('workers')}: {r.worker_email}</div>}
                           <div className="text-xs text-slate-500 mt-1">Zeiterfassung: {r.entry_type === 'manual' ? `${t('manual')} - ${r.correction_reason ?? ''}` : t('automatic')}</div>
                           <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                             <div className="rounded-lg bg-slate-950/70 p-2">
@@ -2956,7 +2554,7 @@ function App() {
                           ) : openCheckouts.map(checkout => (
                             <div key={checkout.id} className="rounded-lg bg-slate-950/70 px-3 py-2">
                               <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.inventory_item_id}</div>
-                              <div className="text-xs text-slate-400">Mitarbeiter: {checkout.worker_name ?? checkout.worker_email}</div>
+                              <div className="text-xs text-slate-400">{t('workers')}: {checkout.worker_name ?? checkout.worker_email}</div>
                               {checkout.object_name && <div className="text-xs text-slate-400">Objekt: {checkout.object_name}</div>}
                               <div className="text-xs text-slate-500">Seit: {formatTimeBerlin(checkout.taken_at)}</div>
                             </div>
