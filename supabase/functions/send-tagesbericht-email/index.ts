@@ -417,10 +417,9 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
   page.drawText('Offene Aufgaben', { x: left, y, size: 11, font: helveticaBold, color: rgb(0.08, 0.11, 0.18) })
   y -= 18
   const checklistRows: Array<[boolean | undefined, string]> = [
+    [payload.checklist?.work_done, 'Arbeit ordnungsgemaess ausgefuehrt'],
     [payload.checklist?.work_time, 'Arbeitszeit erfasst'],
-    [payload.checklist?.work_done, 'Arbeit ausgefuehrt'],
-    [payload.checklist?.equipment_back, 'Geraete sauber & funktionsfaehig zurueck'],
-    [payload.checklist?.materials_back, 'Materialien sauber & funktionsfaehig zurueck'],
+    [payload.checklist?.equipment_back, 'Firmengeraete sauber und funktionsfaehig'],
   ]
   checklistRows.forEach(([checked, label], index) => {
     const x = left + (index % 2) * 250

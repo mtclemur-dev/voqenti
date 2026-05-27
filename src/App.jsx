@@ -24,7 +24,7 @@ const translations = {
     reports: 'Tagesberichte',
     chat: 'Chat',
     history: 'Verlauf',
-    materials: 'Materialien',
+    materials: 'Inventar & Bedarf',
     workTimes: 'Arbeitszeiten',
     currentStatus: 'Aktueller Status',
     working: 'ARBEITET',
@@ -134,9 +134,36 @@ const translations = {
     timeTrackingType: 'Zeiterfassung',
     correctionNote: 'Korrekturgrund / Bemerkung',
     checklistWorkTime: 'Arbeitszeit erfasst',
-    checklistWorkDone: 'Arbeit ausgefuehrt',
-    checklistEquipmentBack: 'Geraete sauber & funktionsfaehig zurueck',
+    checklistWorkDone: 'Arbeit ordnungsgemaess ausgefuehrt',
+    checklistEquipmentBack: 'Firmengeraete sauber und funktionsfaehig',
     checklistMaterialsBack: 'Materialien sauber & funktionsfaehig zurueck',
+    selectWorkers: 'Mitarbeiter auswaehlen',
+    selectedCount: 'ausgewaehlt',
+    workerSearch: 'Mitarbeiter suchen',
+    confirmSelection: 'Auswahl uebernehmen',
+    objectSelect: 'Objekt auswaehlen',
+    additionalNotes: 'Zusaetzliche Bemerkungen',
+    workTemplates: 'Was wurde gemacht',
+    materialNeed: 'Materialbedarf melden',
+    materialNeedOverview: 'Materialbedarf Uebersicht',
+    requestedMaterials: 'Materiale benoetigt',
+    miscMaterial: 'Sonstiges / Freitext',
+    note: 'Bemerkung',
+    status: 'Status',
+    reportedBy: 'Gemeldet von',
+    saveRequest: 'Bedarf speichern',
+    requestSaved: 'Materialbedarf gespeichert',
+    takeEquipment: 'Geraete mitnehmen',
+    availableEquipment: 'Verfuegbare Geraete',
+    takenEquipment: 'Mitgenommene Geraete',
+    equipmentReturn: 'Geraete-Rueckgabe',
+    take: 'Mitnehmen',
+    back: 'zurueckgebracht',
+    clean: 'sauber',
+    functional: 'funktionsfaehig',
+    damageNote: 'Schaden / Bemerkung',
+    noEquipment: 'Keine Geraete verfuegbar',
+    adminInventory: 'Geraete unterwegs',
     done: 'erledigt',
     signedLocked: 'Bericht wurde vom Kunden unterschrieben und ist gesperrt.',
     saveAndLockConfirm: 'Nach der Kundenunterschrift kann der Bericht nicht mehr von Mitarbeitern geaendert werden. Moechten Sie speichern und sperren?',
@@ -311,8 +338,6 @@ const translations = {
   },
 }
 
-const chatEnabled = false
-
 const WorkMoodIcon = ({ seconds = 0, active = false }) => {
   const hours = seconds / 3600
   const level = !active ? 0 : hours >= 9 ? 4 : hours >= 5 ? 3 : hours >= 2 ? 2 : 1
@@ -398,7 +423,10 @@ function App() {
   const [selectedObjectId, setSelectedObjectId] = useState('')
   const [workers, setWorkers] = useState([])
   const [selectedWorkerIds, setSelectedWorkerIds] = useState([])
+  const [workerPickerOpen, setWorkerPickerOpen] = useState(false)
+  const [workerSearch, setWorkerSearch] = useState('')
   const [reportTask, setReportTask] = useState('')
+  const [selectedWorkTemplates, setSelectedWorkTemplates] = useState([])
   const [reportDamage, setReportDamage] = useState(false)
   const [reportDamageDescription, setReportDamageDescription] = useState('')
   const [reportDamageImage, setReportDamageImage] = useState(null)
@@ -436,6 +464,22 @@ function App() {
   const [dashboardReports, setDashboardReports] = useState([])
   const [dashboardEmails, setDashboardEmails] = useState([])
   const [dashboardMaterialCount, setDashboardMaterialCount] = useState(0)
+  const [materialItems, setMaterialItems] = useState([])
+  const [materialRequests, setMaterialRequests] = useState([])
+  const [materialRequestObject, setMaterialRequestObject] = useState('')
+  const [materialRequestObjectId, setMaterialRequestObjectId] = useState('')
+  const [materialRequestAuftrag, setMaterialRequestAuftrag] = useState('')
+  const [materialRequestDate, setMaterialRequestDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
+  const [selectedMaterialRequestIds, setSelectedMaterialRequestIds] = useState([])
+  const [materialRequestAmounts, setMaterialRequestAmounts] = useState({})
+  const [materialRequestUnits, setMaterialRequestUnits] = useState({})
+  const [materialRequestNotes, setMaterialRequestNotes] = useState({})
+  const [materialRequestFreeText, setMaterialRequestFreeText] = useState('')
+  const [materialRequestNote, setMaterialRequestNote] = useState('')
+  const [inventoryItems, setInventoryItems] = useState([])
+  const [openCheckouts, setOpenCheckouts] = useState([])
+  const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
+  const [equipmentReturnState, setEquipmentReturnState] = useState({})
   const [workerSearchDate, setWorkerSearchDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
@@ -452,12 +496,21 @@ function App() {
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
   const materialCategories = ['chemie', 'geraete', 'materialien']
+  const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
+  const workTemplateOptions = [
+    'Unterhaltsreinigung',
+    'Grundreinigung',
+    'Grundreinigung mit 2-Schicht-Beschichtung',
+    'Glas- und Rahmenreinigung',
+    'Bauendreinigung',
+    'Industriereinigung',
+    'Sonderreinigung',
+  ]
   const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
   const reportChecklistItems = [
-    ['workTime', t('checklistWorkTime')],
     ['workDone', t('checklistWorkDone')],
+    ['workTime', t('checklistWorkTime')],
     ['equipmentBack', t('checklistEquipmentBack')],
-    ['materialsBack', t('checklistMaterialsBack')],
   ]
 
   const secondsBetween = (start, end) => {
@@ -480,6 +533,14 @@ function App() {
   const minutesToSeconds = (minutes = 0) => Math.max(0, Number(minutes || 0) * 60)
 
   const secondsToMinutes = (seconds = 0) => Math.max(0, Math.round(Number(seconds || 0) / 60))
+
+  const selectedReportObject = objects.find(object => object.id === selectedObjectId)
+  const selectedWorkersForReport = workers.filter(worker => selectedWorkerIds.includes(worker.id))
+  const workerSummary = selectedWorkersForReport.length === 0
+    ? ''
+    : `${selectedWorkersForReport.slice(0, 2).map(worker => worker.name).join(', ')}${selectedWorkersForReport.length > 2 ? ` +${selectedWorkersForReport.length - 2}` : ''}`
+  const filteredWorkers = workers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+  const currentObjectForEquipment = selectedReportObject ?? objects.find(object => object.name.toLowerCase() === reportObject.trim().toLowerCase())
 
   const getStoredSeconds = (record, minutesKey, secondsKey) => {
     const minutesValue = Number(record?.[minutesKey] ?? 0)
@@ -732,6 +793,73 @@ function App() {
     }
   }, [])
 
+  const incarcaMaterialbedarf = useCallback(async () => {
+    const { data: itemsData, error: itemsError } = await supabase
+      .from('material_items')
+      .select('*')
+      .eq('active', true)
+      .order('name', { ascending: true })
+
+    if (itemsError) {
+      console.error('Material items load error:', itemsError)
+      setMaterialItems([])
+    } else {
+      setMaterialItems(itemsData ?? [])
+    }
+
+    const { data: requestData, error: requestError } = await supabase
+      .from('material_requests')
+      .select('*, material_request_items(*)')
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (requestError) {
+      console.error('Material request load error:', requestError)
+      setMaterialRequests([])
+    } else {
+      setMaterialRequests(requestData ?? [])
+    }
+  }, [])
+
+  const incarcaInventory = useCallback(async () => {
+    if (!user) {
+      setInventoryItems([])
+      setOpenCheckouts([])
+      return
+    }
+
+    const { data: itemsData, error: itemsError } = await supabase
+      .from('inventory_items')
+      .select('*')
+      .order('category', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (itemsError) {
+      console.error('Inventory load error:', itemsError)
+      setInventoryItems([])
+    } else {
+      setInventoryItems(itemsData ?? [])
+    }
+
+    let checkoutQuery = supabase
+      .from('inventory_checkouts')
+      .select('*, inventory_items(name, category, image_url)')
+      .is('returned_at', null)
+      .order('taken_at', { ascending: false })
+
+    if (!isAdmin && !isVorarbeiter) {
+      checkoutQuery = checkoutQuery.eq('user_id', user.id)
+    }
+
+    const { data: checkoutData, error: checkoutError } = await checkoutQuery
+    if (checkoutError) {
+      console.error('Inventory checkout load error:', checkoutError)
+      setOpenCheckouts([])
+    } else {
+      setOpenCheckouts(checkoutData ?? [])
+    }
+  }, [isAdmin, isVorarbeiter, user])
+
   const incarcaWorkerEntries = useCallback(async () => {
     if (!user) {
       setWorkerEntries([])
@@ -819,6 +947,7 @@ function App() {
       incarcaObjects()
       incarcaWorkers()
       incarcaChecklistItems()
+      incarcaInventory()
     }
     if (view === 'times') {
       incarcaWorkers()
@@ -826,8 +955,11 @@ function App() {
     }
     if (view === 'materials') {
       incarcaChecklistItems()
+      incarcaObjects()
+      incarcaMaterialbedarf()
+      incarcaInventory()
     }
-  }, [incarcaChecklistItems, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
+  }, [incarcaChecklistItems, incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
 
   useEffect(() => {
     if (!user) return
@@ -843,6 +975,12 @@ function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'material_usage_entries' }, () => {
         incarcaDashboardSummary()
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_checkouts' }, () => {
+        incarcaInventory()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, () => {
+        incarcaInventory()
+      })
       .subscribe()
 
     return () => {
@@ -852,7 +990,7 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaDashboardSummary, user])
+  }, [incarcaDashboardSummary, incarcaInventory, user])
 
   const getSignatureDataUrl = () => {
     return reportSignatureDataUrl
@@ -984,6 +1122,7 @@ function App() {
     setReportObject('')
     setSelectedObjectId('')
     setReportTask('')
+    setSelectedWorkTemplates([])
     setReportDamage(false)
     setReportDamageDescription('')
     setReportDamageImage(null)
@@ -996,10 +1135,13 @@ function App() {
     setReportEntryType('automatic')
     setReportCorrectionReason('')
     setReportChecklist({ workTime: false, workDone: false, equipmentBack: false, materialsBack: false })
+    setEquipmentReturnState({})
     setReportSignatureDataUrl(null)
     setCustomerSignedAt(null)
     setSignatureModalOpen(false)
     setSelectedWorkerIds([])
+    setWorkerPickerOpen(false)
+    setWorkerSearch('')
     setReportStart(new Date().toISOString().slice(0,16))
     clearSignature()
   }
@@ -1027,6 +1169,7 @@ function App() {
     setReportObject(fullReport.object_name ?? '')
     setSelectedObjectId(fullReport.object_id ?? '')
     setReportTask(fullReport.task ?? '')
+    setSelectedWorkTemplates([])
     setReportDamage(Boolean(fullReport.damage_present))
     setReportDamageDescription(fullReport.damage_description ?? '')
     setReportDamageImage(null)
@@ -1088,6 +1231,186 @@ function App() {
         ? current.filter(id => id !== workerId)
         : [...current, workerId]
     )
+  }
+
+  const handleWorkTemplateToggle = (template) => {
+    setSelectedWorkTemplates(current =>
+      current.includes(template)
+        ? current.filter(item => item !== template)
+        : [...current, template]
+    )
+  }
+
+  const handleMaterialRequestObjectChange = (value) => {
+    setMaterialRequestObject(value)
+    const matchedObject = objects.find(object => object.name.toLowerCase() === value.trim().toLowerCase())
+    setMaterialRequestObjectId(matchedObject?.id ?? '')
+  }
+
+  const handleMaterialRequestToggle = (itemId) => {
+    setSelectedMaterialRequestIds(current =>
+      current.includes(itemId)
+        ? current.filter(id => id !== itemId)
+        : [...current, itemId]
+    )
+  }
+
+  const handleSaveMaterialRequest = async (event) => {
+    event?.preventDefault()
+    if (!user) return alert('Bitte anmelden')
+    if (!materialRequestObject.trim()) return alert('Objekt auswaehlen')
+    if (selectedMaterialRequestIds.length === 0 && !materialRequestFreeText.trim()) return alert('Material oder Freitext eingeben')
+
+    const selectedItems = materialItems.filter(item => selectedMaterialRequestIds.includes(item.id))
+    const { data: requestData, error: requestError } = await supabase
+      .from('material_requests')
+      .insert([{
+        objekt_id: materialRequestObjectId || null,
+        objekt_name: materialRequestObject.trim(),
+        auftrag_id: materialRequestAuftrag.trim() || null,
+        user_id: user.id,
+        reporter_name: currentWorker?.name ?? user.email ?? 'Benutzer',
+        reporter_email: user.email ?? null,
+        request_date: materialRequestDate,
+        status: 'offen',
+        note: materialRequestNote.trim() || null,
+      }])
+      .select('id')
+      .single()
+
+    if (requestError) {
+      alert('Materialbedarf konnte nicht gespeichert werden: ' + requestError.message)
+      return
+    }
+
+    const rows = selectedItems.map(item => ({
+      material_request_id: requestData.id,
+      material_item_id: item.id,
+      quantity: materialRequestAmounts[item.id] ? Number(materialRequestAmounts[item.id]) : null,
+      unit: materialRequestUnits[item.id] || item.unit || null,
+      note: materialRequestNotes[item.id]?.trim() || null,
+    }))
+
+    if (materialRequestFreeText.trim()) {
+      rows.push({
+        material_request_id: requestData.id,
+        custom_name: materialRequestFreeText.trim(),
+        quantity: null,
+        unit: null,
+        note: null,
+      })
+    }
+
+    if (rows.length > 0) {
+      const { error: itemError } = await supabase.from('material_request_items').insert(rows)
+      if (itemError) {
+        alert('Bedarf gespeichert, aber Positionen konnten nicht gespeichert werden: ' + itemError.message)
+        return
+      }
+    }
+
+    setSelectedMaterialRequestIds([])
+    setMaterialRequestAmounts({})
+    setMaterialRequestUnits({})
+    setMaterialRequestNotes({})
+    setMaterialRequestFreeText('')
+    setMaterialRequestNote('')
+    incarcaMaterialbedarf()
+    alert(t('requestSaved'))
+  }
+
+  const handleMaterialRequestStatus = async (requestId, status) => {
+    if (!isAdmin && !isVorarbeiter) return
+    const { error } = await supabase
+      .from('material_requests')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', requestId)
+
+    if (error) {
+      alert('Status konnte nicht gespeichert werden: ' + error.message)
+      return
+    }
+    incarcaMaterialbedarf()
+  }
+
+  const handleTakeEquipment = async (item) => {
+    if (!user) return alert('Bitte anmelden')
+    const selectedObject = currentObjectForEquipment
+    const { error: checkoutError } = await supabase.from('inventory_checkouts').insert([{
+      inventory_item_id: item.id,
+      user_id: user.id,
+      worker_name: currentWorker?.name ?? user.email ?? 'Benutzer',
+      worker_email: user.email ?? null,
+      object_id: selectedObject?.id ?? null,
+      object_name: selectedObject?.name ?? (reportObject || null),
+      taken_at: new Date().toISOString(),
+      status: 'unterwegs',
+    }])
+
+    if (checkoutError) {
+      alert('Geraet konnte nicht mitgenommen werden: ' + checkoutError.message)
+      return
+    }
+
+    const { error: updateError } = await supabase
+      .from('inventory_items')
+      .update({ status: 'unterwegs', updated_at: new Date().toISOString() })
+      .eq('id', item.id)
+      .eq('status', 'verfuegbar')
+
+    if (updateError) {
+      alert('Geraet wurde gebucht, Status konnte aber nicht aktualisiert werden: ' + updateError.message)
+    }
+    incarcaInventory()
+  }
+
+  const handleEquipmentReturnChange = (checkoutId, key, value) => {
+    setEquipmentReturnState(current => ({
+      ...current,
+      [checkoutId]: {
+        returned: false,
+        clean: false,
+        functional: false,
+        note: '',
+        ...(current[checkoutId] ?? {}),
+        [key]: value,
+      },
+    }))
+  }
+
+  const saveEquipmentReturns = async () => {
+    const selectedReturns = Object.entries(equipmentReturnState)
+      .map(([checkoutId, state]) => ({ checkoutId: Number(checkoutId), ...state }))
+      .filter(state => state.returned || state.clean || state.functional || state.note)
+
+    for (const item of selectedReturns) {
+      const checkout = openCheckouts.find(row => row.id === item.checkoutId)
+      if (!checkout) continue
+      const isOk = Boolean(item.returned && item.clean && item.functional && !item.note?.trim())
+      const nextStatus = isOk ? 'verfuegbar' : 'pruefen'
+
+      await supabase
+        .from('inventory_checkouts')
+        .update({
+          returned_at: item.returned ? new Date().toISOString() : null,
+          return_clean: Boolean(item.clean),
+          return_functional: Boolean(item.functional),
+          return_note: item.note?.trim() || null,
+          status: nextStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', item.checkoutId)
+
+      await supabase
+        .from('inventory_items')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', checkout.inventory_item_id)
+    }
+
+    if (selectedReturns.length > 0) {
+      setEquipmentReturnState({})
+      incarcaInventory()
+    }
   }
 
   const handleChecklistToggle = (itemId) => {
@@ -1206,7 +1529,8 @@ function App() {
       const fahrzeitMinutes = Math.max(0, Math.round(Number(reportFahrzeitMinutes || 0)))
       const pauseMinutes = Math.max(0, Math.round(Number(reportPauseMinutes || 0)))
       const selectedWorkers = workers.filter(worker => selectedWorkerIds.includes(worker.id))
-      const taskTranslation = await translateToGerman(reportTask)
+      const reportTaskText = [...selectedWorkTemplates, reportTask.trim()].filter(Boolean).join('\n')
+      const taskTranslation = await translateToGerman(reportTaskText)
       const damageTranslation = reportDamage ? await translateToGerman(reportDamageDescription) : null
       const customerFeedbackTranslation = !customerSatisfied ? await translateToGerman(customerFeedback) : null
       const reportPayload = {
@@ -1218,7 +1542,7 @@ function App() {
         worker_ids: selectedWorkerIds,
         worker_names: selectedWorkers.map(worker => worker.name),
         end_time: endIsoFromForm,
-        task: reportTask,
+        task: reportTaskText,
         task_de: taskTranslation?.translated_text ?? null,
         damage_present: reportDamage,
         damage_description: reportDamage ? reportDamageDescription : null,
@@ -1287,6 +1611,7 @@ function App() {
         console.error(error)
         alert('Fehler beim Speichern des Berichts: ' + error.message)
       } else {
+        await saveEquipmentReturns()
         if (!editingReportId && inLucru && currentId && data?.id) {
           const { error: updateError } = await supabase
             .from('pontaj')
@@ -1724,7 +2049,7 @@ function App() {
           : (latestReport.status ?? t('saved'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const checklistDoneCount = latestReport
-    ? [latestReport.checklist_work_time, latestReport.checklist_work_done, latestReport.checklist_equipment_back, latestReport.checklist_materials_back].filter(Boolean).length
+    ? [latestReport.checklist_work_done, latestReport.checklist_work_time, latestReport.checklist_equipment_back].filter(Boolean).length
     : 0
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
@@ -1732,7 +2057,7 @@ function App() {
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
     { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
-    { label: t('openTasks'), value: `${checklistDoneCount}/4 ${t('done')}`, tone: checklistDoneCount === 4 ? 'text-emerald-300' : 'text-slate-100', wide: true },
+    { label: t('openTasks'), value: `${checklistDoneCount}/3 ${t('done')}`, tone: checklistDoneCount === 3 ? 'text-emerald-300' : 'text-slate-100', wide: true },
   ]
 
   return (
@@ -1845,6 +2170,39 @@ function App() {
                     </button>
                   </div>
                 )}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setEquipmentPanelOpen(current => !current); incarcaInventory(); incarcaObjects(); }}
+                    className="w-full rounded-2xl border border-cyan-500/30 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-cyan-100 hover:bg-slate-800"
+                  >
+                    {t('takeEquipment')}
+                  </button>
+                  {equipmentPanelOpen && (
+                    <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900/95 p-3">
+                      <div className="mb-2 text-sm font-semibold text-white">{t('availableEquipment')}</div>
+                      <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                        {inventoryItems.filter(item => item.status === 'verfuegbar').length === 0 ? (
+                          <div className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-400">{t('noEquipment')}</div>
+                        ) : inventoryItems.filter(item => item.status === 'verfuegbar').map(item => (
+                          <div key={item.id} className="flex items-center justify-between gap-3 rounded-md bg-slate-800 px-3 py-2">
+                            <div>
+                              <div className="text-sm font-semibold text-white">{item.name}</div>
+                              <div className="text-xs text-slate-400">{item.category}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleTakeEquipment(item)}
+                              className="rounded-md bg-cyan-600 px-3 py-2 text-xs font-semibold text-white"
+                            >
+                              {t('take')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {dashboardCards.map(card => (
                     <div key={card.label} className={`rounded-xl bg-slate-900/80 p-3 min-h-[82px] ${card.wide ? 'col-span-2 sm:col-span-3' : ''}`}>
@@ -1905,14 +2263,14 @@ function App() {
                       </datalist>
                     </div>
                   </div>
-	                  <div className="mt-2">
-	                    <label className="text-slate-300 text-sm">{t('object')}</label>
+	                  <div className="mt-2 rounded-md bg-slate-800/60 p-3">
+	                    <label className="text-slate-100 text-sm font-semibold">🏢 {t('object')}</label>
 	                    <input
 	                      list="objects-list"
 	                      value={reportObject}
 	                      onChange={e=>handleReportObjectChange(e.target.value)}
-	                      placeholder={t('objectPlaceholder')}
-	                      className="w-full mt-1 px-3 py-2 rounded-md bg-slate-800 text-slate-100"
+	                      placeholder={t('objectSelect')}
+	                      className="w-full mt-2 px-3 py-2 rounded-md bg-slate-900 text-slate-100"
 	                    />
 	                    <datalist id="objects-list">
 	                      {objects.map(o => (
@@ -1929,23 +2287,24 @@ function App() {
                         {t('noObjects')}
                       </p>
 	                    )}
+                      {(selectedReportObject || reportObject) && (
+                        <div className="mt-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2">
+                          <div className="text-sm font-semibold text-white">{selectedReportObject?.name ?? reportObject}</div>
+                          {selectedReportObject?.address && <div className="text-xs text-slate-400">{selectedReportObject.address}</div>}
+                        </div>
+                      )}
 		                  </div>
 	                  <div>
 	                    <label className="text-slate-300 text-sm">{t('workers')}</label>
-	                    <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
-	                      {workers.length === 0 ? (
-	                        <div className="text-xs text-slate-400">{t('noWorkers')}</div>
-	                      ) : workers.map(worker => (
-	                        <label key={worker.id} className="flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
-	                          <input
-	                            type="checkbox"
-	                            checked={selectedWorkerIds.includes(worker.id)}
-	                            onChange={() => handleWorkerToggle(worker.id)}
-	                          />
-	                          <span>{worker.name}</span>
-	                        </label>
-	                      ))}
-	                    </div>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerPickerOpen(true)}
+                        className="mt-1 w-full rounded-md bg-slate-800 px-3 py-3 text-left text-sm font-semibold text-slate-100"
+                      >
+                        {t('selectWorkers')} ({selectedWorkerIds.length} {t('selectedCount')})
+                      </button>
+                      {workerSummary && <p className="mt-2 text-xs text-slate-300">{workerSummary}</p>}
+                      {workers.length === 0 && <div className="mt-2 text-xs text-slate-400">{t('noWorkers')}</div>}
 	                  </div>
 		                  <input
 	                    placeholder={t('orderNumber')}
@@ -1962,7 +2321,28 @@ function App() {
 	                    onChange={e=>setReportFahrzeitMinutes(e.target.value)}
 		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
 		                  />
-		                  <textarea placeholder={t('taskPlaceholder')} value={reportTask} onChange={e=>setReportTask(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" rows={4} />
+                  <div className="rounded-md bg-slate-800 p-3">
+                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('workTemplates')}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {workTemplateOptions.map(template => (
+                        <label key={template} className="flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={selectedWorkTemplates.includes(template)}
+                            onChange={() => handleWorkTemplateToggle(template)}
+                          />
+                          <span>{template}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <textarea
+                      placeholder={t('additionalNotes')}
+                      value={reportTask}
+                      onChange={e=>setReportTask(e.target.value)}
+                      className="mt-3 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      rows={3}
+                    />
+                  </div>
                   <div className="rounded-md bg-slate-800 p-3">
                     <div className="text-slate-100 font-semibold text-sm mb-3">{t('openTasks')}</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1978,6 +2358,41 @@ function App() {
                       ))}
                     </div>
                   </div>
+                  {openCheckouts.length > 0 && (
+                    <div className="rounded-md bg-slate-800 p-3">
+                      <div className="text-slate-100 font-semibold text-sm mb-3">{t('equipmentReturn')}</div>
+                      <div className="space-y-3">
+                        {openCheckouts.filter(row => row.user_id === user?.id || canEditLockedReports).map(checkout => {
+                          const state = equipmentReturnState[checkout.id] ?? {}
+                          return (
+                            <div key={checkout.id} className="rounded-md bg-slate-900 p-3">
+                              <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.item_name ?? checkout.inventory_item_id}</div>
+                              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-100">
+                                {['returned', 'clean', 'functional'].map(key => (
+                                  <label key={key} className="flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(state[key])}
+                                      onChange={e => handleEquipmentReturnChange(checkout.id, key, e.target.checked)}
+                                    />
+                                    <span>{key === 'returned' ? t('back') : key === 'clean' ? t('clean') : t('functional')}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              {(!state.functional || state.note) && (
+                                <input
+                                  value={state.note ?? ''}
+                                  onChange={e => handleEquipmentReturnChange(checkout.id, 'note', e.target.value)}
+                                  placeholder={t('damageNote')}
+                                  className="mt-2 w-full rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+                                />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 	                  <div className="rounded-md bg-slate-800 p-3">
 	                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 	                      <label className="text-slate-300 text-sm">{t('damage')}</label>
@@ -2114,6 +2529,129 @@ function App() {
 	            ) : view === 'materials' ? (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
 	                <h3 className="text-white font-semibold mb-3">{t('materials')}</h3>
+                  <form onSubmit={handleSaveMaterialRequest} className="mb-5 rounded-2xl border border-cyan-500/20 bg-slate-800/70 p-4 space-y-3">
+                    <div className="text-sm font-semibold text-cyan-100">{t('materialNeed')}</div>
+                    <input
+                      list="material-objects-list"
+                      value={materialRequestObject}
+                      onChange={e => handleMaterialRequestObjectChange(e.target.value)}
+                      placeholder={t('objectSelect')}
+                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                    />
+                    <datalist id="material-objects-list">
+                      {objects.map(o => <option key={o.id} value={o.name}>{o.address ?? ''}</option>)}
+                    </datalist>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        value={materialRequestAuftrag}
+                        onChange={e => setMaterialRequestAuftrag(e.target.value)}
+                        placeholder={t('orderNumber')}
+                        className="rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                      />
+                      <input
+                        type="date"
+                        value={materialRequestDate}
+                        onChange={e => setMaterialRequestDate(e.target.value)}
+                        className="rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                      />
+                    </div>
+                    <div className="space-y-2 max-h-80 overflow-auto pr-1">
+                      {materialItems.length === 0 ? (
+                        <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
+                      ) : materialItems.map(item => (
+                        <div key={item.id} className="rounded-md bg-slate-900 p-3">
+                          <label className="flex items-start gap-2 text-sm text-slate-100">
+                            <input
+                              type="checkbox"
+                              checked={selectedMaterialRequestIds.includes(item.id)}
+                              onChange={() => handleMaterialRequestToggle(item.id)}
+                              className="mt-1"
+                            />
+                            <span>
+                              <span className="block font-semibold text-white">{item.name}</span>
+                              <span className="block text-xs text-slate-400">{item.category}</span>
+                            </span>
+                          </label>
+                          {selectedMaterialRequestIds.includes(item.id) && (
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={materialRequestAmounts[item.id] ?? ''}
+                                onChange={e => setMaterialRequestAmounts(current => ({ ...current, [item.id]: e.target.value }))}
+                                placeholder={t('quantity')}
+                                className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+                              />
+                              <select
+                                value={materialRequestUnits[item.id] ?? item.unit ?? ''}
+                                onChange={e => setMaterialRequestUnits(current => ({ ...current, [item.id]: e.target.value }))}
+                                className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+                              >
+                                <option value="">{t('unit')}</option>
+                                {materialRequestUnitsList.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                              </select>
+                              <input
+                                value={materialRequestNotes[item.id] ?? ''}
+                                onChange={e => setMaterialRequestNotes(current => ({ ...current, [item.id]: e.target.value }))}
+                                placeholder={t('note')}
+                                className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <textarea
+                      value={materialRequestFreeText}
+                      onChange={e => setMaterialRequestFreeText(e.target.value)}
+                      placeholder={t('miscMaterial')}
+                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                      rows={2}
+                    />
+                    <textarea
+                      value={materialRequestNote}
+                      onChange={e => setMaterialRequestNote(e.target.value)}
+                      placeholder={t('note')}
+                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                      rows={2}
+                    />
+                    <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">
+                      {t('saveRequest')}
+                    </button>
+                  </form>
+                  {(isAdmin || isVorarbeiter) && (
+                    <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-800/70 p-4">
+                      <div className="mb-3 text-sm font-semibold text-white">{t('materialNeedOverview')}</div>
+                      <div className="space-y-3 max-h-80 overflow-auto pr-1">
+                        {materialRequests.length === 0 ? (
+                          <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
+                        ) : materialRequests.map(request => (
+                          <div key={request.id} className="rounded-md bg-slate-900 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-white">{request.objekt_name}</div>
+                                <div className="text-xs text-slate-400">{t('reportedBy')}: {request.reporter_name ?? request.reporter_email}</div>
+                              </div>
+                              <select
+                                value={request.status ?? 'offen'}
+                                onChange={e => handleMaterialRequestStatus(request.id, e.target.value)}
+                                className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-100"
+                              >
+                                {['offen', 'geplant', 'eingepackt', 'mitgenommen', 'erledigt'].map(status => <option key={status} value={status}>{status}</option>)}
+                              </select>
+                            </div>
+                            <div className="mt-2 space-y-1 text-xs text-slate-300">
+                              {(request.material_request_items ?? []).map(item => (
+                                <div key={item.id}>- {item.custom_name ?? materialItems.find(mat => mat.id === item.material_item_id)?.name ?? item.material_item_id}: {item.quantity ?? ''} {item.unit ?? ''}</div>
+                              ))}
+                              {request.note && <div>{t('note')}: {request.note}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 	                <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
 	                  {materialCategories.map(category => (
 	                    <button
@@ -2442,10 +2980,27 @@ function App() {
 	                  </>
 	                )
 	              ) : view === 'materials' ? (
-	                checklistItems.length === 0 ? (
-	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>
-	                ) : (
-	                  materialCategories.map(category => (
+                  <>
+                    {(isAdmin || isVorarbeiter) && (
+                      <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
+                        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('adminInventory')}</div>
+                        <div className="mt-3 space-y-2">
+                          {openCheckouts.length === 0 ? (
+                            <div className="rounded-lg bg-slate-950/70 px-3 py-2 text-sm text-slate-400">{t('noEntries')}</div>
+                          ) : openCheckouts.map(checkout => (
+                            <div key={checkout.id} className="rounded-lg bg-slate-950/70 px-3 py-2">
+                              <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.inventory_item_id}</div>
+                              <div className="text-xs text-slate-400">Mitarbeiter: {checkout.worker_name ?? checkout.worker_email}</div>
+                              {checkout.object_name && <div className="text-xs text-slate-400">Objekt: {checkout.object_name}</div>}
+                              <div className="text-xs text-slate-500">Seit: {formatTimeBerlin(checkout.taken_at)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+	                  {checklistItems.length === 0 ? (
+	                    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>
+	                  ) : materialCategories.map(category => (
 	                    <div key={category} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
 	                      <div className="flex items-center justify-between gap-3">
 	                        <div>
@@ -2469,14 +3024,49 @@ function App() {
 	                          ))}
 	                      </div>
 	                    </div>
-	                  ))
-	                )
+	                  ))}
+                  </>
 	              ) : (
 	                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>
 	              )}
             </div>
           </div>
         </div>
+        {workerPickerOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 flex items-end sm:items-center justify-center">
+            <div className="w-full max-w-lg rounded-3xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-white font-semibold">{t('selectWorkers')} ({selectedWorkerIds.length} {t('selectedCount')})</div>
+                <button type="button" onClick={() => setWorkerPickerOpen(false)} className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
+                  {t('cancel')}
+                </button>
+              </div>
+              <input
+                value={workerSearch}
+                onChange={e => setWorkerSearch(e.target.value)}
+                placeholder={t('workerSearch')}
+                className="mt-3 w-full rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+              />
+              <div className="mt-3 max-h-80 space-y-2 overflow-auto pr-1">
+                {filteredWorkers.length === 0 ? (
+                  <div className="rounded-md bg-slate-800 px-3 py-3 text-sm text-slate-400">{t('noWorkers')}</div>
+                ) : filteredWorkers.map(worker => (
+                  <label key={worker.id} className="flex items-center gap-3 rounded-md bg-slate-800 px-3 py-3 text-sm text-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={selectedWorkerIds.includes(worker.id)}
+                      onChange={() => handleWorkerToggle(worker.id)}
+                    />
+                    <span>{worker.name}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={() => setWorkerPickerOpen(false)} className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
+                {t('confirmSelection')}
+              </button>
+            </div>
+          </div>
+        )}
         {signatureModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/95 p-4 flex flex-col">
             <div className="flex items-center justify-between gap-3 mb-3">
