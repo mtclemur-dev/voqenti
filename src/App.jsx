@@ -493,7 +493,6 @@ function App() {
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
-  const integerMaterialUnits = ['Flasche', 'Kanister']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
     'Grundreinigung',
@@ -1323,9 +1322,7 @@ function App() {
       material_request_id: requestData.id,
       material_item_id: item.id,
       unit: materialRequestUnits[item.id] || item.unit || null,
-      quantity: materialRequestAmounts[item.id]
-        ? (integerMaterialUnits.includes(materialRequestUnits[item.id] || item.unit) ? Math.max(1, Math.round(Number(materialRequestAmounts[item.id]))) : Number(materialRequestAmounts[item.id]))
-        : null,
+      quantity: materialRequestAmounts[item.id] ? Math.max(1, Math.round(Number(materialRequestAmounts[item.id]))) : null,
       note: null,
     }))
 
@@ -2549,16 +2546,14 @@ function App() {
                             <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <input
                                 type="number"
-                                min="0"
-                                step={integerMaterialUnits.includes(materialRequestUnits[item.id] || item.unit) ? '1' : '0.01'}
+                                min="1"
+                                step="1"
+                                inputMode="numeric"
                                 value={materialRequestAmounts[item.id] ?? ''}
-                                onChange={e => {
-                                  const unit = materialRequestUnits[item.id] || item.unit
-                                  const value = integerMaterialUnits.includes(unit) && e.target.value
-                                    ? String(Math.max(1, Math.round(Number(e.target.value))))
-                                    : e.target.value
-                                  setMaterialRequestAmounts(current => ({ ...current, [item.id]: value }))
-                                }}
+                                onChange={e => setMaterialRequestAmounts(current => ({
+                                  ...current,
+                                  [item.id]: e.target.value ? String(Math.max(1, Math.round(Number(e.target.value)))) : '',
+                                }))}
                                 placeholder={t('quantity')}
                                 className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
                               />
@@ -2567,9 +2562,6 @@ function App() {
                                 onChange={e => {
                                   const nextUnit = e.target.value
                                   setMaterialRequestUnits(current => ({ ...current, [item.id]: nextUnit }))
-                                  if (integerMaterialUnits.includes(nextUnit) && materialRequestAmounts[item.id]) {
-                                    setMaterialRequestAmounts(current => ({ ...current, [item.id]: String(Math.max(1, Math.round(Number(current[item.id])))) }))
-                                  }
                                 }}
                                 className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
                               >
