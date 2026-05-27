@@ -390,7 +390,7 @@ function App() {
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [language, setLanguage] = useState('de')
-  const [view, setView] = useState('pontaj') // 'pontaj' | 'reports' | 'chat' | 'times'
+  const [view, setView] = useState('pontaj') // 'pontaj' | 'reports' | 'times' | 'materials'
   const [reports, setReports] = useState([])
   const [reportObject, setReportObject] = useState('')
   const [objects, setObjects] = useState([])
@@ -431,9 +431,6 @@ function App() {
   })
   const [editingReportId, setEditingReportId] = useState(null)
   const [existingDamageImageUrl, setExistingDamageImageUrl] = useState(null)
-  const [chatMessages, setChatMessages] = useState([])
-  const [chatText, setChatText] = useState('')
-  const [chatImage, setChatImage] = useState(null)
   const [workerEntries, setWorkerEntries] = useState([])
   const [dashboardPontaj, setDashboardPontaj] = useState([])
   const [dashboardReports, setDashboardReports] = useState([])
@@ -687,7 +684,7 @@ function App() {
     }
     const { data, error } = await supabase
       .from('tagesbericht')
-      .select('*')
+      .select('id, user_id, start_time, end_time, object_id, object_name, auftragsnummer, worker_ids, worker_names, task, task_de, damage_present, damage_description, damage_description_de, damage_image_url, customer_satisfied, customer_feedback, customer_feedback_de, worker_email, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, pontaj_id, status, email_sent, email_sent_at, entry_type, correction_reason, checklist_work_time, checklist_work_done, checklist_equipment_back, checklist_materials_back, customer_signed_at, locked_by_signature, locked_at, locked_reason, created_at, updated_at')
       .order('created_at', { ascending: false })
       .limit(10)
 
@@ -765,21 +762,6 @@ function App() {
     }
   }, [currentWorker, isAdmin, user, workerSearchDate, workerSearchId])
 
-  const incarcaChatMessages = useCallback(async () => {
-    if (!user) {
-      setChatMessages([])
-      return
-    }
-
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .limit(100)
-
-    if (!error) setChatMessages(data ?? [])
-  }, [user])
-
   // Initialize auth and listen for changes
   useEffect(() => {
     const initAuth = async () => {
@@ -845,29 +827,7 @@ function App() {
     if (view === 'materials') {
       incarcaChecklistItems()
     }
-    if (view === 'chat') {
-      incarcaChatMessages()
-    }
-  }, [incarcaChatMessages, incarcaChecklistItems, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
-
-  useEffect(() => {
-    if (!user) return
-
-    const channel = supabase
-      .channel('chat-messages-listener')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => {
-        incarcaChatMessages()
-      })
-      .subscribe()
-
-    return () => {
-      try {
-        supabase.removeChannel(channel)
-      } catch {
-        channel.unsubscribe()
-      }
-    }
-  }, [incarcaChatMessages, user])
+  }, [incarcaChecklistItems, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
 
   useEffect(() => {
     if (!user) return
@@ -1044,39 +1004,51 @@ function App() {
     clearSignature()
   }
 
-  const handleEditReport = (report) => {
+  const handleEditReport = async (report) => {
     const lockedBySignature = Boolean(report.locked_by_signature || report.customer_signed_at)
     if ((report.email_sent || report.status === 'Versendet' || lockedBySignature) && !canEditLockedReports) {
       alert(lockedBySignature ? t('signedLocked') : t('sentAlready'))
       return
     }
-    setEditingReportId(report.id)
-    setExistingDamageImageUrl(report.damage_image_url ?? null)
-    setReportObject(report.object_name ?? '')
-    setSelectedObjectId(report.object_id ?? '')
-    setReportTask(report.task ?? '')
-    setReportDamage(Boolean(report.damage_present))
-    setReportDamageDescription(report.damage_description ?? '')
+
+    const { data: fullReport, error } = await supabase
+      .from('tagesbericht')
+      .select('*')
+      .eq('id', report.id)
+      .single()
+
+    if (error || !fullReport) {
+      alert('Bericht konnte nicht geladen werden: ' + (error?.message ?? ''))
+      return
+    }
+
+    setEditingReportId(fullReport.id)
+    setExistingDamageImageUrl(fullReport.damage_image_url ?? null)
+    setReportObject(fullReport.object_name ?? '')
+    setSelectedObjectId(fullReport.object_id ?? '')
+    setReportTask(fullReport.task ?? '')
+    setReportDamage(Boolean(fullReport.damage_present))
+    setReportDamageDescription(fullReport.damage_description ?? '')
     setReportDamageImage(null)
-    setCustomerSatisfied(report.customer_satisfied !== false)
-    setCustomerFeedback(report.customer_feedback ?? '')
-    setReportFahrzeitMinutes(String(report.fahrzeit_minutes ?? ''))
-    setReportAuftragsnummer(report.auftragsnummer ?? '')
-    setReportEnd(report.end_time ? DateTime.fromISO(report.end_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : '')
-    setReportPauseMinutes(String(report.pause_minutes ?? 0))
-    setReportEntryType(report.entry_type ?? 'automatic')
-    setReportCorrectionReason(report.correction_reason ?? '')
-    setReportSignatureDataUrl(report.customer_signature_data ?? report.client_signature_data_url ?? null)
-    setCustomerSignedAt(report.customer_signed_at ?? null)
-    setHasSignature(Boolean(report.customer_signature_data ?? report.client_signature_data_url))
+    setCustomerSatisfied(fullReport.customer_satisfied !== false)
+    setCustomerFeedback(fullReport.customer_feedback ?? '')
+    setReportFahrzeitMinutes(String(fullReport.fahrzeit_minutes ?? ''))
+    setReportAuftragsnummer(fullReport.auftragsnummer ?? '')
+    setReportEnd(fullReport.end_time ? DateTime.fromISO(fullReport.end_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : '')
+    setReportPauseMinutes(String(fullReport.pause_minutes ?? 0))
+    setReportEntryType(fullReport.entry_type ?? 'automatic')
+    setReportCorrectionReason(fullReport.correction_reason ?? '')
+    setReportSignatureDataUrl(fullReport.customer_signature_data ?? fullReport.client_signature_data_url ?? null)
+    setCustomerSignedAt(fullReport.customer_signed_at ?? null)
+    setHasSignature(Boolean(fullReport.customer_signature_data ?? fullReport.client_signature_data_url))
     setReportChecklist({
-      workTime: Boolean(report.checklist_work_time ?? report.checklist?.workTime),
-      workDone: Boolean(report.checklist_work_done ?? report.checklist?.workDone),
-      equipmentBack: Boolean(report.checklist_equipment_back ?? report.checklist?.equipmentBack),
-      materialsBack: Boolean(report.checklist_materials_back ?? report.checklist?.materialsBack),
+      workTime: Boolean(fullReport.checklist_work_time ?? fullReport.checklist?.workTime),
+      workDone: Boolean(fullReport.checklist_work_done ?? fullReport.checklist?.workDone),
+      equipmentBack: Boolean(fullReport.checklist_equipment_back ?? fullReport.checklist?.equipmentBack),
+      materialsBack: Boolean(fullReport.checklist_materials_back ?? fullReport.checklist?.materialsBack),
     })
-    setSelectedWorkerIds(Array.isArray(report.worker_ids) ? report.worker_ids : [])
-    setReportStart(report.start_time ? DateTime.fromISO(report.start_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : new Date().toISOString().slice(0,16))
+    setSelectedWorkerIds(Array.isArray(fullReport.worker_ids) ? fullReport.worker_ids : [])
+    setReportStart(fullReport.start_time ? DateTime.fromISO(fullReport.start_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : new Date().toISOString().slice(0,16))
     setView('reports')
   }
 
@@ -1102,58 +1074,6 @@ function App() {
     }
 
     return data
-  }
-
-  const handleSendChatMessage = async (event) => {
-    event?.preventDefault()
-    if (!user) return alert('Bitte anmelden')
-    if (!chatText.trim() && !chatImage) return
-    const senderName = currentWorker?.name ?? user.user_metadata?.full_name ?? user.email ?? 'Benutzer'
-
-    let imageUrl = null
-    let imagePath = null
-
-    if (chatImage) {
-      imagePath = `${user.id}/${Date.now()}-${chatImage.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-      const { error: uploadError } = await supabase.storage
-        .from('chat-images')
-        .upload(imagePath, chatImage)
-
-      if (uploadError) {
-        alert('Bild konnte nicht hochgeladen werden: ' + uploadError.message)
-        return
-      }
-
-      const { data: publicData } = supabase.storage.from('chat-images').getPublicUrl(imagePath)
-      imageUrl = publicData?.publicUrl ?? null
-    }
-
-    const chatTranslation = await translateToGerman(chatText)
-    const chatPayload = {
-	      user_id: user.id,
-	      user_email: user.email ?? 'Benutzer',
-      sender_name: senderName,
-      message: chatText.trim() || null,
-      message_de: chatTranslation?.translated_text ?? null,
-      source_language: chatTranslation?.source_language ?? null,
-      translated_at: chatTranslation?.translated_text ? new Date().toISOString() : null,
-      image_url: imageUrl,
-      image_path: imagePath,
-    }
-
-	    let { error } = await supabase.from('chat_messages').insert([chatPayload])
-    if (error?.message?.includes("'sender_name'")) {
-      const { sender_name: _senderName, ...legacyChatPayload } = chatPayload
-      ;({ error } = await supabase.from('chat_messages').insert([legacyChatPayload]))
-    }
-
-    if (error) {
-      alert('Nachricht konnte nicht gesendet werden: ' + error.message)
-    } else {
-      setChatText('')
-      setChatImage(null)
-      incarcaChatMessages()
-    }
   }
 
   const handleReportObjectChange = (value) => {
@@ -1553,14 +1473,25 @@ function App() {
       alert(t('sentAlready'))
       return
     }
-    const startIso = report.start_time ?? new Date().toISOString()
-    const endIso = report.end_time ?? new Date().toISOString()
+    const { data: fullReport, error: reportLoadError } = await supabase
+      .from('tagesbericht')
+      .select('*')
+      .eq('id', report.id)
+      .single()
+
+    if (reportLoadError || !fullReport) {
+      alert('Bericht konnte nicht geladen werden: ' + (reportLoadError?.message ?? ''))
+      return
+    }
+
+    const startIso = fullReport.start_time ?? new Date().toISOString()
+    const endIso = fullReport.end_time ?? new Date().toISOString()
     const totals = {
-      total_seconds: minutesToSeconds(report.total_minutes),
-      pause_seconds: minutesToSeconds(report.pause_minutes),
-      auto_pause_seconds: minutesToSeconds(report.auto_pause_minutes),
-      fahrzeit_seconds: minutesToSeconds(report.fahrzeit_minutes),
-      effective_seconds: minutesToSeconds(report.effective_minutes),
+      total_seconds: minutesToSeconds(fullReport.total_minutes),
+      pause_seconds: minutesToSeconds(fullReport.pause_minutes),
+      auto_pause_seconds: minutesToSeconds(fullReport.auto_pause_minutes),
+      fahrzeit_seconds: minutesToSeconds(fullReport.fahrzeit_minutes),
+      effective_seconds: minutesToSeconds(fullReport.effective_minutes),
     }
 
     await supabase
@@ -1570,7 +1501,7 @@ function App() {
       .eq('user_id', user.id)
       .neq('status', 'Versendet')
 
-    await queueReportEmail(report.id, { ...report, status: 'Bereit zum Versand' }, totals, endIso, startIso)
+    await queueReportEmail(report.id, { ...fullReport, status: 'Bereit zum Versand' }, totals, endIso, startIso)
     incarcaReports()
   }
 
@@ -1868,7 +1799,6 @@ function App() {
 	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
 	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('report')}</button>
 	                <button onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`px-3 py-2 rounded-md text-sm ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('workTimes')}</button>
-	                {chatEnabled && <button onClick={() => { setView('chat'); incarcaChatMessages(); }} className={`px-3 py-2 rounded-md text-sm ${view==='chat' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('chat')}</button>}
 	                <button onClick={() => { setView('materials'); incarcaChecklistItems(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
 	              </div>
 	            )}
@@ -2296,26 +2226,6 @@ function App() {
 	                  </button>
 	                </div>
 	              </div>
-	            ) : chatEnabled && view === 'chat' ? (
-	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
-	                <h3 className="text-white font-semibold mb-3">{t('teamChat')}</h3>
-	                <form onSubmit={handleSendChatMessage} className="space-y-3">
-	                  <textarea
-	                    value={chatText}
-	                    onChange={e => setChatText(e.target.value)}
-	                    placeholder={t('messagePlaceholder')}
-	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                    rows={4}
-	                  />
-	                  <input
-	                    type="file"
-	                    accept="image/*"
-	                    onChange={e => setChatImage(e.target.files?.[0] ?? null)}
-	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                  />
-	                  <button type="submit" className="w-full px-4 py-3 bg-cyan-600 rounded-md text-white font-semibold">{t('sendMessage')}</button>
-	                </form>
-	              </div>
 	            ) : (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700 text-slate-300">
 	                {t('noEntries')}
@@ -2324,7 +2234,7 @@ function App() {
           </div>
 
 	          <div className="bg-slate-950/80 border border-slate-800 shadow-2xl rounded-[2rem] p-8 backdrop-blur-xl overflow-hidden">
-	            <h2 className="text-sm uppercase tracking-[0.3em] font-bold text-slate-400 mb-6 text-center">{view==='pontaj' ? t('currentActivity') : view === 'reports' ? t('reports') : view === 'times' ? t('workTimes') : view === 'materials' ? t('materials') : chatEnabled ? t('teamChat') : t('currentActivity')}</h2>
+	            <h2 className="text-sm uppercase tracking-[0.3em] font-bold text-slate-400 mb-6 text-center">{view==='pontaj' ? t('currentActivity') : view === 'reports' ? t('reports') : view === 'times' ? t('workTimes') : view === 'materials' ? t('materials') : t('currentActivity')}</h2>
 	            <div className="space-y-4">
 	              {view === 'pontaj' ? (
                 istoric.length === 0 ? (
@@ -2558,32 +2468,6 @@ function App() {
 	                            </div>
 	                          ))}
 	                      </div>
-	                    </div>
-	                  ))
-	                )
-	              ) : chatEnabled && view === 'chat' ? (
-	                chatMessages.length === 0 ? (
-	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noMessages')}</div>
-	                ) : (
-	                  chatMessages.map(message => (
-	                    <div key={message.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
-	                      <div className="text-xs text-slate-500 mb-2">
-	                        <span className="font-semibold text-slate-300">{message.sender_name ?? message.user_email ?? 'Benutzer'}</span>
-	                        {message.sender_name && message.user_email && (
-	                          <span className="text-slate-600"> ({message.user_email})</span>
-	                        )}
-	                        <span> · {formatDateBerlin(message.created_at)} {formatTimeBerlin(message.created_at)}</span>
-	                      </div>
-	                      {message.message && <div className="text-sm text-slate-200 whitespace-pre-wrap">{message.message}</div>}
-	                      {isAdmin && message.message_de && message.message_de !== message.message && (
-	                        <div className="mt-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-sm text-cyan-100 whitespace-pre-wrap">
-	                          <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 mb-1">Deutsch</div>
-	                          {message.message_de}
-	                        </div>
-	                      )}
-	                      {message.image_url && (
-	                        <img src={message.image_url} alt="Chat Anhang" className="mt-3 w-full rounded-md border border-slate-700" />
-	                      )}
 	                    </div>
 	                  ))
 	                )
