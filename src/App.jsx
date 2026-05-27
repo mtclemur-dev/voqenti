@@ -157,6 +157,7 @@ const translations = {
     availableEquipment: 'Verfuegbare Geraete',
     takenEquipment: 'Mitgenommene Geraete',
     equipmentReturn: 'Geraete-Rueckgabe',
+    equipmentReturnAllOk: 'Alle mitgenommenen Geraete sauber und funktionsfaehig zurueckgebracht',
     take: 'Mitnehmen',
     back: 'zurueckgebracht',
     clean: 'sauber',
@@ -468,18 +469,16 @@ function App() {
   const [materialRequests, setMaterialRequests] = useState([])
   const [materialRequestObject, setMaterialRequestObject] = useState('')
   const [materialRequestObjectId, setMaterialRequestObjectId] = useState('')
-  const [materialRequestAuftrag, setMaterialRequestAuftrag] = useState('')
   const [materialRequestDate, setMaterialRequestDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
   const [selectedMaterialRequestIds, setSelectedMaterialRequestIds] = useState([])
   const [materialRequestAmounts, setMaterialRequestAmounts] = useState({})
   const [materialRequestUnits, setMaterialRequestUnits] = useState({})
-  const [materialRequestNotes, setMaterialRequestNotes] = useState({})
   const [materialRequestFreeText, setMaterialRequestFreeText] = useState('')
-  const [materialRequestNote, setMaterialRequestNote] = useState('')
   const [inventoryItems, setInventoryItems] = useState([])
   const [openCheckouts, setOpenCheckouts] = useState([])
   const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
-  const [equipmentReturnState, setEquipmentReturnState] = useState({})
+  const [equipmentReturnAllOk, setEquipmentReturnAllOk] = useState(false)
+  const [equipmentReturnNote, setEquipmentReturnNote] = useState('')
   const [workerSearchDate, setWorkerSearchDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
@@ -510,7 +509,6 @@ function App() {
   const reportChecklistItems = [
     ['workDone', t('checklistWorkDone')],
     ['workTime', t('checklistWorkTime')],
-    ['equipmentBack', t('checklistEquipmentBack')],
   ]
 
   const secondsBetween = (start, end) => {
@@ -704,9 +702,9 @@ function App() {
     }
 
     const { count, error: materialError } = await supabase
-      .from('material_usage_entries')
+      .from('material_requests')
       .select('id', { count: 'exact', head: true })
-      .eq('usage_date', today)
+      .eq('request_date', today)
 
     setDashboardMaterialCount(materialError ? 0 : (count ?? 0))
   }, [user])
@@ -946,7 +944,6 @@ function App() {
       incarcaReports()
       incarcaObjects()
       incarcaWorkers()
-      incarcaChecklistItems()
       incarcaInventory()
     }
     if (view === 'times') {
@@ -954,12 +951,11 @@ function App() {
       incarcaWorkerEntries()
     }
     if (view === 'materials') {
-      incarcaChecklistItems()
       incarcaObjects()
       incarcaMaterialbedarf()
       incarcaInventory()
     }
-  }, [incarcaChecklistItems, incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
+  }, [incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
 
   useEffect(() => {
     if (!user) return
@@ -972,7 +968,7 @@ function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'email_outbox' }, () => {
         incarcaDashboardSummary()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'material_usage_entries' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'material_requests' }, () => {
         incarcaDashboardSummary()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_checkouts' }, () => {
@@ -1135,7 +1131,8 @@ function App() {
     setReportEntryType('automatic')
     setReportCorrectionReason('')
     setReportChecklist({ workTime: false, workDone: false, equipmentBack: false, materialsBack: false })
-    setEquipmentReturnState({})
+    setEquipmentReturnAllOk(false)
+    setEquipmentReturnNote('')
     setReportSignatureDataUrl(null)
     setCustomerSignedAt(null)
     setSignatureModalOpen(false)
@@ -1267,13 +1264,13 @@ function App() {
       .insert([{
         objekt_id: materialRequestObjectId || null,
         objekt_name: materialRequestObject.trim(),
-        auftrag_id: materialRequestAuftrag.trim() || null,
+        auftrag_id: null,
         user_id: user.id,
         reporter_name: currentWorker?.name ?? user.email ?? 'Benutzer',
         reporter_email: user.email ?? null,
         request_date: materialRequestDate,
         status: 'offen',
-        note: materialRequestNote.trim() || null,
+        note: null,
       }])
       .select('id')
       .single()
@@ -1288,7 +1285,7 @@ function App() {
       material_item_id: item.id,
       quantity: materialRequestAmounts[item.id] ? Number(materialRequestAmounts[item.id]) : null,
       unit: materialRequestUnits[item.id] || item.unit || null,
-      note: materialRequestNotes[item.id]?.trim() || null,
+      note: null,
     }))
 
     if (materialRequestFreeText.trim()) {
@@ -1312,9 +1309,7 @@ function App() {
     setSelectedMaterialRequestIds([])
     setMaterialRequestAmounts({})
     setMaterialRequestUnits({})
-    setMaterialRequestNotes({})
     setMaterialRequestFreeText('')
-    setMaterialRequestNote('')
     incarcaMaterialbedarf()
     alert(t('requestSaved'))
   }
@@ -1364,42 +1359,25 @@ function App() {
     incarcaInventory()
   }
 
-  const handleEquipmentReturnChange = (checkoutId, key, value) => {
-    setEquipmentReturnState(current => ({
-      ...current,
-      [checkoutId]: {
-        returned: false,
-        clean: false,
-        functional: false,
-        note: '',
-        ...(current[checkoutId] ?? {}),
-        [key]: value,
-      },
-    }))
-  }
-
   const saveEquipmentReturns = async () => {
-    const selectedReturns = Object.entries(equipmentReturnState)
-      .map(([checkoutId, state]) => ({ checkoutId: Number(checkoutId), ...state }))
-      .filter(state => state.returned || state.clean || state.functional || state.note)
+    const ownOpenCheckouts = openCheckouts.filter(row => row.user_id === user?.id)
+    const note = equipmentReturnNote.trim()
+    if (ownOpenCheckouts.length === 0 || (!equipmentReturnAllOk && !note)) return
 
-    for (const item of selectedReturns) {
-      const checkout = openCheckouts.find(row => row.id === item.checkoutId)
-      if (!checkout) continue
-      const isOk = Boolean(item.returned && item.clean && item.functional && !item.note?.trim())
-      const nextStatus = isOk ? 'verfuegbar' : 'pruefen'
+    const nextStatus = equipmentReturnAllOk ? 'verfuegbar' : 'pruefen'
 
+    for (const checkout of ownOpenCheckouts) {
       await supabase
         .from('inventory_checkouts')
         .update({
-          returned_at: item.returned ? new Date().toISOString() : null,
-          return_clean: Boolean(item.clean),
-          return_functional: Boolean(item.functional),
-          return_note: item.note?.trim() || null,
+          returned_at: new Date().toISOString(),
+          return_clean: equipmentReturnAllOk,
+          return_functional: equipmentReturnAllOk,
+          return_note: note || null,
           status: nextStatus,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', item.checkoutId)
+        .eq('id', checkout.id)
 
       await supabase
         .from('inventory_items')
@@ -1407,10 +1385,9 @@ function App() {
         .eq('id', checkout.inventory_item_id)
     }
 
-    if (selectedReturns.length > 0) {
-      setEquipmentReturnState({})
-      incarcaInventory()
-    }
+    setEquipmentReturnAllOk(false)
+    setEquipmentReturnNote('')
+    incarcaInventory()
   }
 
   const handleChecklistToggle = (itemId) => {
@@ -2049,7 +2026,7 @@ function App() {
           : (latestReport.status ?? t('saved'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const checklistDoneCount = latestReport
-    ? [latestReport.checklist_work_done, latestReport.checklist_work_time, latestReport.checklist_equipment_back].filter(Boolean).length
+    ? [latestReport.checklist_work_done, latestReport.checklist_work_time].filter(Boolean).length
     : 0
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
@@ -2057,7 +2034,7 @@ function App() {
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
     { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
-    { label: t('openTasks'), value: `${checklistDoneCount}/3 ${t('done')}`, tone: checklistDoneCount === 3 ? 'text-emerald-300' : 'text-slate-100', wide: true },
+    { label: t('openTasks'), value: `${checklistDoneCount}/2 ${t('done')}`, tone: checklistDoneCount === 2 ? 'text-emerald-300' : 'text-slate-100', wide: true },
   ]
 
   return (
@@ -2358,38 +2335,33 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  {openCheckouts.length > 0 && (
+                  {openCheckouts.filter(row => row.user_id === user?.id).length > 0 && (
                     <div className="rounded-md bg-slate-800 p-3">
                       <div className="text-slate-100 font-semibold text-sm mb-3">{t('equipmentReturn')}</div>
-                      <div className="space-y-3">
-                        {openCheckouts.filter(row => row.user_id === user?.id || canEditLockedReports).map(checkout => {
-                          const state = equipmentReturnState[checkout.id] ?? {}
-                          return (
-                            <div key={checkout.id} className="rounded-md bg-slate-900 p-3">
-                              <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.item_name ?? checkout.inventory_item_id}</div>
-                              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-100">
-                                {['returned', 'clean', 'functional'].map(key => (
-                                  <label key={key} className="flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(state[key])}
-                                      onChange={e => handleEquipmentReturnChange(checkout.id, key, e.target.checked)}
-                                    />
-                                    <span>{key === 'returned' ? t('back') : key === 'clean' ? t('clean') : t('functional')}</span>
-                                  </label>
-                                ))}
-                              </div>
-                              {(!state.functional || state.note) && (
-                                <input
-                                  value={state.note ?? ''}
-                                  onChange={e => handleEquipmentReturnChange(checkout.id, 'note', e.target.value)}
-                                  placeholder={t('damageNote')}
-                                  className="mt-2 w-full rounded-md bg-slate-800 px-3 py-2 text-slate-100"
-                                />
-                              )}
-                            </div>
-                          )
-                        })}
+                      <div className="rounded-md bg-slate-900 p-3">
+                        <div className="text-xs text-slate-400">
+                          {openCheckouts
+                            .filter(row => row.user_id === user?.id)
+                            .map(checkout => checkout.inventory_items?.name ?? checkout.inventory_item_id)
+                            .join(', ')}
+                        </div>
+                        <label className="mt-3 flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={equipmentReturnAllOk}
+                            onChange={e => setEquipmentReturnAllOk(e.target.checked)}
+                          />
+                          <span>{t('equipmentReturnAllOk')}</span>
+                        </label>
+                        {!equipmentReturnAllOk && (
+                          <textarea
+                            value={equipmentReturnNote}
+                            onChange={e => setEquipmentReturnNote(e.target.value)}
+                            placeholder={t('damageNote')}
+                            className="mt-2 w-full rounded-md bg-slate-800 px-3 py-2 text-slate-100"
+                            rows={2}
+                          />
+                        )}
                       </div>
                     </div>
                   )}
@@ -2541,20 +2513,12 @@ function App() {
                     <datalist id="material-objects-list">
                       {objects.map(o => <option key={o.id} value={o.name}>{o.address ?? ''}</option>)}
                     </datalist>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        value={materialRequestAuftrag}
-                        onChange={e => setMaterialRequestAuftrag(e.target.value)}
-                        placeholder={t('orderNumber')}
-                        className="rounded-md bg-slate-900 px-3 py-2 text-slate-100"
-                      />
-                      <input
-                        type="date"
-                        value={materialRequestDate}
-                        onChange={e => setMaterialRequestDate(e.target.value)}
-                        className="rounded-md bg-slate-900 px-3 py-2 text-slate-100"
-                      />
-                    </div>
+                    <input
+                      type="date"
+                      value={materialRequestDate}
+                      onChange={e => setMaterialRequestDate(e.target.value)}
+                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                    />
                     <div className="space-y-2 max-h-80 overflow-auto pr-1">
                       {materialItems.length === 0 ? (
                         <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
@@ -2573,7 +2537,7 @@ function App() {
                             </span>
                           </label>
                           {selectedMaterialRequestIds.includes(item.id) && (
-                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <input
                                 type="number"
                                 min="0"
@@ -2591,12 +2555,6 @@ function App() {
                                 <option value="">{t('unit')}</option>
                                 {materialRequestUnitsList.map(unit => <option key={unit} value={unit}>{unit}</option>)}
                               </select>
-                              <input
-                                value={materialRequestNotes[item.id] ?? ''}
-                                onChange={e => setMaterialRequestNotes(current => ({ ...current, [item.id]: e.target.value }))}
-                                placeholder={t('note')}
-                                className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
-                              />
                             </div>
                           )}
                         </div>
@@ -2606,13 +2564,6 @@ function App() {
                       value={materialRequestFreeText}
                       onChange={e => setMaterialRequestFreeText(e.target.value)}
                       placeholder={t('miscMaterial')}
-                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
-                      rows={2}
-                    />
-                    <textarea
-                      value={materialRequestNote}
-                      onChange={e => setMaterialRequestNote(e.target.value)}
-                      placeholder={t('note')}
                       className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
                       rows={2}
                     />
@@ -2652,117 +2603,6 @@ function App() {
                       </div>
                     </div>
                   )}
-	                <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-	                  {materialCategories.map(category => (
-	                    <button
-	                      key={category}
-	                      type="button"
-	                      onClick={() => selectMaterialCategory(category)}
-	                      className={`px-3 py-3 rounded-md text-sm font-semibold ${materialCategory === category ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}
-	                    >
-	                      {t(category)}
-	                    </button>
-	                  ))}
-	                </div>
-	                {isAdmin && (
-	                  <form onSubmit={handleAddChecklistItem} className="space-y-3 mb-5">
-	                    <div className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-300">
-	                      {t('showCategory')}: <span className="font-semibold text-white">{t(materialCategory)}</span>
-	                    </div>
-	                    <input
-	                      value={newChecklistItem.name}
-	                      onChange={e => setNewChecklistItem(current => ({ ...current, name: e.target.value }))}
-	                      placeholder={t('itemName')}
-	                      className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                    />
-	                    <textarea
-	                      value={newChecklistItem.description}
-	                      onChange={e => setNewChecklistItem(current => ({ ...current, description: e.target.value }))}
-	                      placeholder={t('itemDescription')}
-	                      className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                      rows={2}
-	                    />
-	                    <textarea
-	                      value={newChecklistItem.warning}
-	                      onChange={e => setNewChecklistItem(current => ({ ...current, warning: e.target.value }))}
-	                      placeholder={t('itemWarning')}
-	                      className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                      rows={2}
-	                    />
-	                    <input
-	                      value={newChecklistItem.safety_sheet_url}
-	                      onChange={e => setNewChecklistItem(current => ({ ...current, safety_sheet_url: e.target.value }))}
-	                      placeholder={t('itemSafetyUrl')}
-	                      className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                    />
-	                    <button type="submit" className="w-full px-4 py-3 bg-cyan-600 rounded-md text-white font-semibold">
-	                      {t('addChecklistItem')}
-	                    </button>
-	                  </form>
-	                )}
-	                <div className="space-y-3">
-	                  <div className="rounded-md bg-slate-800/70 border border-slate-700">
-	                    <div className="px-3 py-2 text-sm font-semibold text-slate-100">{t(materialCategory)} A-Z</div>
-	                    <div className="space-y-2 px-3 pb-3">
-	                      {checklistItems.filter(item => item.category === materialCategory).length === 0 ? (
-	                        <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
-	                      ) : checklistItems
-	                        .filter(item => item.category === materialCategory)
-	                        .sort((a, b) => a.name.localeCompare(b.name, 'de'))
-	                        .map(item => (
-	                          <label key={item.id} className="block rounded-md bg-slate-900 px-3 py-2 text-sm">
-	                            <span className="flex items-start gap-2">
-	                              <input
-	                                type="checkbox"
-	                                checked={selectedChecklistItemIds.includes(item.id)}
-	                                onChange={() => handleChecklistToggle(item.id)}
-	                                className="mt-1"
-	                              />
-	                              <span>
-	                                <span className="block font-semibold text-white">{item.name}</span>
-	                                {item.description && <span className="block text-slate-300 mt-1">{item.description}</span>}
-	                                  {selectedChecklistItemIds.includes(item.id) && item.warning && (
-	                                    <span className="mt-2 block rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-	                                      {t('warning')}: {item.warning}
-	                                    </span>
-	                                  )}
-	                                  {selectedChecklistItemIds.includes(item.id) && (
-	                                    <span className="mt-2 grid grid-cols-2 gap-2">
-	                                      <input
-	                                        type="number"
-	                                        min="0"
-	                                        step="0.01"
-	                                        value={materialUsageAmounts[item.id] ?? ''}
-	                                        onChange={e => setMaterialUsageAmounts(current => ({ ...current, [item.id]: e.target.value }))}
-	                                        onClick={e => e.stopPropagation()}
-	                                        placeholder={t('quantity')}
-	                                        className="px-2 py-1 rounded-md bg-slate-800 text-slate-100"
-	                                      />
-	                                      <input
-	                                        value={materialUsageUnits[item.id] ?? ''}
-	                                        onChange={e => setMaterialUsageUnits(current => ({ ...current, [item.id]: e.target.value }))}
-	                                        onClick={e => e.stopPropagation()}
-	                                        placeholder={t('unit')}
-	                                        className="px-2 py-1 rounded-md bg-slate-800 text-slate-100"
-	                                      />
-	                                    </span>
-	                                  )}
-	                                  {item.safety_sheet_url && <a href={item.safety_sheet_url} target="_blank" rel="noreferrer" className="text-cyan-300 mt-1 inline-block">{t('safetySheet')}</a>}
-	                                </span>
-	                              </span>
-	                            </label>
-	                          ))}
-	                    </div>
-	                  </div>
-	                  <button
-	                    type="button"
-	                    onClick={handleSaveMaterialUsage}
-	                    className="w-full px-4 py-3 bg-emerald-600 rounded-md text-white font-semibold disabled:bg-slate-700 disabled:text-slate-400"
-	                    disabled={selectedChecklistItemIds.length === 0}
-	                  >
-	                    {t('saveUsage')}
-	                  </button>
-	                </div>
 	              </div>
 	            ) : (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700 text-slate-300">
@@ -2867,8 +2707,6 @@ function App() {
                             {[
                               [r.checklist_work_time, t('checklistWorkTime')],
                               [r.checklist_work_done, t('checklistWorkDone')],
-                              [r.checklist_equipment_back, t('checklistEquipmentBack')],
-                              [r.checklist_materials_back, t('checklistMaterialsBack')],
                             ].map(([checked, label]) => (
                               <div key={label} className={`rounded-lg border px-2 py-2 ${checked ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100' : 'border-slate-700 bg-slate-950/60 text-slate-400'}`}>
                                 {checked ? '[x]' : '[ ]'} {label}
@@ -2998,33 +2836,6 @@ function App() {
                         </div>
                       </div>
                     )}
-	                  {checklistItems.length === 0 ? (
-	                    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>
-	                  ) : materialCategories.map(category => (
-	                    <div key={category} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
-	                      <div className="flex items-center justify-between gap-3">
-	                        <div>
-	                          <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('materialCatalog')}</div>
-	                          <div className="mt-1 text-white font-semibold">{t(category)}</div>
-	                        </div>
-	                        <div className="text-sm font-bold text-cyan-300">
-	                          {checklistItems.filter(item => item.category === category).length}
-	                        </div>
-	                      </div>
-	                      <div className="mt-3 space-y-2">
-	                        {checklistItems
-	                          .filter(item => item.category === category)
-	                          .sort((a, b) => a.name.localeCompare(b.name, 'de'))
-	                          .slice(0, 8)
-	                          .map(item => (
-	                            <div key={item.id} className="rounded-lg bg-slate-950/70 px-3 py-2">
-	                              <div className="text-sm font-semibold text-slate-100">{item.name}</div>
-	                              {item.warning && <div className="mt-1 text-xs text-amber-200">{t('warning')}: {item.warning}</div>}
-	                            </div>
-	                          ))}
-	                      </div>
-	                    </div>
-	                  ))}
                   </>
 	              ) : (
 	                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>

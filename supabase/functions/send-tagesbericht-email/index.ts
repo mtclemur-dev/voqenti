@@ -419,7 +419,6 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
   const checklistRows: Array<[boolean | undefined, string]> = [
     [payload.checklist?.work_done, 'Arbeit ordnungsgemaess ausgefuehrt'],
     [payload.checklist?.work_time, 'Arbeitszeit erfasst'],
-    [payload.checklist?.equipment_back, 'Firmengeraete sauber und funktionsfaehig'],
   ]
   checklistRows.forEach(([checked, label], index) => {
     const x = left + (index % 2) * 250
