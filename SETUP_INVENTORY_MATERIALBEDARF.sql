@@ -160,6 +160,7 @@ DROP POLICY IF EXISTS "Material requests insert own" ON public.material_requests
 DROP POLICY IF EXISTS "Material requests update allowed" ON public.material_requests;
 DROP POLICY IF EXISTS "Material request items select" ON public.material_request_items;
 DROP POLICY IF EXISTS "Material request items insert" ON public.material_request_items;
+DROP POLICY IF EXISTS "Material request items delete own" ON public.material_request_items;
 DROP POLICY IF EXISTS "Inventory items read" ON public.inventory_items;
 DROP POLICY IF EXISTS "Inventory items update allowed" ON public.inventory_items;
 DROP POLICY IF EXISTS "Inventory checkouts select" ON public.inventory_checkouts;
@@ -237,6 +238,17 @@ CREATE POLICY "Material request items insert"
       SELECT 1 FROM public.material_requests request
       WHERE request.id = material_request_id
         AND request.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Material request items delete own"
+  ON public.material_request_items FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.material_requests request
+      WHERE request.id = material_request_id
+        AND request.user_id = auth.uid()
+        AND COALESCE(request.summary_sent, false) = false
     )
   );
 

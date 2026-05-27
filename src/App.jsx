@@ -157,6 +157,9 @@ const translations = {
     status: 'Status',
     reportedBy: 'Gemeldet von',
     saveRequest: 'Bedarf speichern',
+    updateRequest: 'Bedarf aktualisieren',
+    editRequest: 'Bearbeiten',
+    savedRequests: 'Gespeicherter Bedarf',
     send: 'Senden',
     sendMaterialSummary: 'Materialbedarf senden',
     materialSummarySent: 'Materialbedarf wurde gesendet',
@@ -472,6 +475,7 @@ function App() {
   const [materialRequestUnits, setMaterialRequestUnits] = useState({})
   const [materialRequestFreeText, setMaterialRequestFreeText] = useState('')
   const [materialSummarySending, setMaterialSummarySending] = useState(false)
+  const [editingMaterialRequestId, setEditingMaterialRequestId] = useState(null)
   const [inventoryItems, setInventoryItems] = useState([])
   const [openCheckouts, setOpenCheckouts] = useState([])
   const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
@@ -840,7 +844,8 @@ function App() {
 
     const { data: requestData, error: requestError } = await supabase
       .from('material_requests')
-      .select('*, material_request_items(*)')
+      .select('*, material_request_items(*, material_items(name))')
+      .eq('request_date', materialRequestDate)
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -850,7 +855,7 @@ function App() {
     } else {
       setMaterialRequests(requestData ?? [])
     }
-  }, [])
+  }, [materialRequestDate])
 
   const incarcaInventory = useCallback(async () => {
     if (!user) {
@@ -1297,21 +1302,37 @@ function App() {
     if (selectedMaterialRequestIds.length === 0 && !materialRequestFreeText.trim()) return alert('Material oder Freitext eingeben')
 
     const selectedItems = materialItems.filter(item => selectedMaterialRequestIds.includes(item.id))
-    const { data: requestData, error: requestError } = await supabase
-      .from('material_requests')
-      .insert([{
+    const requestPayload = {
         objekt_id: materialRequestObjectId || null,
         objekt_name: materialRequestObject.trim(),
         auftrag_id: null,
-        user_id: user.id,
         reporter_name: currentWorker?.name ?? user.email ?? 'Benutzer',
         reporter_email: user.email ?? null,
         request_date: materialRequestDate,
-        status: 'offen',
         note: null,
-      }])
+        updated_at: new Date().toISOString(),
+      }
+
+    const requestQuery = editingMaterialRequestId
+      ? supabase
+        .from('material_requests')
+        .update(requestPayload)
+        .eq('id', editingMaterialRequestId)
+        .eq('user_id', user.id)
+        .eq('summary_sent', false)
+        .select('id')
+        .single()
+      : supabase
+        .from('material_requests')
+        .insert([{
+          ...requestPayload,
+          user_id: user.id,
+          status: 'offen',
+        }])
       .select('id')
       .single()
+
+    const { data: requestData, error: requestError } = await requestQuery
 
     if (requestError) {
       alert('Materialbedarf konnte nicht gespeichert werden: ' + requestError.message)
@@ -1336,6 +1357,17 @@ function App() {
       })
     }
 
+    if (editingMaterialRequestId) {
+      const { error: deleteError } = await supabase
+        .from('material_request_items')
+        .delete()
+        .eq('material_request_id', requestData.id)
+      if (deleteError) {
+        alert('Alte Positionen konnten nicht ersetzt werden: ' + deleteError.message)
+        return
+      }
+    }
+
     if (rows.length > 0) {
       const { error: itemError } = await supabase.from('material_request_items').insert(rows)
       if (itemError) {
@@ -1350,8 +1382,49 @@ function App() {
     setMaterialRequestFreeText('')
     setMaterialRequestObject('')
     setMaterialRequestObjectId('')
+    setEditingMaterialRequestId(null)
     incarcaMaterialbedarf()
     alert(t('requestSaved'))
+  }
+
+  const handleEditMaterialRequest = (request) => {
+    if (request.summary_sent) {
+      alert('Dieser Bedarf wurde bereits gesendet.')
+      return
+    }
+    setEditingMaterialRequestId(request.id)
+    setMaterialRequestObject(request.objekt_name ?? '')
+    setMaterialRequestObjectId(request.objekt_id ?? '')
+    setMaterialRequestDate(request.request_date ?? materialRequestDate)
+    const itemIds = []
+    const amounts = {}
+    const units = {}
+    const freeText = []
+
+    ;(request.material_request_items ?? []).forEach(item => {
+      if (item.material_item_id) {
+        itemIds.push(item.material_item_id)
+        amounts[item.material_item_id] = item.quantity ? String(Math.max(1, Math.round(Number(item.quantity)))) : ''
+        units[item.material_item_id] = item.unit ?? ''
+      } else if (item.custom_name) {
+        freeText.push(item.custom_name)
+      }
+    })
+
+    setSelectedMaterialRequestIds(itemIds)
+    setMaterialRequestAmounts(amounts)
+    setMaterialRequestUnits(units)
+    setMaterialRequestFreeText(freeText.join('\n'))
+  }
+
+  const resetMaterialRequestForm = () => {
+    setEditingMaterialRequestId(null)
+    setMaterialRequestObject('')
+    setMaterialRequestObjectId('')
+    setSelectedMaterialRequestIds([])
+    setMaterialRequestAmounts({})
+    setMaterialRequestUnits({})
+    setMaterialRequestFreeText('')
   }
 
   const handleMaterialRequestStatus = async (requestId, status) => {
@@ -2581,8 +2654,17 @@ function App() {
                       rows={2}
                     />
                     <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">
-                      {t('saveRequest')}
+                      {editingMaterialRequestId ? t('updateRequest') : t('saveRequest')}
                     </button>
+                    {editingMaterialRequestId && (
+                      <button
+                        type="button"
+                        onClick={resetMaterialRequestForm}
+                        className="w-full rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white"
+                      >
+                        {t('cancel')}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleSendMaterialSummary}
@@ -2592,38 +2674,6 @@ function App() {
                       {materialSummarySending ? '...' : t('sendMaterialSummary')}
                     </button>
                   </form>
-                  {(isAdmin || isVorarbeiter) && (
-                    <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-800/70 p-4">
-                      <div className="mb-3 text-sm font-semibold text-white">{t('materialNeedOverview')}</div>
-                      <div className="space-y-3 max-h-80 overflow-auto pr-1">
-                        {materialRequests.length === 0 ? (
-                          <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
-                        ) : materialRequests.map(request => (
-                          <div key={request.id} className="rounded-md bg-slate-900 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold text-white">{request.objekt_name}</div>
-                                <div className="text-xs text-slate-400">{t('reportedBy')}: {request.reporter_name ?? request.reporter_email}</div>
-                              </div>
-                              <select
-                                value={request.status ?? 'offen'}
-                                onChange={e => handleMaterialRequestStatus(request.id, e.target.value)}
-                                className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-100"
-                              >
-                                {['offen', 'geplant', 'eingepackt', 'mitgenommen', 'erledigt'].map(status => <option key={status} value={status}>{status}</option>)}
-                              </select>
-                            </div>
-                            <div className="mt-2 space-y-1 text-xs text-slate-300">
-                              {(request.material_request_items ?? []).map(item => (
-                                <div key={item.id}>- {item.custom_name ?? materialItems.find(mat => mat.id === item.material_item_id)?.name ?? item.material_item_id}: {item.quantity ?? ''} {item.unit ?? ''}</div>
-                              ))}
-                              {request.note && <div>{t('note')}: {request.note}</div>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 	              </div>
 	            ) : (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700 text-slate-300">
@@ -2840,6 +2890,63 @@ function App() {
 	                )
 	              ) : view === 'materials' ? (
                   <>
+                    <div className="rounded-3xl border border-cyan-500/20 bg-slate-900/80 p-5 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('savedRequests')}</div>
+                          <div className="mt-1 text-white font-semibold">{materialRequestDate}</div>
+                        </div>
+                        <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200">
+                          {materialRequests.length}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {materialRequests.length === 0 ? (
+                          <div className="rounded-lg bg-slate-950/70 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
+                        ) : materialRequests.map(request => (
+                          <div key={request.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-white">{request.objekt_name}</div>
+                                <div className="text-xs text-slate-500">{t('reportedBy')}: {request.reporter_name ?? request.reporter_email}</div>
+                              </div>
+                              {(isAdmin || isVorarbeiter) ? (
+                                <select
+                                  value={request.status ?? 'offen'}
+                                  onChange={e => handleMaterialRequestStatus(request.id, e.target.value)}
+                                  className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-100"
+                                >
+                                  {['offen', 'geplant', 'eingepackt', 'mitgenommen', 'erledigt'].map(status => <option key={status} value={status}>{status}</option>)}
+                                </select>
+                              ) : (
+                                <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] font-semibold text-slate-300">{request.status ?? 'offen'}</span>
+                              )}
+                            </div>
+                            <div className="mt-3 space-y-1 text-xs text-slate-300">
+                              {(request.material_request_items ?? []).map(item => {
+                                const itemName = item.custom_name ?? item.material_items?.name ?? materialItems.find(mat => mat.id === item.material_item_id)?.name ?? item.material_item_id
+                                return (
+                                  <div key={item.id}>- {itemName}{item.quantity ? `: ${Math.round(Number(item.quantity))}` : ''}{item.unit ? ` ${item.unit}` : ''}</div>
+                                )
+                              })}
+                            </div>
+                            {!request.summary_sent ? (
+                              <button
+                                type="button"
+                                onClick={() => handleEditMaterialRequest(request)}
+                                className="mt-3 w-full rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white"
+                              >
+                                {t('editRequest')}
+                              </button>
+                            ) : (
+                              <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-200">
+                                {t('sentAlready')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     {(isAdmin || isVorarbeiter) && (
                       <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
                         <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('adminInventory')}</div>
