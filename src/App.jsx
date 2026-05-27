@@ -40,6 +40,22 @@ const translations = {
     total: 'Total',
     effective: 'Effektiv',
     pause: 'Pause',
+    workTimeToday: 'Arbeitszeit heute',
+    currentOrder: 'Aktueller Auftrag',
+    reportStatus: 'Tagesbericht',
+    photosToday: 'Fotos heute',
+    openTasks: 'Offene Aufgaben',
+    noActiveOrder: 'Kein aktiver Auftrag',
+    reportOpen: 'Tagesbericht offen',
+    noPhotos: 'Keine Fotos',
+    draft: 'Entwurf',
+    saved: 'Gespeichert',
+    readyToSend: 'Bereit zum Versand',
+    sent: 'Versendet',
+    workTimeOk: 'Arbeitszeit OK',
+    photosMissing: 'Fotos fehlen',
+    materialReported: 'Material gemeldet',
+    noMaterial: 'kein Material',
     auto: 'autom.',
     addReport: 'Tagesbericht hinzufuegen',
     object: 'Objekt',
@@ -377,6 +393,10 @@ function App() {
   const [chatText, setChatText] = useState('')
   const [chatImage, setChatImage] = useState(null)
   const [workerEntries, setWorkerEntries] = useState([])
+  const [dashboardPontaj, setDashboardPontaj] = useState([])
+  const [dashboardReports, setDashboardReports] = useState([])
+  const [dashboardEmails, setDashboardEmails] = useState([])
+  const [dashboardMaterialCount, setDashboardMaterialCount] = useState(0)
   const [workerSearchDate, setWorkerSearchDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
@@ -423,6 +443,11 @@ function App() {
   })
 
   const getBerlinDateISO = (iso) => DateTime.fromISO(iso, { zone: 'utc' }).setZone('Europe/Berlin').toISODate()
+
+  const isTodayBerlin = (iso) => {
+    if (!iso) return false
+    return getBerlinDateISO(iso) === DateTime.now().setZone('Europe/Berlin').toISODate()
+  }
 
   const getRequiredPauseSeconds = (totalSeconds) => {
     if (totalSeconds >= 9 * 60 * 60) return 60 * 60
@@ -514,6 +539,62 @@ function App() {
       .limit(5)
 
     if (!error) setIstoric(data)
+  }, [user])
+
+  const incarcaDashboardSummary = useCallback(async () => {
+    if (!user) {
+      setDashboardPontaj([])
+      setDashboardReports([])
+      setDashboardEmails([])
+      setDashboardMaterialCount(0)
+      return
+    }
+
+    const today = DateTime.now().setZone('Europe/Berlin').toISODate()
+
+    const { data: pontajData, error: pontajError } = await supabase
+      .from('pontaj')
+      .select('id, Uhrzeit_Start, Uhrzeit_Ende, status, report_id, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (!pontajError) {
+      setDashboardPontaj((pontajData ?? []).filter(row => isTodayBerlin(row.Uhrzeit_Start ?? row.created_at)))
+    } else {
+      setDashboardPontaj([])
+    }
+
+    const { data: reportData, error: reportError } = await supabase
+      .from('tagesbericht')
+      .select('id, start_time, end_time, object_name, auftragsnummer, damage_image_url, pontaj_id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    const todayReports = !reportError
+      ? (reportData ?? []).filter(row => isTodayBerlin(row.start_time ?? row.created_at))
+      : []
+    setDashboardReports(todayReports)
+
+    if (todayReports.length > 0) {
+      const reportIds = todayReports.map(report => report.id)
+      const { data: emailData, error: emailError } = await supabase
+        .from('email_outbox')
+        .select('report_id, status, sent_at, created_at')
+        .in('report_id', reportIds)
+        .order('created_at', { ascending: false })
+
+      setDashboardEmails(emailError ? [] : (emailData ?? []))
+    } else {
+      setDashboardEmails([])
+    }
+
+    const { count, error: materialError } = await supabase
+      .from('material_usage_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('usage_date', today)
+
+    setDashboardMaterialCount(materialError ? 0 : (count ?? 0))
   }, [user])
 
   const verificaSesiuneActiva = useCallback(async () => {
@@ -670,6 +751,7 @@ function App() {
   // Load data and subscribe to realtime changes for the current user
   useEffect(() => {
     incarcaIstoric()
+    incarcaDashboardSummary()
     verificaSesiuneActiva()
 
     const channel = supabase
@@ -679,6 +761,7 @@ function App() {
         const record = payload?.new ?? payload?.old
         if (user && record && record.user_id !== user.id) return
         incarcaIstoric()
+        incarcaDashboardSummary()
         verificaSesiuneActiva()
       })
       .subscribe()
@@ -690,7 +773,7 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaIstoric, user, verificaSesiuneActiva])
+  }, [incarcaDashboardSummary, incarcaIstoric, user, verificaSesiuneActiva])
 
   useEffect(() => {
     if (view === 'reports') {
@@ -729,6 +812,31 @@ function App() {
       }
     }
   }, [incarcaChatMessages, user])
+
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel(`dashboard-summary-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tagesbericht' }, () => {
+        incarcaDashboardSummary()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'email_outbox' }, () => {
+        incarcaDashboardSummary()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'material_usage_entries' }, () => {
+        incarcaDashboardSummary()
+      })
+      .subscribe()
+
+    return () => {
+      try {
+        supabase.removeChannel(channel)
+      } catch {
+        channel.unsubscribe()
+      }
+    }
+  }, [incarcaDashboardSummary, user])
 
   const getSignatureDataUrl = () => {
     if (!hasSignature || !signatureRef.current) return null
@@ -904,6 +1012,7 @@ function App() {
     setSelectedChecklistItemIds([])
     setMaterialUsageAmounts({})
     setMaterialUsageUnits({})
+    incarcaDashboardSummary()
     alert(t('usageSaved'))
   }
 
@@ -1060,6 +1169,7 @@ function App() {
         setSelectedWorkerIds([])
         clearSignature()
         incarcaReports()
+        incarcaDashboardSummary()
         setView('reports')
       }
     } catch (err) {
@@ -1170,6 +1280,7 @@ function App() {
       console.error('Email send function error:', sendError)
       alert('Email-Auftrag wurde angelegt, aber noch nicht versendet: ' + sendError.message)
     }
+    incarcaDashboardSummary()
   }
 
   const calculeazaDurata = (start, end) => {
@@ -1217,6 +1328,7 @@ function App() {
       setNowTick(new Date().getTime())
       setOraStart(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }))
       incarcaIstoric()
+      incarcaDashboardSummary()
     }
   }
 
@@ -1293,6 +1405,7 @@ function App() {
       incarcaIstoric()
       incarcaReports()
       incarcaWorkerEntries()
+      incarcaDashboardSummary()
     }
   }
 
@@ -1361,6 +1474,39 @@ function App() {
     ? calculateSessionTotals(activeSession, new Date(nowTick || new Date(activeSession.Uhrzeit_Start).getTime()).toISOString())
     : { total_seconds: 0, pause_seconds: 0, fahrzeit_seconds: 0, effective_seconds: 0 }
   const workerEntriesTotalMinutes = workerEntries.reduce((sum, entry) => sum + Number(entry.effective_minutes ?? 0), 0)
+  const inactiveDashboardRows = dashboardPontaj.filter(row => row.id !== activeSession?.id)
+  const todayEffectiveSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
+  const todayPauseSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.pause_minutes), 0) + (activeSession ? activeTotals.pause_seconds : 0)
+  const activeReport = dashboardReports.find(report => report.id === (activeSession?.report_id ?? activeReportId))
+  const latestReport = activeReport ?? dashboardReports[0] ?? null
+  const currentOrderText = activeReport
+    ? (activeReport.object_name || activeReport.auftragsnummer || t('noActiveOrder'))
+    : t('noActiveOrder')
+  const latestEmail = latestReport ? dashboardEmails.find(email => email.report_id === latestReport.id) : null
+  const reportStatusText = !latestReport
+    ? t('reportOpen')
+    : latestEmail?.status === 'sent'
+      ? t('sent')
+      : latestReport.end_time
+        ? t('readyToSend')
+        : activeReport
+          ? t('draft')
+          : t('saved')
+  const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
+  const openTaskItems = [
+    todayEffectiveSeconds > 0 ? t('workTimeOk') : t('unreportedTime'),
+    latestReport ? reportStatusText : t('reportOpen'),
+    todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('photosMissing'),
+    dashboardMaterialCount > 0 ? t('materialReported') : t('noMaterial'),
+  ]
+  const dashboardCards = [
+    { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
+    { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
+    { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
+    { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
+    { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
+    { label: t('openTasks'), value: openTaskItems.join(' · '), tone: 'text-slate-100', wide: true },
+  ]
 
   return (
     <div
@@ -1464,23 +1610,6 @@ function App() {
                   </button>
                 ) : (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center">
-                      <div className="rounded-xl bg-slate-900/80 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{t('total')}</p>
-                        <p className="text-sm font-bold text-white">{formatDurationSeconds(activeTotals.total_seconds)}</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-900/80 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{t('effective')}</p>
-                        <p className="text-sm font-bold text-emerald-300">{formatDurationSeconds(activeTotals.effective_seconds)}</p>
-                      </div>
-	                      <div className="rounded-xl bg-slate-900/80 p-3">
-	                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{t('pause')}</p>
-	                        <p className="text-sm font-bold text-amber-300">{formatDurationSeconds(activeTotals.pause_seconds)}</p>
-		                        {activeTotals.auto_pause_seconds > 0 && (
-		                          <p className="text-[10px] text-amber-200/80">{t('auto')} {formatDurationSeconds(activeTotals.auto_pause_seconds)}</p>
-		                        )}
-		                      </div>
-                    </div>
                     <button
                       onClick={handleStop}
                       className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 text-white font-bold py-5 rounded-3xl shadow-xl shadow-rose-500/30 transition-transform active:scale-[0.98]"
@@ -1490,6 +1619,14 @@ function App() {
                     </button>
                   </div>
                 )}
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {dashboardCards.map(card => (
+                    <div key={card.label} className={`rounded-xl bg-slate-900/80 p-3 min-h-[82px] ${card.wide ? 'col-span-2 sm:col-span-3' : ''}`}>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{card.label}</p>
+                      <p className={`mt-2 text-sm font-bold leading-snug break-words ${card.tone}`}>{card.value}</p>
+                    </div>
+                  ))}
+                </div>
               </>
 	            ) : view === 'reports' ? (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
