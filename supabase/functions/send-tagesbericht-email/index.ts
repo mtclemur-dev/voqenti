@@ -32,6 +32,8 @@ type EmailOutbox = {
     customer_feedback?: string | null
     customer_feedback_de?: string | null
     client_signature_data_url?: string | null
+    entry_type?: string | null
+    correction_reason?: string | null
     totals?: {
       total_minutes?: number
       pause_minutes?: number
@@ -389,6 +391,16 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
     font: helvetica,
     color: rgb(0.38, 0.45, 0.55),
   })
+  const entryTypeText = payload.entry_type === 'manual'
+    ? `Zeiterfassung: Manuell${payload.correction_reason ? ` - ${sanitizePdfText(payload.correction_reason)}` : ''}`
+    : 'Zeiterfassung: Automatisch'
+  page.drawText(entryTypeText, {
+    x: left + 170,
+    y: y - 58,
+    size: 8,
+    font: helveticaBold,
+    color: rgb(0.38, 0.45, 0.55),
+  })
 
   y -= 82
   page.drawText('Beschreibung der Arbeiten', { x: left, y, size: 13, font: helveticaBold, color: rgb(0.08, 0.11, 0.18) })
@@ -518,6 +530,16 @@ Deno.serve(async (req) => {
 
     if (readError || !email) throw readError ?? new Error('Email not found')
     const senderEmail = email.payload?.creator_email ?? undefined
+    if (email.report_id) {
+      const { data: report } = await supabaseClient
+        .from('tagesbericht')
+        .select('email_sent,status')
+        .eq('id', email.report_id)
+        .maybeSingle()
+      if (report?.email_sent || report?.status === 'Versendet') {
+        throw new Error('Tagesbericht wurde bereits versendet')
+      }
+    }
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -544,6 +566,13 @@ Deno.serve(async (req) => {
       .from('email_outbox')
       .update({ status: 'sent', sent_at: new Date().toISOString(), error_message: translationDebugMessage })
       .eq('id', email.id)
+
+    if (email.report_id) {
+      await supabaseClient
+        .from('tagesbericht')
+        .update({ status: 'Versendet', email_sent: true, email_sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', email.report_id)
+    }
 
     return new Response(JSON.stringify({ ok: true, resend: resendResult }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

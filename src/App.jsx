@@ -119,6 +119,18 @@ const translations = {
     pauseDriving: 'Pause + Fahrzeit',
     noObjects: 'Keine Objekte aus Supabase erhalten. Bitte die RLS-Policy fuer die Tabelle objects pruefen.',
     objectsLoadError: 'Objekte konnten nicht geladen werden',
+    edit: 'Bearbeiten',
+    send: 'Versenden',
+    sentAlready: 'Bereits versendet',
+    updateReport: 'Bericht aktualisieren',
+    cancelEdit: 'Bearbeiten abbrechen',
+    timeCorrection: 'Zeit korrigieren',
+    correctionReason: 'Grund',
+    workStart: 'Arbeitsbeginn',
+    workEnd: 'Arbeitsende',
+    saveCorrection: 'Nachtrag speichern',
+    automatic: 'Automatisch',
+    manual: 'Manuell',
   },
   ro: {
     appTag: 'Pontaj digital',
@@ -283,6 +295,8 @@ const translations = {
   },
 }
 
+const chatEnabled = false
+
 const WorkMoodIcon = ({ seconds = 0, active = false }) => {
   const hours = seconds / 3600
   const level = !active ? 0 : hours >= 9 ? 4 : hours >= 5 ? 3 : hours >= 2 ? 2 : 1
@@ -389,6 +403,8 @@ function App() {
   const [reportFahrzeitMinutes, setReportFahrzeitMinutes] = useState('')
   const [reportAuftragsnummer, setReportAuftragsnummer] = useState('')
   const [reportStart, setReportStart] = useState(new Date().toISOString().slice(0,16))
+  const [editingReportId, setEditingReportId] = useState(null)
+  const [existingDamageImageUrl, setExistingDamageImageUrl] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
   const [chatText, setChatText] = useState('')
   const [chatImage, setChatImage] = useState(null)
@@ -401,11 +417,17 @@ function App() {
   const [workerSearchId, setWorkerSearchId] = useState('')
   const [isSigning, setIsSigning] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
+  const [showManualTimeForm, setShowManualTimeForm] = useState(false)
+  const [manualStart, setManualStart] = useState(new Date().toISOString().slice(0,16))
+  const [manualEnd, setManualEnd] = useState(new Date().toISOString().slice(0,16))
+  const [manualPauseMinutes, setManualPauseMinutes] = useState('0')
+  const [manualReason, setManualReason] = useState('Start vergessen')
   const signatureRef = useRef(null)
   const isAdmin = user?.email?.toLowerCase() === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
   const materialCategories = ['chemie', 'geraete', 'materialien']
+  const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
 
   const secondsBetween = (start, end) => {
     if (!start) return 0
@@ -554,7 +576,7 @@ function App() {
 
     const { data: pontajData, error: pontajError } = await supabase
       .from('pontaj')
-      .select('id, Uhrzeit_Start, Uhrzeit_Ende, status, report_id, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, created_at')
+      .select('id, Uhrzeit_Start, Uhrzeit_Ende, status, report_id, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, entry_type, correction_reason, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20)
@@ -567,7 +589,7 @@ function App() {
 
     const { data: reportData, error: reportError } = await supabase
       .from('tagesbericht')
-      .select('id, start_time, end_time, object_name, auftragsnummer, damage_image_url, pontaj_id, created_at')
+      .select('id, start_time, end_time, object_name, auftragsnummer, damage_image_url, pontaj_id, status, email_sent, email_sent_at, created_at')
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -889,6 +911,46 @@ function App() {
     setIsSigning(false)
   }
 
+  const resetReportForm = () => {
+    setEditingReportId(null)
+    setExistingDamageImageUrl(null)
+    setReportObject('')
+    setSelectedObjectId('')
+    setReportTask('')
+    setReportDamage(false)
+    setReportDamageDescription('')
+    setReportDamageImage(null)
+    setCustomerSatisfied(true)
+    setCustomerFeedback('')
+    setReportFahrzeitMinutes('')
+    setReportAuftragsnummer('')
+    setSelectedWorkerIds([])
+    setReportStart(new Date().toISOString().slice(0,16))
+    clearSignature()
+  }
+
+  const handleEditReport = (report) => {
+    if (report.email_sent || report.status === 'Versendet') {
+      alert(isAdmin ? 'Bericht ist versendet. Admin-Aenderung spaeter separat moeglich.' : t('sentAlready'))
+      return
+    }
+    setEditingReportId(report.id)
+    setExistingDamageImageUrl(report.damage_image_url ?? null)
+    setReportObject(report.object_name ?? '')
+    setSelectedObjectId(report.object_id ?? '')
+    setReportTask(report.task ?? '')
+    setReportDamage(Boolean(report.damage_present))
+    setReportDamageDescription(report.damage_description ?? '')
+    setReportDamageImage(null)
+    setCustomerSatisfied(report.customer_satisfied !== false)
+    setCustomerFeedback(report.customer_feedback ?? '')
+    setReportFahrzeitMinutes(String(report.fahrzeit_minutes ?? ''))
+    setReportAuftragsnummer(report.auftragsnummer ?? '')
+    setSelectedWorkerIds(Array.isArray(report.worker_ids) ? report.worker_ids : [])
+    setReportStart(report.start_time ? DateTime.fromISO(report.start_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : new Date().toISOString().slice(0,16))
+    setView('reports')
+  }
+
   const translateToGerman = async (text) => {
     const cleanText = text?.trim()
     if (!cleanText) return null
@@ -1055,7 +1117,7 @@ function App() {
     e?.preventDefault()
     if (!user) return alert('Bitte anmelden')
     try {
-      let damageImageUrl = null
+      let damageImageUrl = existingDamageImageUrl
       let damageImagePath = null
 
       if (reportDamage && reportDamageImage) {
@@ -1103,6 +1165,10 @@ function App() {
         damage_image_path: damageImagePath,
         fahrzeit_minutes: fahrzeitMinutes,
         client_signature_data_url: getSignatureDataUrl(),
+        status: 'Gespeichert',
+        entry_type: editingReportId ? undefined : 'automatic',
+        correction_reason: editingReportId ? undefined : null,
+        updated_at: new Date().toISOString(),
       }
 
       if (selectedObjectId) {
@@ -1112,12 +1178,23 @@ function App() {
         reportPayload.pontaj_id = currentId
       }
 
-      const { data, error } = await supabase.from('tagesbericht').insert([reportPayload]).select().single()
+      const reportRequest = editingReportId
+        ? supabase
+            .from('tagesbericht')
+            .update(reportPayload)
+            .eq('id', editingReportId)
+            .eq('user_id', user.id)
+            .neq('status', 'Versendet')
+            .select()
+            .single()
+        : supabase.from('tagesbericht').insert([reportPayload]).select().single()
+
+      const { data, error } = await reportRequest
       if (error) {
         console.error(error)
-        alert('Fehler beim Erstellen des Berichts: ' + error.message)
+        alert('Fehler beim Speichern des Berichts: ' + error.message)
       } else {
-        if (inLucru && currentId && data?.id) {
+        if (!editingReportId && inLucru && currentId && data?.id) {
           const { error: updateError } = await supabase
             .from('pontaj')
             .update({ report_id: data.id })
@@ -1154,20 +1231,9 @@ function App() {
             alert('Bericht gespeichert, aber Zeiten konnten nicht aktualisiert werden: ' + updateReportError.message)
           } else {
             await saveWorkerTimeEntries(data.id, finishedReport, totals, endIso)
-            await queueReportEmail(data.id, finishedReport, totals, endIso, startIso)
           }
         }
-        setReportObject('')
-        setReportTask('')
-        setReportDamage(false)
-        setReportDamageDescription('')
-        setReportDamageImage(null)
-        setCustomerSatisfied(true)
-        setCustomerFeedback('')
-        setReportFahrzeitMinutes('')
-        setReportAuftragsnummer('')
-        setSelectedWorkerIds([])
-        clearSignature()
+        resetReportForm()
         incarcaReports()
         incarcaDashboardSummary()
         setView('reports')
@@ -1227,6 +1293,10 @@ function App() {
 
   const queueReportEmail = async (reportId, reportData, totals, endIso, sessionStartIso) => {
     if (!user || !reportId) return
+    if (reportData?.email_sent || reportData?.status === 'Versendet') {
+      alert(t('sentAlready'))
+      return
+    }
     const reportDate = getBerlinDateISO(reportData?.start_time ?? endIso)
     const subject = `Tagesbericht ${reportDate} - ${reportData?.object_name ?? 'Objekt'}`
     const payload = {
@@ -1249,6 +1319,8 @@ function App() {
       customer_feedback_de: reportData?.customer_feedback_de ?? null,
       task_de: reportData?.task_de ?? null,
       client_signature_data_url: reportData?.client_signature_data_url ?? null,
+      entry_type: reportData?.entry_type ?? reportData?.time_entry_type ?? 'automatic',
+      correction_reason: reportData?.correction_reason ?? null,
       totals: buildMinuteTotals(totals),
       pdf_note: 'PDF wird aus dem aktuellen Voqenti-Layout erzeugt.',
     }
@@ -1279,8 +1351,41 @@ function App() {
     if (sendError) {
       console.error('Email send function error:', sendError)
       alert('Email-Auftrag wurde angelegt, aber noch nicht versendet: ' + sendError.message)
+    } else {
+      await supabase
+        .from('tagesbericht')
+        .update({ status: 'Versendet', email_sent: true, email_sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', reportId)
+        .eq('user_id', user.id)
     }
     incarcaDashboardSummary()
+  }
+
+  const handleSendReport = async (report) => {
+    if (!user || !report?.id) return
+    if (report.email_sent || report.status === 'Versendet') {
+      alert(t('sentAlready'))
+      return
+    }
+    const startIso = report.start_time ?? new Date().toISOString()
+    const endIso = report.end_time ?? new Date().toISOString()
+    const totals = {
+      total_seconds: minutesToSeconds(report.total_minutes),
+      pause_seconds: minutesToSeconds(report.pause_minutes),
+      auto_pause_seconds: minutesToSeconds(report.auto_pause_minutes),
+      fahrzeit_seconds: minutesToSeconds(report.fahrzeit_minutes),
+      effective_seconds: minutesToSeconds(report.effective_minutes),
+    }
+
+    await supabase
+      .from('tagesbericht')
+      .update({ status: 'Bereit zum Versand', updated_at: new Date().toISOString() })
+      .eq('id', report.id)
+      .eq('user_id', user.id)
+      .neq('status', 'Versendet')
+
+    await queueReportEmail(report.id, { ...report, status: 'Bereit zum Versand' }, totals, endIso, startIso)
+    incarcaReports()
   }
 
   const calculeazaDurata = (start, end) => {
@@ -1332,6 +1437,83 @@ function App() {
     }
   }
 
+  const handleSaveManualTime = async (event) => {
+    event?.preventDefault()
+    if (!user) return alert('Bitte anmelden')
+    const startIso = new Date(manualStart).toISOString()
+    const endIso = new Date(manualEnd).toISOString()
+    if (new Date(endIso) <= new Date(startIso)) {
+      alert('Arbeitsende muss nach Arbeitsbeginn liegen.')
+      return
+    }
+
+    const pauseSeconds = minutesToSeconds(Math.max(0, Number(manualPauseMinutes || 0)))
+    const totalSeconds = secondsBetween(startIso, endIso)
+    const totals = {
+      total_seconds: totalSeconds,
+      pause_seconds: pauseSeconds,
+      auto_pause_seconds: 0,
+      fahrzeit_seconds: 0,
+      effective_seconds: Math.max(0, totalSeconds - pauseSeconds),
+    }
+
+    const { data, error } = await supabase
+      .from('pontaj')
+      .insert([{
+        user_id: user.id,
+        name_nutzer: user.email ?? 'Benutzer',
+        Uhrzeit_Start: startIso,
+        Uhrzeit_Ende: endIso,
+        status: 'finalizat',
+        current_mode: 'work',
+        mode_changed_at: endIso,
+        entry_type: 'manual',
+        correction_reason: manualReason,
+        updated_at: new Date().toISOString(),
+        report_id: activeReportId,
+        ...buildMinuteTotals(totals),
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      alert('Nachtrag konnte nicht gespeichert werden: ' + error.message)
+      return
+    }
+
+    if (activeReportId) {
+      const { data: reportData } = await supabase
+        .from('tagesbericht')
+        .select('*')
+        .eq('id', activeReportId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (reportData && reportData.status !== 'Versendet') {
+        await supabase
+          .from('tagesbericht')
+          .update({
+            start_time: startIso,
+            end_time: endIso,
+            pontaj_id: data.id,
+            status: 'Gespeichert',
+            entry_type: 'manual',
+            correction_reason: manualReason,
+            updated_at: new Date().toISOString(),
+            ...buildMinuteTotals(totals),
+          })
+          .eq('id', activeReportId)
+          .eq('user_id', user.id)
+        await saveWorkerTimeEntries(activeReportId, reportData, totals, endIso)
+      }
+    }
+
+    setShowManualTimeForm(false)
+    incarcaIstoric()
+    incarcaDashboardSummary()
+    incarcaReports()
+  }
+
   const handleStop = async () => {
     if (!user || !activeSession) return
     const acumISO = new Date().toISOString()
@@ -1345,7 +1527,7 @@ function App() {
     if (reportId) {
       const { data: reportData, error: reportReadError } = await supabase
         .from('tagesbericht')
-        .select('start_time, fahrzeit_minutes, worker_ids, worker_names, object_id, object_name, auftragsnummer, task, task_de, damage_present, damage_description, damage_description_de, damage_image_url, customer_satisfied, customer_feedback, customer_feedback_de, client_signature_data_url')
+        .select('start_time, end_time, fahrzeit_minutes, worker_ids, worker_names, object_id, object_name, auftragsnummer, task, task_de, damage_present, damage_description, damage_description_de, damage_image_url, customer_satisfied, customer_feedback, customer_feedback_de, client_signature_data_url, status, email_sent, email_sent_at, entry_type, correction_reason')
         .eq('id', reportId)
         .eq('user_id', user.id)
         .single()
@@ -1365,13 +1547,16 @@ function App() {
 
     const { error } = await supabase
       .from('pontaj')
-      .update({
-        Uhrzeit_Ende: acumISO,
-        status: 'finalizat',
-        current_mode: 'work',
-        mode_changed_at: acumISO,
-        ...buildMinuteTotals(dailyTotals),
-      })
+        .update({
+          Uhrzeit_Ende: acumISO,
+          status: 'finalizat',
+          current_mode: 'work',
+          mode_changed_at: acumISO,
+          entry_type: 'automatic',
+          correction_reason: null,
+          updated_at: new Date().toISOString(),
+          ...buildMinuteTotals(dailyTotals),
+        })
       .eq('id', currentId)
       .eq('user_id', user.id)
 
@@ -1385,6 +1570,10 @@ function App() {
             end_time: acumISO,
             worker_email: user.email ?? 'Benutzer',
             pontaj_id: currentId,
+            status: 'Gespeichert',
+            entry_type: 'automatic',
+            correction_reason: null,
+            updated_at: new Date().toISOString(),
             ...buildMinuteTotals(reportTotals),
           })
           .eq('id', reportId)
@@ -1394,7 +1583,6 @@ function App() {
           alert('Die Zeiterfassung wurde gestoppt, aber der Bericht wurde nicht aktualisiert: ' + reportError.message)
         } else if (linkedReport) {
           await saveWorkerTimeEntries(reportId, linkedReport, reportTotals, acumISO)
-          await queueReportEmail(reportId, linkedReport, reportTotals, acumISO, activeSession.mode_changed_at ?? activeSession.Uhrzeit_Start)
         }
       }
       setInLucru(false)
@@ -1485,13 +1673,15 @@ function App() {
   const latestEmail = latestReport ? dashboardEmails.find(email => email.report_id === latestReport.id) : null
   const reportStatusText = !latestReport
     ? t('reportOpen')
-    : latestEmail?.status === 'sent'
+    : latestReport.email_sent || latestReport.status === 'Versendet' || latestEmail?.status === 'sent'
       ? t('sent')
-      : latestReport.end_time
+      : latestReport.status === 'Bereit zum Versand'
         ? t('readyToSend')
+      : latestReport.end_time
+        ? t('saved')
         : activeReport
           ? t('draft')
-          : t('saved')
+          : (latestReport.status ?? t('saved'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const openTaskItems = [
     todayEffectiveSeconds > 0 ? t('workTimeOk') : t('unreportedTime'),
@@ -1572,7 +1762,7 @@ function App() {
 	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
 	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('report')}</button>
 	                <button onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`px-3 py-2 rounded-md text-sm ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('workTimes')}</button>
-	                <button onClick={() => { setView('chat'); incarcaChatMessages(); }} className={`px-3 py-2 rounded-md text-sm ${view==='chat' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('chat')}</button>
+	                {chatEnabled && <button onClick={() => { setView('chat'); incarcaChatMessages(); }} className={`px-3 py-2 rounded-md text-sm ${view==='chat' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('chat')}</button>}
 	                <button onClick={() => { setView('materials'); incarcaChecklistItems(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
 	              </div>
 	            )}
@@ -1619,6 +1809,34 @@ function App() {
                     </button>
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setShowManualTimeForm(current => !current)}
+                  className="mt-3 w-full px-4 py-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-100 font-semibold ring-1 ring-slate-700"
+                >
+                  {t('timeCorrection')}
+                </button>
+                {showManualTimeForm && (
+                  <form onSubmit={handleSaveManualTime} className="mt-3 rounded-2xl bg-slate-900/80 ring-1 ring-slate-700 p-4 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="text-xs text-slate-400">
+                        {t('workStart')}
+                        <input type="datetime-local" value={manualStart} onChange={e => setManualStart(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
+                      </label>
+                      <label className="text-xs text-slate-400">
+                        {t('workEnd')}
+                        <input type="datetime-local" value={manualEnd} onChange={e => setManualEnd(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input type="number" min="0" step="1" value={manualPauseMinutes} onChange={e => setManualPauseMinutes(e.target.value)} placeholder={t('pause')} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
+                      <select value={manualReason} onChange={e => setManualReason(e.target.value)} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100">
+                        {correctionReasons.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                      </select>
+                    </div>
+                    <button type="submit" className="w-full px-4 py-3 rounded-xl bg-cyan-600 text-white font-semibold">{t('saveCorrection')}</button>
+                  </form>
+                )}
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {dashboardCards.map(card => (
                     <div key={card.label} className={`rounded-xl bg-slate-900/80 p-3 min-h-[82px] ${card.wide ? 'col-span-2 sm:col-span-3' : ''}`}>
@@ -1630,7 +1848,7 @@ function App() {
               </>
 	            ) : view === 'reports' ? (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
-	                <h3 className="text-white font-semibold mb-3">{t('addReport')}</h3>
+	                <h3 className="text-white font-semibold mb-3">{editingReportId ? t('updateReport') : t('addReport')}</h3>
 	                <form onSubmit={handleCreateReport} className="space-y-3">
                   <div className="flex gap-2">
                       <input type="datetime-local" value={reportStart} onChange={e=>setReportStart(e.target.value)} className="flex-1 px-3 py-2 rounded-md bg-slate-800 text-slate-100" />
@@ -1785,8 +2003,8 @@ function App() {
 	                    <button type="button" onClick={clearSignature} className="mt-2 px-3 py-2 bg-slate-700 rounded-md text-white text-sm">{t('clearSignature')}</button>
 	                  </div>
 	                    <div className="flex gap-2">
-	                      <button type="submit" className="flex-1 px-4 py-2 bg-cyan-600 rounded-md text-white">{t('saveReport')}</button>
-		                      <button type="button" onClick={() => { setReportObject(''); setReportTask(''); setReportDamage(false); setReportDamageDescription(''); setReportDamageImage(null); setCustomerSatisfied(true); setCustomerFeedback(''); setReportFahrzeitMinutes(''); setReportAuftragsnummer(''); setSelectedObjectId(''); clearSignature(); }} className="flex-1 px-4 py-2 bg-slate-700 rounded-md text-white">{t('reset')}</button>
+	                      <button type="submit" className="flex-1 px-4 py-2 bg-cyan-600 rounded-md text-white">{editingReportId ? t('updateReport') : t('saveReport')}</button>
+		                      <button type="button" onClick={resetReportForm} className="flex-1 px-4 py-2 bg-slate-700 rounded-md text-white">{editingReportId ? t('cancelEdit') : t('reset')}</button>
 	                    </div>
 	                </form>
 	              </div>
@@ -1940,7 +2158,7 @@ function App() {
 	                  </button>
 	                </div>
 	              </div>
-	            ) : (
+	            ) : chatEnabled && view === 'chat' ? (
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
 	                <h3 className="text-white font-semibold mb-3">{t('teamChat')}</h3>
 	                <form onSubmit={handleSendChatMessage} className="space-y-3">
@@ -1960,11 +2178,15 @@ function App() {
 	                  <button type="submit" className="w-full px-4 py-3 bg-cyan-600 rounded-md text-white font-semibold">{t('sendMessage')}</button>
 	                </form>
 	              </div>
+	            ) : (
+	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700 text-slate-300">
+	                {t('noEntries')}
+	              </div>
 	            )}
           </div>
 
 	          <div className="bg-slate-950/80 border border-slate-800 shadow-2xl rounded-[2rem] p-8 backdrop-blur-xl overflow-hidden">
-	            <h2 className="text-sm uppercase tracking-[0.3em] font-bold text-slate-400 mb-6 text-center">{view==='pontaj' ? t('currentActivity') : view === 'reports' ? t('reports') : view === 'times' ? t('workTimes') : view === 'materials' ? t('materials') : t('teamChat')}</h2>
+	            <h2 className="text-sm uppercase tracking-[0.3em] font-bold text-slate-400 mb-6 text-center">{view==='pontaj' ? t('currentActivity') : view === 'reports' ? t('reports') : view === 'times' ? t('workTimes') : view === 'materials' ? t('materials') : chatEnabled ? t('teamChat') : t('currentActivity')}</h2>
 	            <div className="space-y-4">
 	              {view === 'pontaj' ? (
                 istoric.length === 0 ? (
@@ -2001,6 +2223,11 @@ function App() {
 	                          {t('missingReport')}
 	                        </div>
 	                      )}
+                        {item.entry_type === 'manual' && (
+                          <div className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">
+                            Zeiterfassung: {t('manual')} - {item.correction_reason}
+                          </div>
+                        )}
                     </div>
                   ))
                 )
@@ -2010,8 +2237,15 @@ function App() {
 	                ) : (
 		                  reports.map(r => (
 		                    <div key={r.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
-			                      <div className="text-sm text-slate-400 mb-1">{formatDateBerlin(r.start_time)} {formatTimeBerlin(r.start_time)}</div>
-			                      <div className="text-white font-semibold">{r.object_name}</div>
+			                      <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm text-slate-400 mb-1">{formatDateBerlin(r.start_time)} {formatTimeBerlin(r.start_time)}</div>
+			                        <div className="text-white font-semibold">{r.object_name}</div>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${r.email_sent || r.status === 'Versendet' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-slate-800 text-slate-300'}`}>
+                              {r.email_sent ? t('sent') : (r.status ?? t('saved'))}
+                            </span>
+                          </div>
 			                      {r.auftragsnummer && <div className="text-xs text-slate-400 mt-1">{t('order')}: {r.auftragsnummer}</div>}
 			                      {r.worker_names?.length > 0 && <div className="text-xs text-slate-400 mt-1">{t('team')}: {r.worker_names.join(', ')}</div>}
 			                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -2028,6 +2262,7 @@ function App() {
 		                        </div>
 	                      </div>
 			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">Mitarbeiter: {r.worker_email}</div>}
+                          <div className="text-xs text-slate-500 mt-1">Zeiterfassung: {r.entry_type === 'manual' ? `${t('manual')} - ${r.correction_reason ?? ''}` : t('automatic')}</div>
 		                      <div className="text-slate-300 text-sm mt-2">{r.task}</div>
 		                      {isAdmin && r.task_de && r.task_de !== r.task && (
 		                        <div className="mt-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-sm text-cyan-100 whitespace-pre-wrap">
@@ -2068,6 +2303,22 @@ function App() {
 		                          <img src={r.client_signature_data_url} alt="Unterschrift Kunde" className="w-full rounded-md bg-slate-800 border border-slate-700" />
 		                        </div>
 		                      )}
+                          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {(!r.email_sent && r.status !== 'Versendet') && (
+                              <button type="button" onClick={() => handleEditReport(r)} className="px-3 py-2 rounded-md bg-slate-700 text-white text-sm font-semibold">
+                                {t('edit')}
+                              </button>
+                            )}
+                            {(!r.email_sent && r.status !== 'Versendet') ? (
+                              <button type="button" onClick={() => handleSendReport(r)} className="px-3 py-2 rounded-md bg-cyan-600 text-white text-sm font-semibold">
+                                {t('send')}
+                              </button>
+                            ) : (
+                              <div className="px-3 py-2 rounded-md bg-emerald-500/10 text-emerald-200 text-sm font-semibold text-center">
+                                {t('sentAlready')}
+                              </div>
+                            )}
+                          </div>
 		                    </div>
 		                  ))
 	                )
@@ -2141,7 +2392,7 @@ function App() {
 	                    </div>
 	                  ))
 	                )
-	              ) : (
+	              ) : chatEnabled && view === 'chat' ? (
 	                chatMessages.length === 0 ? (
 	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noMessages')}</div>
 	                ) : (
@@ -2167,6 +2418,8 @@ function App() {
 	                    </div>
 	                  ))
 	                )
+	              ) : (
+	                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noEntries')}</div>
 	              )}
             </div>
           </div>

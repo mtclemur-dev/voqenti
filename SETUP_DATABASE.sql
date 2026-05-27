@@ -16,6 +16,9 @@ ADD COLUMN IF NOT EXISTS auto_pause_minutes integer DEFAULT 0,
 ADD COLUMN IF NOT EXISTS fahrzeit_minutes integer DEFAULT 0,
 ADD COLUMN IF NOT EXISTS total_minutes integer DEFAULT 0,
 ADD COLUMN IF NOT EXISTS effective_minutes integer DEFAULT 0,
+ADD COLUMN IF NOT EXISTS entry_type text DEFAULT 'automatic',
+ADD COLUMN IF NOT EXISTS correction_reason text,
+ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now(),
 ADD COLUMN IF NOT EXISTS report_id bigint;
 
 ALTER TABLE public.pontaj
@@ -131,6 +134,9 @@ BEGIN
       "Uhrzeit_Start" = p_start_time,
       mode_changed_at = p_start_time,
       "Uhrzeit_Ende" = NULL,
+      entry_type = 'automatic',
+      correction_reason = NULL,
+      updated_at = now(),
       report_id = COALESCE(p_report_id, report_id)
     WHERE id = new_row.id
     RETURNING * INTO new_row;
@@ -149,9 +155,11 @@ BEGIN
     auto_pause_minutes,
     fahrzeit_minutes,
     total_minutes,
-    effective_minutes,
-    report_id
-  )
+      effective_minutes,
+      entry_type,
+      correction_reason,
+      report_id
+    )
   VALUES (
     auth.uid(),
     COALESCE(p_name_nutzer, 'Benutzer'),
@@ -164,6 +172,8 @@ BEGIN
     0,
     0,
     0,
+    'automatic',
+    NULL,
     p_report_id
   )
   RETURNING * INTO new_row;

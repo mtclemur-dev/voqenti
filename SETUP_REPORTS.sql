@@ -30,8 +30,15 @@ CREATE TABLE IF NOT EXISTS public.tagesbericht (
   auto_pause_minutes integer DEFAULT 0,
   fahrzeit_minutes integer DEFAULT 0,
   effective_minutes integer DEFAULT 0,
+  status text DEFAULT 'Gespeichert',
+  email_sent boolean DEFAULT false,
+  email_sent_at timestamptz,
+  pdf_url text,
+  entry_type text DEFAULT 'automatic',
+  correction_reason text,
   pontaj_id bigint,
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 
 -- If the table already existed before these columns were added,
@@ -64,8 +71,15 @@ ALTER TABLE public.tagesbericht
   ADD COLUMN IF NOT EXISTS auto_pause_minutes integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS fahrzeit_minutes integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS effective_minutes integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS status text DEFAULT 'Gespeichert',
+  ADD COLUMN IF NOT EXISTS email_sent boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS email_sent_at timestamptz,
+  ADD COLUMN IF NOT EXISTS pdf_url text,
+  ADD COLUMN IF NOT EXISTS entry_type text DEFAULT 'automatic',
+  ADD COLUMN IF NOT EXISTS correction_reason text,
   ADD COLUMN IF NOT EXISTS pontaj_id bigint,
-  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 ALTER TABLE public.tagesbericht
 ALTER COLUMN user_id SET DEFAULT auth.uid();
