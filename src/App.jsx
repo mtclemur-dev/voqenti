@@ -45,6 +45,7 @@ const translations = {
     reportStatus: 'Tagesbericht',
     photosToday: 'Fotos heute',
     openTasks: 'Offene Aufgaben',
+    completionCheck: 'Abschlusskontrolle',
     noActiveOrder: 'Kein aktiver Auftrag',
     reportOpen: 'Tagesbericht offen',
     noPhotos: 'Keine Fotos',
@@ -66,11 +67,14 @@ const translations = {
     drivingTime: 'Fahrzeit (Minuten)',
     taskPlaceholder: 'Was wurde gemacht? (Aufgabe)',
     damage: 'Schaden',
+    damageQuestion: 'Mangel oder Schaden festgestellt?',
     damageYes: 'Ja',
     damageNo: 'Nein',
     damageDescription: 'Welcher Schaden?',
     damageDescriptionPlaceholder: 'Schaden beschreiben',
     damagePhoto: 'Foto vom Schaden',
+    photo: 'Foto',
+    description: 'Beschreibung',
     clientSignature: 'Unterschrift Kunde',
     signatureText: 'Die Arbeiten wurden ordnungsgemaess ausgefuehrt und hiermit abgenommen.',
     customerAcceptance: 'Kundenabnahme',
@@ -144,6 +148,7 @@ const translations = {
     objectSelect: 'Objekt auswaehlen',
     additionalNotes: 'Zusaetzliche Bemerkungen',
     workTemplates: 'Was wurde gemacht',
+    selectWorkDone: 'Arbeit auswaehlen',
     materialNeed: 'Materialbedarf melden',
     materialNeedOverview: 'Materialbedarf Uebersicht',
     requestedMaterials: 'Materiale benoetigt',
@@ -152,12 +157,15 @@ const translations = {
     status: 'Status',
     reportedBy: 'Gemeldet von',
     saveRequest: 'Bedarf speichern',
+    send: 'Senden',
+    sendMaterialSummary: 'Materialbedarf senden',
+    materialSummarySent: 'Materialbedarf wurde gesendet',
     requestSaved: 'Materialbedarf gespeichert',
     takeEquipment: 'Geraete mitnehmen',
     availableEquipment: 'Verfuegbare Geraete',
     takenEquipment: 'Mitgenommene Geraete',
     equipmentReturn: 'Geraete-Rueckgabe',
-    equipmentReturnAllOk: 'Alle mitgenommenen Geraete sauber und funktionsfaehig zurueckgebracht',
+    equipmentReturnAllOk: 'Geraete sauber & funktionsfaehig zurueckgebracht',
     take: 'Mitnehmen',
     back: 'zurueckgebracht',
     clean: 'sauber',
@@ -428,23 +436,12 @@ function App() {
   const [workerSearch, setWorkerSearch] = useState('')
   const [reportTask, setReportTask] = useState('')
   const [selectedWorkTemplates, setSelectedWorkTemplates] = useState([])
+  const [workPickerOpen, setWorkPickerOpen] = useState(false)
   const [reportDamage, setReportDamage] = useState(false)
   const [reportDamageDescription, setReportDamageDescription] = useState('')
   const [reportDamageImage, setReportDamageImage] = useState(null)
   const [customerSatisfied, setCustomerSatisfied] = useState(true)
   const [customerFeedback, setCustomerFeedback] = useState('')
-  const [checklistItems, setChecklistItems] = useState([])
-  const [selectedChecklistItemIds, setSelectedChecklistItemIds] = useState([])
-  const [materialUsageAmounts, setMaterialUsageAmounts] = useState({})
-  const [materialUsageUnits, setMaterialUsageUnits] = useState({})
-  const [materialCategory, setMaterialCategory] = useState('chemie')
-  const [newChecklistItem, setNewChecklistItem] = useState({
-    category: 'chemie',
-    name: '',
-    description: '',
-    warning: '',
-    safety_sheet_url: '',
-  })
   const [reportFahrzeitMinutes, setReportFahrzeitMinutes] = useState('')
   const [reportAuftragsnummer, setReportAuftragsnummer] = useState('')
   const [reportStart, setReportStart] = useState(new Date().toISOString().slice(0,16))
@@ -474,6 +471,7 @@ function App() {
   const [materialRequestAmounts, setMaterialRequestAmounts] = useState({})
   const [materialRequestUnits, setMaterialRequestUnits] = useState({})
   const [materialRequestFreeText, setMaterialRequestFreeText] = useState('')
+  const [materialSummarySending, setMaterialSummarySending] = useState(false)
   const [inventoryItems, setInventoryItems] = useState([])
   const [openCheckouts, setOpenCheckouts] = useState([])
   const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
@@ -494,8 +492,8 @@ function App() {
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => translations[language]?.[key] ?? translations.de[key] ?? key, [language])
-  const materialCategories = ['chemie', 'geraete', 'materialien']
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
+  const integerMaterialUnits = ['Flasche', 'Kanister']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
     'Grundreinigung',
@@ -506,10 +504,6 @@ function App() {
     'Sonderreinigung',
   ]
   const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
-  const reportChecklistItems = [
-    ['workDone', t('checklistWorkDone')],
-    ['workTime', t('checklistWorkTime')],
-  ]
 
   const secondsBetween = (start, end) => {
     if (!start) return 0
@@ -538,6 +532,9 @@ function App() {
     ? ''
     : `${selectedWorkersForReport.slice(0, 2).map(worker => worker.name).join(', ')}${selectedWorkersForReport.length > 2 ? ` +${selectedWorkersForReport.length - 2}` : ''}`
   const filteredWorkers = workers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+  const workSummary = selectedWorkTemplates.length === 0
+    ? ''
+    : `${selectedWorkTemplates.slice(0, 2).join(', ')}${selectedWorkTemplates.length > 2 ? ` +${selectedWorkTemplates.length - 2}` : ''}`
   const currentObjectForEquipment = selectedReportObject ?? objects.find(object => object.name.toLowerCase() === reportObject.trim().toLowerCase())
 
   const getStoredSeconds = (record, minutesKey, secondsKey) => {
@@ -545,6 +542,59 @@ function App() {
     if (minutesValue > 0) return minutesToSeconds(minutesValue)
     return Number(record?.[secondsKey] ?? 0)
   }
+
+  const compressImageFile = (file, { maxWidth = 1200, quality = 0.7 } = {}) =>
+    new Promise((resolve, reject) => {
+      if (!file?.type?.startsWith('image/')) {
+        resolve(file)
+        return
+      }
+
+      const image = new Image()
+      const url = URL.createObjectURL(file)
+
+      image.onload = () => {
+        try {
+          const scale = Math.min(1, maxWidth / image.width)
+          const width = Math.max(1, Math.round(image.width * scale))
+          const height = Math.max(1, Math.round(image.height * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(image, 0, 0, width, height)
+
+          const finish = (blob, extension) => {
+            URL.revokeObjectURL(url)
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const cleanName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9._-]/g, '_')
+            resolve(new File([blob], `${cleanName}.${extension}`, { type: blob.type, lastModified: Date.now() }))
+          }
+
+          canvas.toBlob(
+            blob => {
+              if (blob) finish(blob, 'webp')
+              else canvas.toBlob(jpgBlob => finish(jpgBlob, 'jpg'), 'image/jpeg', quality)
+            },
+            'image/webp',
+            quality,
+          )
+        } catch (error) {
+          URL.revokeObjectURL(url)
+          reject(error)
+        }
+      }
+
+      image.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(file)
+      }
+
+      image.src = url
+    })
 
   const buildMinuteTotals = (totals) => ({
     total_minutes: secondsToMinutes(totals.total_seconds),
@@ -773,22 +823,6 @@ function App() {
       .order('name', { ascending: true })
 
     if (!error) setWorkers(data ?? [])
-  }, [])
-
-  const incarcaChecklistItems = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('report_checklist_items')
-      .select('*')
-      .eq('active', true)
-      .order('category', { ascending: true })
-      .order('name', { ascending: true })
-
-    if (error) {
-      console.error('Checklist load error:', error)
-      setChecklistItems([])
-    } else {
-      setChecklistItems(data ?? [])
-    }
   }, [])
 
   const incarcaMaterialbedarf = useCallback(async () => {
@@ -1231,11 +1265,16 @@ function App() {
   }
 
   const handleWorkTemplateToggle = (template) => {
-    setSelectedWorkTemplates(current =>
-      current.includes(template)
-        ? current.filter(item => item !== template)
-        : [...current, template]
-    )
+    setSelectedWorkTemplates(current => {
+      if (current.includes(template)) return current.filter(item => item !== template)
+      const next = [...current, template]
+      if (!reportTask.trim()) {
+        setReportTask(`${template} - `)
+      } else if (!reportTask.trim().startsWith(template)) {
+        setReportTask(`${template} - ${reportTask.trim()}`)
+      }
+      return next
+    })
   }
 
   const handleMaterialRequestObjectChange = (value) => {
@@ -1283,8 +1322,10 @@ function App() {
     const rows = selectedItems.map(item => ({
       material_request_id: requestData.id,
       material_item_id: item.id,
-      quantity: materialRequestAmounts[item.id] ? Number(materialRequestAmounts[item.id]) : null,
       unit: materialRequestUnits[item.id] || item.unit || null,
+      quantity: materialRequestAmounts[item.id]
+        ? (integerMaterialUnits.includes(materialRequestUnits[item.id] || item.unit) ? Math.max(1, Math.round(Number(materialRequestAmounts[item.id]))) : Number(materialRequestAmounts[item.id]))
+        : null,
       note: null,
     }))
 
@@ -1310,6 +1351,8 @@ function App() {
     setMaterialRequestAmounts({})
     setMaterialRequestUnits({})
     setMaterialRequestFreeText('')
+    setMaterialRequestObject('')
+    setMaterialRequestObjectId('')
     incarcaMaterialbedarf()
     alert(t('requestSaved'))
   }
@@ -1326,6 +1369,30 @@ function App() {
       return
     }
     incarcaMaterialbedarf()
+  }
+
+  const handleSendMaterialSummary = async () => {
+    if (!user) return alert('Bitte anmelden')
+    setMaterialSummarySending(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('send-materialbedarf-summary', {
+        body: { request_date: materialRequestDate },
+      })
+
+      if (error) {
+        alert('Materialbedarf konnte nicht gesendet werden: ' + error.message)
+        return
+      }
+      if (data?.ok === false) {
+        alert('Materialbedarf konnte nicht gesendet werden: ' + (data?.error ?? 'Unbekannter Fehler'))
+        return
+      }
+
+      await incarcaMaterialbedarf()
+      alert(t('materialSummarySent'))
+    } finally {
+      setMaterialSummarySending(false)
+    }
   }
 
   const handleTakeEquipment = async (item) => {
@@ -1390,74 +1457,6 @@ function App() {
     incarcaInventory()
   }
 
-  const handleChecklistToggle = (itemId) => {
-    setSelectedChecklistItemIds(current =>
-      current.includes(itemId)
-        ? current.filter(id => id !== itemId)
-        : [...current, itemId]
-    )
-  }
-
-  const selectMaterialCategory = (category) => {
-    setMaterialCategory(category)
-    setNewChecklistItem(current => ({ ...current, category }))
-  }
-
-  const handleSaveMaterialUsage = async () => {
-    if (!user) return alert('Bitte anmelden')
-    const selectedItems = checklistItems.filter(item => selectedChecklistItemIds.includes(item.id))
-    if (selectedItems.length === 0) return alert('Mindestens einen Eintrag auswaehlen')
-
-    const usageDate = DateTime.now().setZone('Europe/Berlin').toISODate()
-    const workerName = currentWorker?.name ?? user.email ?? 'Benutzer'
-    const rows = selectedItems.map(item => ({
-      user_id: user.id,
-      user_email: user.email ?? null,
-      worker_name: workerName,
-      item_id: item.id,
-      category: item.category,
-      item_name: item.name,
-      quantity: materialUsageAmounts[item.id] ? Number(materialUsageAmounts[item.id]) : null,
-      unit: materialUsageUnits[item.id]?.trim() || null,
-      usage_date: usageDate,
-    }))
-
-    const { error } = await supabase.from('material_usage_entries').insert(rows)
-    if (error) {
-      alert('Verbrauch konnte nicht gespeichert werden: ' + error.message)
-      return
-    }
-
-    setSelectedChecklistItemIds([])
-    setMaterialUsageAmounts({})
-    setMaterialUsageUnits({})
-    incarcaDashboardSummary()
-    alert(t('usageSaved'))
-  }
-
-  const handleAddChecklistItem = async (event) => {
-    event?.preventDefault()
-    if (!isAdmin) return
-    if (!newChecklistItem.name.trim()) return alert('Name eingeben')
-
-    const { error } = await supabase.from('report_checklist_items').insert([{
-      category: newChecklistItem.category,
-      name: newChecklistItem.name.trim(),
-      description: newChecklistItem.description.trim() || null,
-      warning: newChecklistItem.warning.trim() || null,
-      safety_sheet_url: newChecklistItem.safety_sheet_url.trim() || null,
-      active: true,
-    }])
-
-    if (error) {
-      alert('Material konnte nicht gespeichert werden: ' + error.message)
-      return
-    }
-
-    setNewChecklistItem({ category: materialCategory, name: '', description: '', warning: '', safety_sheet_url: '' })
-    incarcaChecklistItems()
-  }
-
   const handleLanguageChange = async (nextLanguage) => {
     setLanguage(nextLanguage)
     if (user) {
@@ -1485,10 +1484,14 @@ function App() {
       let damageImagePath = null
 
       if (reportDamage && reportDamageImage) {
-        damageImagePath = `${user.id}/${Date.now()}-${reportDamageImage.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        const compressedImage = await compressImageFile(reportDamageImage)
+        damageImagePath = `${user.id}/${Date.now()}-${compressedImage.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
         const { error: uploadError } = await supabase.storage
           .from('report-images')
-          .upload(damageImagePath, reportDamageImage)
+          .upload(damageImagePath, compressedImage, {
+            contentType: compressedImage.type || 'image/webp',
+            upsert: false,
+          })
 
         if (uploadError) {
           alert('Schadenfoto konnte nicht hochgeladen werden: ' + uploadError.message)
@@ -2025,16 +2028,12 @@ function App() {
           ? t('draft')
           : (latestReport.status ?? t('saved'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
-  const checklistDoneCount = latestReport
-    ? [latestReport.checklist_work_done, latestReport.checklist_work_time].filter(Boolean).length
-    : 0
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
     { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
     { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
-    { label: t('openTasks'), value: `${checklistDoneCount}/2 ${t('done')}`, tone: checklistDoneCount === 2 ? 'text-emerald-300' : 'text-slate-100', wide: true },
   ]
 
   return (
@@ -2101,7 +2100,7 @@ function App() {
 	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
 	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('report')}</button>
 	                <button onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`px-3 py-2 rounded-md text-sm ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('workTimes')}</button>
-	                <button onClick={() => { setView('materials'); incarcaChecklistItems(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
+	                <button onClick={() => { setView('materials'); incarcaMaterialbedarf(); incarcaInventory(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
 	              </div>
 	            )}
 
@@ -2193,7 +2192,79 @@ function App() {
 	              <div className="rounded-[1.75rem] p-6 bg-slate-900/85 ring-1 ring-slate-700">
 	                <h3 className="text-white font-semibold mb-3">{editingReportId ? t('updateReport') : t('addReport')}</h3>
 	                <form onSubmit={handleCreateReport} className="space-y-3">
+	                  <div className="mt-2 rounded-md bg-slate-800/60 p-3">
+	                    <label className="text-slate-100 text-sm font-semibold">🏢 {t('object')}</label>
+	                    <input
+	                      list="objects-list"
+	                      value={reportObject}
+	                      onChange={e=>handleReportObjectChange(e.target.value)}
+	                      placeholder={t('objectSelect')}
+	                      className="w-full mt-2 px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+	                    />
+	                    <datalist id="objects-list">
+	                      {objects.map(o => (
+	                        <option key={o.id} value={o.name}>{o.address ?? ''}</option>
+	                      ))}
+	                    </datalist>
+	                    {objectsError && (
+	                      <p className="mt-2 text-xs text-rose-300">
+	                        {t('objectsLoadError')}: {objectsError}
+                      </p>
+                    )}
+                    {!objectsError && objects.length === 0 && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        {t('noObjects')}
+                      </p>
+	                    )}
+                      {(selectedReportObject || reportObject) && (
+                        <div className="mt-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2">
+                          <div className="text-sm font-semibold text-white">{selectedReportObject?.name ?? reportObject}</div>
+                          {selectedReportObject?.address && <div className="text-xs text-slate-400">{selectedReportObject.address}</div>}
+                        </div>
+                      )}
+		                  </div>
+	                  <div>
+	                    <label className="text-slate-300 text-sm">{t('workers')}</label>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerPickerOpen(true)}
+                        className="mt-1 w-full rounded-md bg-slate-800 px-3 py-3 text-left text-sm font-semibold text-slate-100"
+                      >
+                        {t('selectWorkers')} ({selectedWorkerIds.length} {t('selectedCount')})
+                      </button>
+                      {workerSummary && <p className="mt-2 text-xs text-slate-300">{workerSummary}</p>}
+                      {workers.length === 0 && <div className="mt-2 text-xs text-slate-400">{t('noWorkers')}</div>}
+	                  </div>
+                  <label className="block text-xs text-slate-400">
+                    Datum / Uhrzeit
+                    <input
+                      type="date"
+                      value={reportStart ? reportStart.slice(0, 10) : ''}
+                      onChange={e => {
+                        const timePart = reportStart?.slice(11, 16) || '07:00'
+                        setReportStart(`${e.target.value}T${timePart}`)
+                        markReportTimeManual()
+                      }}
+                      className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
+                    />
+                  </label>
+		                  <input
+	                    placeholder={t('orderNumber')}
+	                    value={reportAuftragsnummer}
+	                    onChange={e=>setReportAuftragsnummer(e.target.value)}
+	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
+	                  />
+		                  <input
+		                    type="number"
+	                    min="0"
+	                    step="1"
+	                    placeholder={t('drivingTime')}
+	                    value={reportFahrzeitMinutes}
+	                    onChange={e=>setReportFahrzeitMinutes(e.target.value)}
+		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
+		                  />
                   <div className="rounded-md bg-slate-800 p-3 space-y-3">
+                    <div className="text-slate-100 font-semibold text-sm">Arbeitszeit von / bis</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <label className="text-xs text-slate-400">
                         {t('workStart')}
@@ -2240,100 +2311,26 @@ function App() {
                       </datalist>
                     </div>
                   </div>
-	                  <div className="mt-2 rounded-md bg-slate-800/60 p-3">
-	                    <label className="text-slate-100 text-sm font-semibold">🏢 {t('object')}</label>
-	                    <input
-	                      list="objects-list"
-	                      value={reportObject}
-	                      onChange={e=>handleReportObjectChange(e.target.value)}
-	                      placeholder={t('objectSelect')}
-	                      className="w-full mt-2 px-3 py-2 rounded-md bg-slate-900 text-slate-100"
-	                    />
-	                    <datalist id="objects-list">
-	                      {objects.map(o => (
-	                        <option key={o.id} value={o.name}>{o.address ?? ''}</option>
-	                      ))}
-	                    </datalist>
-	                    {objectsError && (
-	                      <p className="mt-2 text-xs text-rose-300">
-	                        {t('objectsLoadError')}: {objectsError}
-                      </p>
-                    )}
-                    {!objectsError && objects.length === 0 && (
-                      <p className="mt-2 text-xs text-slate-400">
-                        {t('noObjects')}
-                      </p>
-	                    )}
-                      {(selectedReportObject || reportObject) && (
-                        <div className="mt-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2">
-                          <div className="text-sm font-semibold text-white">{selectedReportObject?.name ?? reportObject}</div>
-                          {selectedReportObject?.address && <div className="text-xs text-slate-400">{selectedReportObject.address}</div>}
-                        </div>
-                      )}
-		                  </div>
-	                  <div>
-	                    <label className="text-slate-300 text-sm">{t('workers')}</label>
-                      <button
-                        type="button"
-                        onClick={() => setWorkerPickerOpen(true)}
-                        className="mt-1 w-full rounded-md bg-slate-800 px-3 py-3 text-left text-sm font-semibold text-slate-100"
-                      >
-                        {t('selectWorkers')} ({selectedWorkerIds.length} {t('selectedCount')})
-                      </button>
-                      {workerSummary && <p className="mt-2 text-xs text-slate-300">{workerSummary}</p>}
-                      {workers.length === 0 && <div className="mt-2 text-xs text-slate-400">{t('noWorkers')}</div>}
-	                  </div>
-		                  <input
-	                    placeholder={t('orderNumber')}
-	                    value={reportAuftragsnummer}
-	                    onChange={e=>setReportAuftragsnummer(e.target.value)}
-	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                  />
-		                  <input
-		                    type="number"
-	                    min="0"
-	                    step="1"
-	                    placeholder={t('drivingTime')}
-	                    value={reportFahrzeitMinutes}
-	                    onChange={e=>setReportFahrzeitMinutes(e.target.value)}
-		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-		                  />
                   <div className="rounded-md bg-slate-800 p-3">
                     <div className="text-slate-100 font-semibold text-sm mb-3">{t('workTemplates')}</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {workTemplateOptions.map(template => (
-                        <label key={template} className="flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm text-slate-100">
-                          <input
-                            type="checkbox"
-                            checked={selectedWorkTemplates.includes(template)}
-                            onChange={() => handleWorkTemplateToggle(template)}
-                          />
-                          <span>{template}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <textarea
-                      placeholder={t('additionalNotes')}
-                      value={reportTask}
-                      onChange={e=>setReportTask(e.target.value)}
-                      className="mt-3 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
-                      rows={3}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setWorkPickerOpen(true)}
+                      className="w-full rounded-md bg-slate-900 px-3 py-3 text-left text-sm font-semibold text-slate-100"
+                    >
+                      {t('selectWorkDone')} ({selectedWorkTemplates.length} {t('selectedCount')})
+                    </button>
+                    {workSummary && <p className="mt-2 text-xs text-slate-300">{workSummary}</p>}
                   </div>
                   <div className="rounded-md bg-slate-800 p-3">
-                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('openTasks')}</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {reportChecklistItems.map(([key, label]) => (
-                        <label key={key} className="flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm text-slate-100">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(reportChecklist[key])}
-                            onChange={() => handleReportChecklistToggle(key)}
-                          />
-                          <span>{label}</span>
-                        </label>
-                      ))}
-                    </div>
+                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('description')}</div>
+                    <textarea
+                      placeholder={t('description')}
+                      value={reportTask}
+                      onChange={e=>setReportTask(e.target.value)}
+                      className="w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      rows={3}
+                    />
                   </div>
                   {openCheckouts.filter(row => row.user_id === user?.id).length > 0 && (
                     <div className="rounded-md bg-slate-800 p-3">
@@ -2367,21 +2364,21 @@ function App() {
                   )}
 	                  <div className="rounded-md bg-slate-800 p-3">
 	                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-	                      <label className="text-slate-300 text-sm">{t('damage')}</label>
+	                      <label className="text-slate-300 text-sm">{t('damageQuestion')}</label>
 	                      <div className="grid grid-cols-2 rounded-md overflow-hidden border border-slate-700 w-full sm:w-auto">
-	                        <button
-	                          type="button"
-	                          onClick={() => setReportDamage(true)}
-	                          className={`px-3 py-2 text-sm ${reportDamage ? 'bg-rose-600 text-white' : 'bg-slate-900 text-slate-300'}`}
-	                        >
-	                          {t('damageYes')}
-	                        </button>
 	                        <button
 	                          type="button"
 	                          onClick={() => { setReportDamage(false); setReportDamageDescription(''); setReportDamageImage(null) }}
 	                          className={`px-3 py-2 text-sm ${!reportDamage ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-300'}`}
 	                        >
 	                          {t('damageNo')}
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => setReportDamage(true)}
+	                          className={`px-3 py-2 text-sm ${reportDamage ? 'bg-rose-600 text-white' : 'bg-slate-900 text-slate-300'}`}
+	                        >
+	                          {t('damageYes')}
 	                        </button>
 	                      </div>
 	                    </div>
@@ -2390,7 +2387,7 @@ function App() {
 	                        <textarea
 	                          value={reportDamageDescription}
 	                          onChange={e => setReportDamageDescription(e.target.value)}
-	                          placeholder={t('damageDescriptionPlaceholder')}
+	                          placeholder={t('description')}
 	                          className="w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
 	                          rows={3}
 	                        />
@@ -2457,6 +2454,18 @@ function App() {
                       )}
 	                    <button type="button" onClick={clearSignature} className="mt-2 px-3 py-2 bg-slate-700 rounded-md text-white text-sm">{t('clearSignature')}</button>
 	                  </div>
+                  <label className="flex items-center gap-2 rounded-md bg-slate-800/70 px-3 py-2 text-sm text-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(reportChecklist.workDone && reportChecklist.workTime)}
+                      onChange={e => setReportChecklist(current => ({
+                        ...current,
+                        workDone: e.target.checked,
+                        workTime: e.target.checked,
+                      }))}
+                    />
+                    <span>{t('checklistWorkDone')} und {t('checklistWorkTime').toLowerCase()}</span>
+                  </label>
 	                    <div className="flex gap-2">
 	                      <button type="submit" className="flex-1 px-4 py-2 bg-cyan-600 rounded-md text-white">{editingReportId ? t('updateReport') : t('saveReport')}</button>
 		                      <button type="button" onClick={resetReportForm} className="flex-1 px-4 py-2 bg-slate-700 rounded-md text-white">{editingReportId ? t('cancelEdit') : t('reset')}</button>
@@ -2541,15 +2550,27 @@ function App() {
                               <input
                                 type="number"
                                 min="0"
-                                step="0.01"
+                                step={integerMaterialUnits.includes(materialRequestUnits[item.id] || item.unit) ? '1' : '0.01'}
                                 value={materialRequestAmounts[item.id] ?? ''}
-                                onChange={e => setMaterialRequestAmounts(current => ({ ...current, [item.id]: e.target.value }))}
+                                onChange={e => {
+                                  const unit = materialRequestUnits[item.id] || item.unit
+                                  const value = integerMaterialUnits.includes(unit) && e.target.value
+                                    ? String(Math.max(1, Math.round(Number(e.target.value))))
+                                    : e.target.value
+                                  setMaterialRequestAmounts(current => ({ ...current, [item.id]: value }))
+                                }}
                                 placeholder={t('quantity')}
                                 className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
                               />
                               <select
                                 value={materialRequestUnits[item.id] ?? item.unit ?? ''}
-                                onChange={e => setMaterialRequestUnits(current => ({ ...current, [item.id]: e.target.value }))}
+                                onChange={e => {
+                                  const nextUnit = e.target.value
+                                  setMaterialRequestUnits(current => ({ ...current, [item.id]: nextUnit }))
+                                  if (integerMaterialUnits.includes(nextUnit) && materialRequestAmounts[item.id]) {
+                                    setMaterialRequestAmounts(current => ({ ...current, [item.id]: String(Math.max(1, Math.round(Number(current[item.id])))) }))
+                                  }
+                                }}
                                 className="rounded-md bg-slate-800 px-3 py-2 text-slate-100"
                               >
                                 <option value="">{t('unit')}</option>
@@ -2569,6 +2590,14 @@ function App() {
                     />
                     <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white">
                       {t('saveRequest')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendMaterialSummary}
+                      disabled={materialSummarySending}
+                      className="w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white disabled:bg-slate-700 disabled:text-slate-400"
+                    >
+                      {materialSummarySending ? '...' : t('sendMaterialSummary')}
                     </button>
                   </form>
                   {(isAdmin || isVorarbeiter) && (
@@ -2873,6 +2902,33 @@ function App() {
                 ))}
               </div>
               <button type="button" onClick={() => setWorkerPickerOpen(false)} className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
+                {t('confirmSelection')}
+              </button>
+            </div>
+          </div>
+        )}
+        {workPickerOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 flex items-end sm:items-center justify-center">
+            <div className="w-full max-w-lg rounded-3xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-white font-semibold">{t('selectWorkDone')} ({selectedWorkTemplates.length} {t('selectedCount')})</div>
+                <button type="button" onClick={() => setWorkPickerOpen(false)} className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
+                  {t('cancel')}
+                </button>
+              </div>
+              <div className="mt-3 max-h-80 space-y-2 overflow-auto pr-1">
+                {workTemplateOptions.map(template => (
+                  <label key={template} className="flex items-center gap-3 rounded-md bg-slate-800 px-3 py-3 text-sm text-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={selectedWorkTemplates.includes(template)}
+                      onChange={() => handleWorkTemplateToggle(template)}
+                    />
+                    <span>{template}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={() => setWorkPickerOpen(false)} className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
                 {t('confirmSelection')}
               </button>
             </div>
