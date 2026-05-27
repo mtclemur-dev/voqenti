@@ -27,6 +27,7 @@ type EmailOutbox = {
     damage_description?: string | null
     damage_description_de?: string | null
     damage_image_url?: string | null
+    attachment_urls?: string[]
     customer_satisfied?: boolean | null
     customer_feedback?: string | null
     customer_feedback_de?: string | null
@@ -76,6 +77,24 @@ const dataUrlToBytes = (dataUrl: string) => {
   const base64 = dataUrl.split(',')[1]
   if (!base64) return null
   return Uint8Array.from(atob(base64), char => char.charCodeAt(0))
+}
+
+const extensionFromContentType = (contentType: string) => {
+  if (contentType.includes('png')) return 'png'
+  if (contentType.includes('webp')) return 'webp'
+  return 'jpg'
+}
+
+const buildImageAttachment = async (url: string, index: number) => {
+  const response = await fetch(url)
+  if (!response.ok) return null
+  const contentType = response.headers.get('content-type') ?? 'image/jpeg'
+  if (!contentType.startsWith('image/')) return null
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  return {
+    filename: `tagesbericht-foto-${index}.${extensionFromContentType(contentType)}`,
+    content: bytesToBase64(bytes),
+  }
 }
 
 const toGermanTime = (iso?: string | null) => {
@@ -446,6 +465,28 @@ const buildCompanyPdfBase64 = async (email: EmailOutbox) => {
   return bytesToBase64(pdfBytes)
 }
 
+const buildReportAttachments = async (email: EmailOutbox) => {
+  const attachments = [
+    {
+      filename: `tagesbericht-${email.id}.pdf`,
+      content: await buildCompanyPdfBase64(email),
+    },
+  ]
+
+  const imageUrls = [
+    ...(email.payload?.damage_image_url ? [email.payload.damage_image_url] : []),
+    ...(Array.isArray(email.payload?.attachment_urls) ? email.payload.attachment_urls : []),
+  ]
+  const uniqueImageUrls = Array.from(new Set(imageUrls.filter((url): url is string => Boolean(url))))
+
+  for (let index = 0; index < uniqueImageUrls.length; index += 1) {
+    const attachment = await buildImageAttachment(uniqueImageUrls[index], index + 1)
+    if (attachment) attachments.push(attachment)
+  }
+
+  return attachments
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -490,12 +531,7 @@ Deno.serve(async (req) => {
         reply_to: senderEmail,
         subject: email.subject,
         html: email.html_body ?? '<p>Guten Tag,</p><p>anbei erhalten Sie den Tagesbericht als PDF.</p><p>Mit freundlichen Gruessen<br>Voqenti</p>',
-        attachments: [
-          {
-            filename: `tagesbericht-${email.id}.pdf`,
-            content: await buildCompanyPdfBase64(email),
-          },
-        ],
+        attachments: await buildReportAttachments(email),
       }),
     })
 

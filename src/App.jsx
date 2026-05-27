@@ -801,6 +801,7 @@ function App() {
     event?.preventDefault()
     if (!user) return alert('Bitte anmelden')
     if (!chatText.trim() && !chatImage) return
+    const senderName = currentWorker?.name ?? user.user_metadata?.full_name ?? user.email ?? 'Benutzer'
 
     let imageUrl = null
     let imagePath = null
@@ -821,17 +822,23 @@ function App() {
     }
 
     const chatTranslation = await translateToGerman(chatText)
-
-	    const { error } = await supabase.from('chat_messages').insert([{
+    const chatPayload = {
 	      user_id: user.id,
 	      user_email: user.email ?? 'Benutzer',
+      sender_name: senderName,
       message: chatText.trim() || null,
       message_de: chatTranslation?.translated_text ?? null,
       source_language: chatTranslation?.source_language ?? null,
       translated_at: chatTranslation?.translated_text ? new Date().toISOString() : null,
       image_url: imageUrl,
       image_path: imagePath,
-    }])
+    }
+
+	    let { error } = await supabase.from('chat_messages').insert([chatPayload])
+    if (error?.message?.includes("'sender_name'")) {
+      const { sender_name: _senderName, ...legacyChatPayload } = chatPayload
+      ;({ error } = await supabase.from('chat_messages').insert([legacyChatPayload]))
+    }
 
     if (error) {
       alert('Nachricht konnte nicht gesendet werden: ' + error.message)
@@ -2004,7 +2011,10 @@ function App() {
 	                  chatMessages.map(message => (
 	                    <div key={message.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
 	                      <div className="text-xs text-slate-500 mb-2">
-	                        <span className="font-semibold text-slate-300">{message.user_email ?? 'Benutzer'}</span>
+	                        <span className="font-semibold text-slate-300">{message.sender_name ?? message.user_email ?? 'Benutzer'}</span>
+	                        {message.sender_name && message.user_email && (
+	                          <span className="text-slate-600"> ({message.user_email})</span>
+	                        )}
 	                        <span> · {formatDateBerlin(message.created_at)} {formatTimeBerlin(message.created_at)}</span>
 	                      </div>
 	                      {message.message && <div className="text-sm text-slate-200 whitespace-pre-wrap">{message.message}</div>}
