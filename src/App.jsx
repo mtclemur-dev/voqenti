@@ -105,6 +105,21 @@ function App() {
     }[status]
     return key ? t(key) : (status || t('saved'))
   }, [t])
+  const reportCardStatus = useCallback((report) => {
+    if (report.email_sent || report.status === 'Versendet') {
+      return { label: `⚫ ${t('sent')}`, tone: 'bg-slate-800 text-slate-200' }
+    }
+    if (report.locked_by_signature || report.customer_signed_at) {
+      return { label: `🟢 ${t('customerAcceptanceDone')}`, tone: 'bg-emerald-500/15 text-emerald-200' }
+    }
+    if (isReviewStatus(report.status)) {
+      return { label: `🟡 ${t('waitingForReview')}`, tone: 'bg-amber-500/15 text-amber-200' }
+    }
+    if (report.status === 'In Bearbeitung') {
+      return { label: `🔵 ${t('inProgress')}`, tone: 'bg-cyan-500/15 text-cyan-200' }
+    }
+    return { label: `🔵 ${reportStatusLabel(report.status)}`, tone: 'bg-cyan-500/15 text-cyan-200' }
+  }, [isReviewStatus, reportStatusLabel, t])
   const notifyReviewNeeded = useCallback((report) => {
     if (!canEditLockedReports || !report?.id || !isReviewStatus(report.status)) return
     if (notifiedReviewIdsRef.current.has(report.id)) return
@@ -1804,6 +1819,9 @@ function App() {
   const inactiveDashboardRows = dashboardPontaj.filter(row => row.id !== activeSession?.id)
   const todayEffectiveSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
   const todayPauseSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.pause_minutes), 0) + (activeSession ? activeTotals.pause_seconds : 0)
+  const reportFormDurationSeconds = reportStart && reportEnd
+    ? Math.max(0, secondsBetween(new Date(reportStart).toISOString(), new Date(reportEnd).toISOString()) - minutesToSeconds(reportPauseMinutes))
+    : 0
   const activeReport = dashboardReports.find(report => report.id === (activeSession?.report_id ?? activeReportId))
   const latestReport = activeReport ?? dashboardReports[0] ?? null
   const currentOrderText = activeReport
@@ -2089,11 +2107,8 @@ function App() {
                         {t('noObjects')}
                       </p>
 	                    )}
-                      {(selectedReportObject || reportObject) && (
-                        <div className="mt-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2">
-                          <div className="text-sm font-semibold text-white">{selectedReportObject?.name ?? reportObject}</div>
-                          {selectedReportObject?.address && <div className="text-xs text-slate-400">{selectedReportObject.address}</div>}
-                        </div>
+                      {selectedReportObject?.address && (
+                        <div className="mt-2 text-xs text-slate-400">{selectedReportObject.address}</div>
                       )}
 		                  </div>
 	                  <div>
@@ -2108,25 +2123,30 @@ function App() {
                       {workerSummary && <p className="mt-2 text-xs text-slate-300">{workerSummary}</p>}
                       {workers.length === 0 && <div className="mt-2 text-xs text-slate-400">{t('noWorkers')}</div>}
 	                  </div>
-                  <label className="block text-xs text-slate-400">
-                    {t('dateTime')}
-                    <input
-                      type="date"
-                      value={reportStart ? reportStart.slice(0, 10) : ''}
-                      onChange={e => {
-                        const timePart = reportStart?.slice(11, 16) || '07:00'
-                        setReportStart(`${e.target.value}T${timePart}`)
-                        markReportTimeManual()
-                      }}
-                      className="mt-1 w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-                    />
-                  </label>
-		                  <input
-	                    placeholder={t('orderNumber')}
-	                    value={reportAuftragsnummer}
-	                    onChange={e=>setReportAuftragsnummer(e.target.value)}
-	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
-	                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-md bg-slate-800/60 p-3">
+                    <label className="block text-xs text-slate-400">
+                      {t('dateTime')}
+                      <input
+                        type="date"
+                        value={reportStart ? reportStart.slice(0, 10) : ''}
+                        onChange={e => {
+                          const timePart = reportStart?.slice(11, 16) || '07:00'
+                          setReportStart(`${e.target.value}T${timePart}`)
+                          markReportTimeManual()
+                        }}
+                        className="mt-1 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      />
+                    </label>
+                    <label className="block text-xs text-slate-400">
+                      {t('order')}
+                      <input
+                        placeholder={t('orderNumber')}
+                        value={reportAuftragsnummer}
+                        onChange={e=>setReportAuftragsnummer(e.target.value)}
+                        className="mt-1 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                      />
+                    </label>
+                  </div>
 		                  <input
 		                    type="number"
 	                    min="0"
@@ -2137,10 +2157,15 @@ function App() {
 		                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
 		                  />
                   <div className="rounded-md bg-slate-800 p-3 space-y-3">
-                    <div className="text-slate-100 font-semibold text-sm">{t('workTimeRange')}</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-slate-100 font-semibold text-sm">{t('workTimeRange')}</div>
+                      <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-cyan-100">
+                        ⏱ {formatDurationSeconds(reportFormDurationSeconds)}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <label className="text-xs text-slate-400">
-                        {t('workStart')}
+                        🟢 {t('workStart')}
                         <input
                           type="datetime-local"
                           value={reportStart}
@@ -2149,7 +2174,7 @@ function App() {
                         />
                       </label>
                       <label className="text-xs text-slate-400">
-                        {t('workEnd')}
+                        🔴 {t('workEnd')}
                         <input
                           type="datetime-local"
                           value={reportEnd}
@@ -2183,22 +2208,39 @@ function App() {
                         {correctionReasons.map(reason => <option key={reason} value={reason}>{reason}</option>)}
                       </datalist>
                     </div>
+                    {reportEntryType === 'manual' && reportCorrectionReason && (
+                      <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                        {t('manual')}: {reportCorrectionReason}
+                      </div>
+                    )}
                   </div>
                   <div className="rounded-md bg-slate-800 p-3">
                     <div className="text-slate-100 font-semibold text-sm mb-3">{t('workTemplates')}</div>
-                    <button
-                      type="button"
-                      onClick={() => setWorkPickerOpen(true)}
-                      className="w-full rounded-md bg-slate-900 px-3 py-3 text-left text-sm font-semibold text-slate-100"
-                    >
-                      {t('selectWorkDone')} ({selectedWorkTemplates.length} {t('selectedCount')})
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {workTemplateOptions.map(option => {
+                        const checked = selectedWorkTemplates.includes(option)
+                        return (
+                          <button
+                            type="button"
+                            key={option}
+                            onClick={() => handleWorkTemplateToggle(option)}
+                            className={`rounded-md border px-3 py-2 text-left text-xs font-semibold ${
+                              checked
+                                ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
+                                : 'border-slate-700 bg-slate-900 text-slate-300'
+                            }`}
+                          >
+                            {checked ? '[x]' : '[ ]'} {option}
+                          </button>
+                        )
+                      })}
+                    </div>
                     {workSummary && <p className="mt-2 text-xs text-slate-300">{workSummary}</p>}
                   </div>
                   <div className="rounded-md bg-slate-800 p-3">
-                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('description')}</div>
+                    <div className="text-slate-100 font-semibold text-sm mb-3">{t('additionalNotes')}</div>
                     <textarea
-                      placeholder={t('description')}
+                      placeholder={t('additionalNotes')}
                       value={reportTask}
                       onChange={e=>setReportTask(e.target.value)}
                       className="w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
@@ -2328,12 +2370,12 @@ function App() {
                       <button
                         type="button"
                         onClick={openSignatureModal}
-                        className="mt-1 w-full rounded-md bg-slate-800 border border-slate-700 min-h-[120px] p-3 text-left"
+                        className="mt-1 w-full rounded-md bg-slate-800 border border-slate-700 min-h-[76px] p-3 text-left"
                       >
                         {reportSignatureDataUrl ? (
-                          <img src={reportSignatureDataUrl} alt="Unterschrift Kunde" className="w-full max-h-28 object-contain rounded-md bg-slate-900" />
+                          <img src={reportSignatureDataUrl} alt="Unterschrift Kunde" className="w-full max-h-20 object-contain rounded-md bg-slate-900" />
                         ) : (
-                          <span className="block py-10 text-center text-slate-400">{t('signatureOpen')}</span>
+                          <span className="block py-5 text-center text-slate-400">{t('signatureOpen')}</span>
                         )}
                       </button>
                       {customerSignedAt && (
@@ -2560,16 +2602,8 @@ function App() {
                               <div className="text-sm text-slate-400 mb-1">{formatDateBerlin(r.start_time)} {formatTimeBerlin(r.start_time)}</div>
 			                        <div className="text-white font-semibold">{r.object_name}</div>
                             </div>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
-                              r.email_sent || r.status === 'Versendet'
-                                ? 'bg-emerald-500/20 text-emerald-200'
-                                : isReviewStatus(r.status)
-                                  ? 'bg-amber-500/15 text-amber-200'
-                                  : r.status === 'Erfolgreich erfasst'
-                                    ? 'bg-cyan-500/15 text-cyan-200'
-                                    : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {r.email_sent ? t('sent') : reportStatusLabel(r.status)}
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${reportCardStatus(r).tone}`}>
+                              {reportCardStatus(r).label}
                             </span>
                           </div>
 			                      {r.auftragsnummer && <div className="text-xs text-slate-400 mt-1">{t('order')}: {r.auftragsnummer}</div>}
