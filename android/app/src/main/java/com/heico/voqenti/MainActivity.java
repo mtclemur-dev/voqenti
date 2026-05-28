@@ -1,4 +1,4 @@
-package com.mentol.digitalwork;
+package com.heico.voqenti;
 
 import com.getcapacitor.BridgeActivity;
 

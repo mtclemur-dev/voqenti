@@ -33,3 +33,6 @@ supabase/.temp
 android/.gradle
 android/**/build
 android/local.properties
+android/*.jks
+android/*.keystore
+android/release-keystore.properties
