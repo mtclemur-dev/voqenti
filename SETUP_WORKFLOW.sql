@@ -11,7 +11,7 @@ SET entry_type = COALESCE(entry_type, 'automatic')
 WHERE entry_type IS NULL;
 
 ALTER TABLE public.tagesbericht
-  ADD COLUMN IF NOT EXISTS status text DEFAULT 'Gespeichert',
+  ADD COLUMN IF NOT EXISTS status text DEFAULT 'In Prüfung',
   ADD COLUMN IF NOT EXISTS email_sent boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS email_sent_at timestamptz,
   ADD COLUMN IF NOT EXISTS pdf_url text,
@@ -32,7 +32,7 @@ ALTER TABLE public.tagesbericht
 
 UPDATE public.tagesbericht
 SET
-  status = COALESCE(status, 'Gespeichert'),
+  status = COALESCE(status, 'In Prüfung'),
   email_sent = COALESCE(email_sent, false),
   locked_by_signature = COALESCE(locked_by_signature, false),
   entry_type = COALESCE(entry_type, 'automatic')
@@ -40,6 +40,14 @@ WHERE status IS NULL
    OR email_sent IS NULL
    OR locked_by_signature IS NULL
    OR entry_type IS NULL;
+
+ALTER TABLE public.tagesbericht
+  ALTER COLUMN status SET DEFAULT 'In Prüfung';
+
+UPDATE public.tagesbericht
+SET status = 'In Prüfung'
+WHERE COALESCE(email_sent, false) = false
+  AND status IN ('Gespeichert', 'Bereit zum Versand');
 
 ALTER TABLE public.workers
   ADD COLUMN IF NOT EXISTS role text DEFAULT 'mitarbeiter';

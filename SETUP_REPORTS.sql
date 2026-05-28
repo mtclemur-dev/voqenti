@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS public.tagesbericht (
   auto_pause_minutes integer DEFAULT 0,
   fahrzeit_minutes integer DEFAULT 0,
   effective_minutes integer DEFAULT 0,
-  status text DEFAULT 'Gespeichert',
+  status text DEFAULT 'In Prüfung',
   email_sent boolean DEFAULT false,
   email_sent_at timestamptz,
   pdf_url text,
@@ -89,7 +89,7 @@ ALTER TABLE public.tagesbericht
   ADD COLUMN IF NOT EXISTS auto_pause_minutes integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS fahrzeit_minutes integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS effective_minutes integer DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS status text DEFAULT 'Gespeichert',
+  ADD COLUMN IF NOT EXISTS status text DEFAULT 'In Prüfung',
   ADD COLUMN IF NOT EXISTS email_sent boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS email_sent_at timestamptz,
   ADD COLUMN IF NOT EXISTS pdf_url text,
@@ -105,6 +105,14 @@ ALTER TABLE public.tagesbericht
 
 ALTER TABLE public.tagesbericht
 ALTER COLUMN user_id SET DEFAULT auth.uid();
+
+ALTER TABLE public.tagesbericht
+ALTER COLUMN status SET DEFAULT 'In Prüfung';
+
+UPDATE public.tagesbericht
+SET status = 'In Prüfung'
+WHERE COALESCE(email_sent, false) = false
+  AND status IN ('Gespeichert', 'Bereit zum Versand');
 
 DO $$
 BEGIN

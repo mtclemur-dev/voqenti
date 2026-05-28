@@ -84,6 +84,18 @@ function App() {
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
+  const reportStatusLabel = useCallback((status) => {
+    const key = {
+      'In Prüfung': 'inReview',
+      'Erfolgreich erfasst': 'successfullyRecorded',
+      'Vom Kunden unterschrieben': 'customerSignedStatus',
+      Versendet: 'sent',
+      Gespeichert: 'saved',
+      Entwurf: 'draft',
+      'Bereit zum Versand': 'readyToSend',
+    }[status]
+    return key ? t(key) : (status || t('saved'))
+  }, [t])
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
@@ -1240,7 +1252,7 @@ function App() {
         locked_at: hasCustomerSignature ? new Date().toISOString() : null,
         locked_reason: hasCustomerSignature ? 'Kundenunterschrift' : null,
         locked_by: hasCustomerSignature ? user.id : null,
-        status: hasCustomerSignature ? 'Vom Kunden unterschrieben' : 'Gespeichert',
+        status: canEditLockedReports ? 'Erfolgreich erfasst' : 'In Prüfung',
         entry_type: reportEntryType,
         correction_reason: reportEntryType === 'manual' ? (reportCorrectionReason || null) : null,
         checklist_work_time: reportChecklist.workTime,
@@ -1394,6 +1406,7 @@ function App() {
 
   const queueReportEmail = async (reportId, reportData, totals, endIso, sessionStartIso) => {
     if (!user || !reportId) return
+    if (!canEditLockedReports) return alert(t('reviewRequired'))
     if (reportData?.email_sent || reportData?.status === 'Versendet') {
       alert(t('sentAlready'))
       return
@@ -1472,6 +1485,10 @@ function App() {
 
   const handleSendReport = async (report) => {
     if (!user || !report?.id) return
+    if (!canEditLockedReports) {
+      alert(t('reviewRequired'))
+      return
+    }
     if (report.email_sent || report.status === 'Versendet') {
       alert(t('sentAlready'))
       return
@@ -1499,12 +1516,11 @@ function App() {
 
     await supabase
       .from('tagesbericht')
-      .update({ status: 'Bereit zum Versand', updated_at: new Date().toISOString() })
+      .update({ status: 'Erfolgreich erfasst', updated_at: new Date().toISOString() })
       .eq('id', report.id)
-      .eq('user_id', user.id)
       .neq('status', 'Versendet')
 
-    await queueReportEmail(report.id, { ...fullReport, status: 'Bereit zum Versand' }, totals, endIso, startIso)
+    await queueReportEmail(report.id, { ...fullReport, status: 'Erfolgreich erfasst' }, totals, endIso, startIso)
     incarcaReports()
   }
 
@@ -1613,7 +1629,7 @@ function App() {
             end_time: acumISO,
             worker_email: user.email ?? 'Benutzer',
             pontaj_id: currentId,
-            status: 'Gespeichert',
+            status: canEditLockedReports ? 'Erfolgreich erfasst' : 'In Prüfung',
             entry_type: 'automatic',
             correction_reason: null,
             updated_at: new Date().toISOString(),
@@ -1718,13 +1734,7 @@ function App() {
     ? t('reportOpen')
     : latestReport.email_sent || latestReport.status === 'Versendet' || latestEmail?.status === 'sent'
       ? t('sent')
-      : latestReport.status === 'Bereit zum Versand'
-        ? t('readyToSend')
-      : latestReport.end_time
-        ? t('saved')
-        : activeReport
-          ? t('draft')
-          : (latestReport.status ?? t('saved'))
+      : reportStatusLabel(latestReport.status ?? (activeReport ? 'Entwurf' : 'Gespeichert'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
@@ -2382,8 +2392,16 @@ function App() {
                               <div className="text-sm text-slate-400 mb-1">{formatDateBerlin(r.start_time)} {formatTimeBerlin(r.start_time)}</div>
 			                        <div className="text-white font-semibold">{r.object_name}</div>
                             </div>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${r.email_sent || r.status === 'Versendet' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-slate-800 text-slate-300'}`}>
-                              {r.email_sent ? t('sent') : (r.status ?? t('saved'))}
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
+                              r.email_sent || r.status === 'Versendet'
+                                ? 'bg-emerald-500/20 text-emerald-200'
+                                : r.status === 'In Prüfung'
+                                  ? 'bg-amber-500/15 text-amber-200'
+                                  : r.status === 'Erfolgreich erfasst'
+                                    ? 'bg-cyan-500/15 text-cyan-200'
+                                    : 'bg-slate-800 text-slate-300'
+                            }`}>
+                              {r.email_sent ? t('sent') : reportStatusLabel(r.status)}
                             </span>
                           </div>
 			                      {r.auftragsnummer && <div className="text-xs text-slate-400 mt-1">{t('order')}: {r.auftragsnummer}</div>}
@@ -2478,10 +2496,14 @@ function App() {
                                 {(r.locked_by_signature || r.customer_signed_at) && canEditLockedReports ? t('adminEdit') : t('edit')}
                               </button>
                             )}
-                            {(!r.email_sent && r.status !== 'Versendet') ? (
+                            {canEditLockedReports && (!r.email_sent && r.status !== 'Versendet') ? (
                               <button type="button" onClick={() => handleSendReport(r)} className="px-3 py-2 rounded-md bg-cyan-600 text-white text-sm font-semibold">
                                 {t('send')}
                               </button>
+                            ) : (!canEditLockedReports && !r.email_sent && r.status !== 'Versendet') ? (
+                              <div className="px-3 py-2 rounded-md bg-amber-500/10 text-amber-200 text-sm font-semibold text-center">
+                                {t('waitingForReview')}
+                              </div>
                             ) : (
                               <div className="px-3 py-2 rounded-md bg-emerald-500/10 text-emerald-200 text-sm font-semibold text-center">
                                 {t('sentAlready')}
