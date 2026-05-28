@@ -18,6 +18,8 @@ function App() {
   const [view, setView] = useState('pontaj') // 'pontaj' | 'reports' | 'times' | 'materials'
   const [reports, setReports] = useState([])
   const [reportObject, setReportObject] = useState('')
+  const [dashboardObjectId, setDashboardObjectId] = useState('')
+  const [dashboardAuftrag, setDashboardAuftrag] = useState('')
   const [objects, setObjects] = useState([])
   const [objectsError, setObjectsError] = useState('')
   const [selectedObjectId, setSelectedObjectId] = useState('')
@@ -93,6 +95,7 @@ function App() {
     const key = {
       ['In Prüfung']: 'inReview',
       ['In PrÃ¼fung']: 'inReview',
+      'In Bearbeitung': 'inProgress',
       'Erfolgreich erfasst': 'successfullyRecorded',
       'Vom Kunden unterschrieben': 'customerSignedStatus',
       Versendet: 'sent',
@@ -611,6 +614,9 @@ function App() {
       incarcaObjects()
       incarcaWorkers()
       incarcaInventory()
+    }
+    if (view === 'pontaj') {
+      incarcaObjects()
     }
     if (view === 'times') {
       incarcaWorkers()
@@ -1554,6 +1560,16 @@ function App() {
     incarcaReports()
   }
 
+  const openCurrentReport = async () => {
+    const reportId = activeSession?.report_id ?? activeReportId
+    if (!reportId) {
+      setView('reports')
+      return
+    }
+    const knownReport = dashboardReports.find(report => report.id === reportId) ?? reports.find(report => report.id === reportId) ?? { id: reportId }
+    await handleEditReport(knownReport)
+  }
+
   const calculeazaDurata = (start, end) => {
     if (!start) return ''
     const s = new Date(start)
@@ -1580,22 +1596,57 @@ function App() {
       alert(t('loginRequired'))
       return
     }
+    if (activeSession) {
+      alert(t('activeSessionExists'))
+      return
+    }
+    const selectedObject = objects.find(object => object.id === dashboardObjectId)
+    if (!selectedObject) {
+      alert(t('selectObjectBeforeStart'))
+      return
+    }
     if (!window.confirm(t('confirmStart'))) return
     const acumISO = new Date().toISOString()
+    const { data: reportData, error: reportError } = await supabase
+      .from('tagesbericht')
+      .insert([{
+        user_id: sessionUser.id,
+        start_time: acumISO,
+        worker_email: sessionUser.email ?? 'Benutzer',
+        object_id: selectedObject.id,
+        object_name: selectedObject.name,
+        auftragsnummer: dashboardAuftrag.trim() || null,
+        status: 'In Bearbeitung',
+        entry_type: 'automatic',
+        pause_minutes: 0,
+        fahrzeit_minutes: 0,
+        total_minutes: 0,
+        effective_minutes: 0,
+      }])
+      .select()
+      .single()
+
+    if (reportError || !reportData) {
+      alert(`${t('reportSaveError')} ${reportError?.message ?? ''}`)
+      return
+    }
+
     const { data, error } = await supabase
       .rpc('start_work_session', {
         p_name_nutzer: sessionUser.email ?? 'Benutzer',
         p_start_time: acumISO,
-        p_report_id: activeReportId,
+        p_report_id: reportData.id,
       })
 
     if (error) {
+      await supabase.from('tagesbericht').delete().eq('id', reportData.id).eq('user_id', sessionUser.id)
       alert(`${t('errorPrefix')} ${error.message}`)
     } else {
       const startedSession = Array.isArray(data) ? data[0] : data
       setCurrentId(startedSession.id)
       setActiveSession(startedSession)
       setInLucru(true)
+      setActiveReportId(reportData.id)
       setNowTick(new Date().getTime())
       setOraStart(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }))
       incarcaIstoric()
@@ -1659,7 +1710,6 @@ function App() {
             end_time: acumISO,
             worker_email: user.email ?? 'Benutzer',
             pontaj_id: currentId,
-            status: canEditLockedReports ? 'Erfolgreich erfasst' : 'In Prüfung',
             entry_type: 'automatic',
             correction_reason: null,
             updated_at: new Date().toISOString(),
@@ -1759,6 +1809,7 @@ function App() {
   const currentOrderText = activeReport
     ? (activeReport.object_name || activeReport.auftragsnummer || t('noActiveOrder'))
     : t('noActiveOrder')
+  const selectedDashboardObject = objects.find(object => object.id === dashboardObjectId)
   const latestEmail = latestReport ? dashboardEmails.find(email => email.report_id === latestReport.id) : null
   const reportStatusText = !latestReport
     ? t('reportOpen')
@@ -1881,6 +1932,57 @@ function App() {
                     </div>
                   </button>
                 )}
+                <div className="mb-4 rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500">{t('currentOrder')}</p>
+                      {inLucru && activeReport ? (
+                        <p className="mt-1 text-sm font-bold text-cyan-100">{activeReport.object_name}</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-400">{t('selectBeforeStart')}</p>
+                      )}
+                    </div>
+                    {inLucru && (
+                      <button
+                        type="button"
+                        onClick={openCurrentReport}
+                        className="rounded-md bg-cyan-500/15 px-3 py-2 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/20"
+                      >
+                        {t('toCurrentReport')}
+                      </button>
+                    )}
+                  </div>
+                  {!inLucru ? (
+                    <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr]">
+                      <select
+                        value={dashboardObjectId}
+                        onChange={e => setDashboardObjectId(e.target.value)}
+                        className="w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700"
+                      >
+                        <option value="">{t('objectOrderSelect')}</option>
+                        {objects.map(object => (
+                          <option key={object.id} value={object.id}>
+                            {object.name}{object.address ? ` - ${object.address}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={dashboardAuftrag}
+                        onChange={e => setDashboardAuftrag(e.target.value)}
+                        placeholder={t('orderNumber')}
+                        className="w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400">
+                      {activeReport?.auftragsnummer && <span>{t('order')}: {activeReport.auftragsnummer} · </span>}
+                      {t('start')}: {oraStart || '-'}
+                    </div>
+                  )}
+                  {!inLucru && selectedDashboardObject?.address && (
+                    <div className="mt-2 text-xs text-slate-400">{selectedDashboardObject.address}</div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={inLucru ? handleStop : handleStart}
