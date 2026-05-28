@@ -972,6 +972,12 @@ function App() {
   }
 
   const handleEditReport = async (report) => {
+    if (inLucru && !canEditLockedReports && activeSession?.report_id && report.id !== activeSession.report_id) {
+      alert(t('activeReportOnly'))
+      await openCurrentReport()
+      return
+    }
+
     const lockedBySignature = Boolean(report.locked_by_signature || report.customer_signed_at)
     if ((report.email_sent || report.status === 'Versendet' || lockedBySignature) && !canEditLockedReports) {
       alert(lockedBySignature ? t('signedLocked') : t('sentAlready'))
@@ -986,6 +992,12 @@ function App() {
 
     if (error || !fullReport) {
       alert(`${t('reportLoadError')} ${error?.message ?? ''}`)
+      return
+    }
+
+    if (inLucru && !canEditLockedReports && activeSession?.report_id && fullReport.id !== activeSession.report_id) {
+      alert(t('activeReportOnly'))
+      await openCurrentReport()
       return
     }
 
@@ -1367,6 +1379,18 @@ function App() {
   const handleCreateReport = async (e) => {
     e?.preventDefault()
     if (!user) return alert(t('loginRequired'))
+    if (inLucru && !canEditLockedReports) {
+      const sessionReportId = activeSession?.report_id ?? activeReportId
+      if (!sessionReportId) {
+        alert(t('reportTimeLinkWarning'))
+        return
+      }
+      if (!editingReportId || editingReportId !== sessionReportId) {
+        alert(t('activeReportOnly'))
+        await openCurrentReport()
+        return
+      }
+    }
     if (!reportChecklist.workDone || !reportChecklist.workTime) {
       alert(t('completionRequired'))
       return
@@ -1998,6 +2022,9 @@ function App() {
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
   ]
+  const visibleReports = inLucru && !canEditLockedReports && activeSession?.report_id
+    ? reports.filter(report => report.id === activeSession.report_id)
+    : reports
 
   return (
     <div
@@ -2071,7 +2098,14 @@ function App() {
 	            {user && (
 	              <div className="mb-6 flex flex-wrap gap-2">
 	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
-	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`relative px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+	                <button onClick={() => {
+                    if (inLucru && !canEditLockedReports) {
+                      openCurrentReport()
+                    } else {
+                      setView('reports')
+                      incarcaReports()
+                    }
+                  }} className={`relative px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
                     {t('report')}
                     {canEditLockedReports && reviewReports.length > 0 && (
                       <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-slate-950">
@@ -2764,10 +2798,10 @@ function App() {
                   ))
                 )
 	              ) : view === 'reports' ? (
-	                reports.length === 0 ? (
+	                visibleReports.length === 0 ? (
 	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noReports')}</div>
 	                ) : (
-		                  reports.map(r => (
+		                  visibleReports.map(r => (
 		                    <div key={r.id} className={`rounded-3xl border p-5 shadow-sm ${
                           isReviewStatus(r.status)
                             ? 'border-amber-300/40 bg-amber-400/10 shadow-amber-950/20'
