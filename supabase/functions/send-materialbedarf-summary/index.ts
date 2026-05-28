@@ -168,8 +168,11 @@ Deno.serve(async (req) => {
     const requests = (data ?? []) as MaterialRequest[]
     if (requests.length === 0) throw new Error('Keine offenen Materialbedarfe fuer dieses Datum')
 
+    const senders = Array.from(new Set(requests.map(row => row.reporter_name || row.reporter_email).filter(Boolean)))
+    const senderLabel = senders.length > 0 ? senders.join(', ') : (userData.user.email ?? 'Unbekannt')
+    const senderEmail = requests.find(row => row.reporter_email)?.reporter_email ?? userData.user.email ?? undefined
     const pdfBytes = await buildPdf(requests, requestDate)
-    const subject = `Materialbedarf ${toGermanDate(requestDate)}`
+    const subject = `Materialbedarf ${toGermanDate(requestDate)} - ${senderLabel}`
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -180,8 +183,9 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: emailFrom,
         to: [recipient],
+        reply_to: senderEmail ? [senderEmail] : undefined,
         subject,
-        html: `<p>Guten Tag,</p><p>anbei erhalten Sie die Materialbedarf-Tagesuebersicht vom ${toGermanDate(requestDate)}.</p><p>Mit freundlichen Gruessen<br>Voqenti</p>`,
+        html: `<p>Guten Tag,</p><p>anbei erhalten Sie die Materialbedarf-Tagesuebersicht vom ${toGermanDate(requestDate)}.</p><p><strong>Gesendet von:</strong> ${senderLabel}</p><p>Mit freundlichen Gruessen<br>Voqenti</p>`,
         attachments: [{
           filename: `Materialbedarf_${requestDate}.pdf`,
           content: bytesToBase64(pdfBytes),
