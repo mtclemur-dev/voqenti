@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import { DateTime } from 'luxon'
 import { languages as i18nLanguages, uiTranslations } from './i18n'
+import { Capacitor } from '@capacitor/core'
+import { LocalNotifications } from '@capacitor/local-notifications'
 
 function App() {
   const [oraStart, setOraStart] = useState(null)
@@ -82,13 +84,20 @@ function App() {
   const [signatureModalOpen, setSignatureModalOpen] = useState(false)
   const [isModalSigning, setIsModalSigning] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState(
-    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
+    Capacitor.isNativePlatform() ? 'default' : (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'),
   )
   const signatureRef = useRef(null)
   const modalSignatureRef = useRef(null)
   const notifiedReviewIdsRef = useRef(new Set())
-  const isAdmin = user?.email?.toLowerCase() === 'mtclemur@gmail.com'
-  const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
+  const adminEmails = ['mtclemur@gmail.com', 'mtclemur@gmx.de', 'mtclemur@gmxc.de']
+  const userEmail = user?.email?.toLowerCase() ?? ''
+  const isAdmin = adminEmails.includes(userEmail)
+  const currentWorker = workers.find(worker => worker.email?.toLowerCase() === userEmail)
+  const displayName = currentWorker?.name ?? user?.user_metadata?.name ?? user?.email ?? 'Benutzer'
+  const workerNameByEmail = useCallback((email, fallback = 'Benutzer') => {
+    const worker = workers.find(item => item.email?.toLowerCase() === email?.toLowerCase())
+    return worker?.name ?? fallback
+  }, [workers])
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
@@ -122,7 +131,7 @@ function App() {
     }
     return { label: `🔵 ${reportStatusLabel(report.status)}`, tone: 'bg-cyan-500/15 text-cyan-200' }
   }, [isReviewStatus, reportStatusLabel, t])
-  const notifyReviewNeeded = useCallback((report) => {
+  const notifyReviewNeeded = useCallback(async (report) => {
     if (!canEditLockedReports || !report?.id || !isReviewStatus(report.status)) return
     if (notifiedReviewIdsRef.current.has(report.id)) return
     notifiedReviewIdsRef.current.add(report.id)
@@ -131,13 +140,33 @@ function App() {
     const body = `${report.object_name || t('report')} ${t('reviewNotificationBody')}`
 
     if (navigator.vibrate) navigator.vibrate([180, 90, 180])
+    if (Capacitor.isNativePlatform()) {
+      const permission = await LocalNotifications.checkPermissions()
+      if (permission.display === 'granted') {
+        await LocalNotifications.schedule({
+          notifications: [{
+            id: Number(report.id) % 2147483647,
+            title,
+            body,
+            schedule: { at: new Date(Date.now() + 500) },
+          }],
+        })
+      }
+      return
+    }
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       new Notification(title, { body, tag: `tagesbericht-${report.id}` })
     }
   }, [canEditLockedReports, isReviewStatus, t])
   const handleEnableNotifications = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const permission = await LocalNotifications.requestPermissions()
+      setNotificationPermission(permission.display)
+      if (permission.display === 'granted' && navigator.vibrate) navigator.vibrate(120)
+      return
+    }
     if (typeof Notification === 'undefined') {
-      alert(t('notificationsUnsupported'))
+      setNotificationPermission('unsupported')
       return
     }
     const permission = await Notification.requestPermission()
@@ -600,11 +629,11 @@ function App() {
       .order('worker_name', { ascending: true })
       .order('object_name', { ascending: true })
 
-    if (isAdmin && workerSearchId) {
+    if (canEditLockedReports && workerSearchId) {
       query = query.eq('worker_id', workerSearchId)
-    } else if (!isAdmin && currentWorker?.id) {
+    } else if (!canEditLockedReports && currentWorker?.id) {
       query = query.eq('worker_id', currentWorker.id)
-    } else if (!isAdmin && user?.email) {
+    } else if (!canEditLockedReports && user?.email) {
       query = query.eq('worker_name', user.email)
     }
 
@@ -631,7 +660,7 @@ function App() {
       setWorkerReports([])
     } else {
       const filteredReports = (reportData ?? []).filter(report => {
-        if (isAdmin || isVorarbeiter) {
+        if (canEditLockedReports) {
           return workerSearchId ? (report.worker_ids ?? []).includes(workerSearchId) : true
         }
         return report.user_id === user.id
@@ -640,7 +669,7 @@ function App() {
       })
       setWorkerReports(filteredReports)
     }
-  }, [currentWorker, isAdmin, isVorarbeiter, user, workerSearchDate, workerSearchId])
+  }, [canEditLockedReports, currentWorker, user, workerSearchDate, workerSearchId])
 
   // Initialize auth and listen for changes
   useEffect(() => {
@@ -703,6 +732,7 @@ function App() {
     }
     if (view === 'pontaj') {
       incarcaObjects()
+      incarcaWorkers()
     }
     if (view === 'times') {
       incarcaWorkers()
@@ -1028,7 +1058,7 @@ function App() {
         objekt_id: materialRequestObjectId || null,
         objekt_name: materialRequestObject.trim(),
         auftrag_id: null,
-        reporter_name: currentWorker?.name ?? user.email ?? 'Benutzer',
+        reporter_name: displayName,
         reporter_email: user.email ?? null,
         request_date: materialRequestDate,
         note: null,
@@ -1193,7 +1223,7 @@ function App() {
     const { error: checkoutError } = await supabase.from('inventory_checkouts').insert([{
       inventory_item_id: item.id,
       user_id: user.id,
-      worker_name: currentWorker?.name ?? user.email ?? 'Benutzer',
+      worker_name: displayName,
       worker_email: user.email ?? null,
       object_id: selectedObject?.id ?? null,
       object_name: selectedObject?.name ?? (reportObject || null),
@@ -1350,7 +1380,7 @@ function App() {
       const reportPayload = {
         user_id: user.id,
         start_time: startIso,
-        worker_email: user.email ?? 'Benutzer',
+        worker_email: displayName,
         object_name: objectName,
         auftragsnummer: reportAuftragsnummer,
         worker_ids: effectiveWorkerIds,
@@ -1490,7 +1520,7 @@ function App() {
     const minuteTotals = buildMinuteTotals(totals)
     const reportWorkerIds = Array.isArray(reportData?.worker_ids) ? reportData.worker_ids : []
     const reportWorkerNames = Array.isArray(reportData?.worker_names) ? reportData.worker_names : []
-    const fallbackName = user.email ?? 'Benutzer'
+    const fallbackName = displayName
     const selectedWorkers = reportWorkerIds.length > 0
       ? reportWorkerIds.map((workerId, index) => ({
         worker_id: workerId,
@@ -1544,7 +1574,7 @@ function App() {
       start_time: sessionStartIso ?? reportData?.start_time ?? null,
       end_time: endIso,
       creator_email: user.email ?? null,
-      creator_name: reportData?.worker_names?.[0] ?? user.email ?? 'Benutzer',
+      creator_name: reportData?.worker_names?.[0] ?? displayName,
       object_name: reportData?.object_name ?? null,
       auftragsnummer: reportData?.auftragsnummer ?? null,
       worker_names: reportData?.worker_names ?? [],
@@ -1701,12 +1731,12 @@ function App() {
       .insert([{
         user_id: sessionUser.id,
         start_time: acumISO,
-        worker_email: sessionUser.email ?? 'Benutzer',
+        worker_email: workerNameByEmail(sessionUser.email, sessionUser.email ?? 'Benutzer'),
         object_id: selectedObject.id,
         object_name: selectedObject.name,
         auftragsnummer: dashboardAuftrag.trim() || null,
         worker_ids: !canEditLockedReports && currentWorker?.id ? [currentWorker.id] : [],
-        worker_names: !canEditLockedReports ? [currentWorker?.name ?? sessionUser.email ?? 'Benutzer'] : [],
+        worker_names: !canEditLockedReports ? [currentWorker?.name ?? workerNameByEmail(sessionUser.email, sessionUser.email ?? 'Benutzer')] : [],
         status: 'In Bearbeitung',
         entry_type: 'automatic',
         pause_minutes: 0,
@@ -1724,7 +1754,7 @@ function App() {
 
     const { data, error } = await supabase
       .rpc('start_work_session', {
-        p_name_nutzer: sessionUser.email ?? 'Benutzer',
+        p_name_nutzer: workerNameByEmail(sessionUser.email, sessionUser.email ?? 'Benutzer'),
         p_start_time: acumISO,
         p_report_id: reportData.id,
       })
@@ -1799,7 +1829,7 @@ function App() {
           .from('tagesbericht')
           .update({
             end_time: acumISO,
-            worker_email: user.email ?? 'Benutzer',
+            worker_email: displayName,
             pontaj_id: currentId,
             entry_type: 'automatic',
             correction_reason: null,
@@ -1957,12 +1987,12 @@ function App() {
               <div className="mt-4">
                 {user ? (
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-slate-200 mb-4">
-                    <div>{t('signedIn')}: <span className="font-semibold text-white">{user.email}</span></div>
+                    <div>{t('signedIn')}: <span className="font-semibold text-white">{displayName}</span></div>
                     <div className="flex gap-2">
                       <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 bg-slate-800 rounded-md text-slate-100 text-sm">
                         {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
                       </select>
-                      {canEditLockedReports && notificationPermission !== 'granted' && (
+                      {canEditLockedReports && notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
                         <button onClick={handleEnableNotifications} className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-300/20 rounded-md text-amber-100 text-sm w-full sm:w-auto">
                           {t('enableNotifications')}
                         </button>
@@ -2533,7 +2563,7 @@ function App() {
 	                        ))}
 	                      </>
 	                    ) : (
-	                      <option value={currentWorker?.id ?? ''}>{currentWorker?.name ?? user.email}</option>
+	                      <option value={currentWorker?.id ?? ''}>{currentWorker?.name ?? displayName}</option>
 	                    )}
 	                  </select>
 	                  {!canEditLockedReports && (
@@ -2729,7 +2759,7 @@ function App() {
 		                          )}
 		                        </div>
 	                      </div>
-			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">{t('workers')}: {r.worker_email}</div>}
+			                      {r.worker_email && <div className="text-xs text-slate-500 mt-2">{t('workers')}: {workerNameByEmail(r.worker_email, r.worker_email)}</div>}
                           <div className="text-xs text-slate-500 mt-1">Zeiterfassung: {r.entry_type === 'manual' ? `${t('manual')} - ${r.correction_reason ?? ''}` : t('automatic')}</div>
                           <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                             <div className="rounded-lg bg-slate-950/70 p-2">
@@ -2918,7 +2948,7 @@ function App() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="text-sm font-semibold text-white">{request.objekt_name}</div>
-                                <div className="text-xs text-slate-500">{t('reportedBy')}: {request.reporter_name ?? request.reporter_email}</div>
+                                <div className="text-xs text-slate-500">{t('reportedBy')}: {request.reporter_name ?? workerNameByEmail(request.reporter_email, request.reporter_email)}</div>
                               </div>
                               {(isAdmin || isVorarbeiter) ? (
                                 <select
@@ -2966,7 +2996,7 @@ function App() {
                           ) : openCheckouts.map(checkout => (
                             <div key={checkout.id} className="rounded-lg bg-slate-950/70 px-3 py-2">
                               <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.inventory_item_id}</div>
-                              <div className="text-xs text-slate-400">{t('workers')}: {checkout.worker_name ?? checkout.worker_email}</div>
+                              <div className="text-xs text-slate-400">{t('workers')}: {checkout.worker_name ?? workerNameByEmail(checkout.worker_email, checkout.worker_email)}</div>
                               {checkout.object_name && <div className="text-xs text-slate-400">Objekt: {checkout.object_name}</div>}
                               <div className="text-xs text-slate-500">Seit: {formatTimeBerlin(checkout.taken_at)}</div>
                               <button
