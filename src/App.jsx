@@ -3,111 +3,6 @@ import { supabase } from './supabaseClient'
 import { DateTime } from 'luxon'
 import { languages as i18nLanguages, uiTranslations } from './i18n'
 
-const shortWorkerName = (nameOrEmail) => {
-  const raw = (nameOrEmail || '').split('@')[0].trim()
-  if (!raw) return ''
-  const parts = raw.split(/\s+/).filter(Boolean)
-  return parts.length > 1 ? parts[parts.length - 1] : parts[0]
-}
-
-const WorkMoodIcon = ({ seconds = 0, active = false, workerName = '' }) => {
-  const hours = seconds / 3600
-  const level = !active ? 0 : hours >= 9 ? 4 : hours >= 5 ? 3 : hours >= 2 ? 2 : 1
-  const hardShift = active && level >= 3
-  const mood = [
-    { bg: 'from-slate-600 to-slate-800', face: '#cbd5e1', mouth: 'M35 48 Q50 48 65 48', brow: 0, sweat: false, tilt: 0 },
-    { bg: 'from-cyan-400 to-emerald-400', face: '#ecfeff', mouth: 'M35 48 Q50 58 65 48', brow: 0, sweat: false, tilt: -1 },
-    { bg: 'from-emerald-400 to-amber-300', face: '#fffbeb', mouth: 'M35 50 Q50 54 65 50', brow: 2, sweat: false, tilt: 2 },
-    { bg: 'from-amber-300 to-orange-500', face: '#fff7ed', mouth: 'M35 55 Q50 47 65 55', brow: 5, sweat: true, tilt: 5 },
-    { bg: 'from-orange-500 to-rose-600', face: '#fff1f2', mouth: 'M35 57 Q50 43 65 57', brow: 8, sweat: true, tilt: 8 },
-  ][level]
-  const displayName = shortWorkerName(workerName)
-
-  return (
-    <div className={`relative h-28 w-28 shrink-0 overflow-hidden rounded-3xl bg-gradient-to-br ${mood.bg} p-2 shadow-lg ${active ? 'ring-2 ring-emerald-300/30' : 'ring-1 ring-slate-600/50'}`}>
-      <style>{`
-        @keyframes sleepBob {
-          0%, 100% { transform: translateY(0) rotate(-2deg); }
-          50% { transform: translateY(3px) rotate(2deg); }
-        }
-        @keyframes snoreFloat {
-          0% { transform: translate(0, 8px) scale(0.8); opacity: 0; }
-          35% { opacity: 1; }
-          100% { transform: translate(18px, -16px) scale(1.15); opacity: 0; }
-        }
-        @keyframes pickaxeSwing {
-          0%, 18%, 100% { transform: rotate(-24deg); }
-          8% { transform: rotate(18deg); }
-        }
-        @keyframes sweatWipe {
-          0%, 56%, 100% { transform: rotate(0deg); opacity: 0; }
-          64% { transform: rotate(-38deg); opacity: 1; }
-          74% { transform: rotate(-18deg); opacity: 1; }
-          84% { transform: rotate(0deg); opacity: 0; }
-        }
-        @keyframes sweatDrop {
-          0%, 55%, 100% { transform: translateY(0); opacity: 0; }
-          66% { opacity: 1; }
-          82% { transform: translateY(9px); opacity: 0; }
-        }
-        .pickaxe-swing { transform-box: fill-box; transform-origin: 54px 72px; animation: pickaxeSwing 2.4s ease-in-out infinite; }
-        .sweat-wipe { transform-box: fill-box; transform-origin: 59px 70px; animation: sweatWipe 5.2s ease-in-out infinite; }
-        .sweat-drop { animation: sweatDrop 5.2s ease-in-out infinite; }
-        .sleep-bob { animation: sleepBob 2.8s ease-in-out infinite; }
-        .snore-float { animation: snoreFloat 2.8s ease-in-out infinite; }
-      `}</style>
-      {active ? (
-        <>
-          <video
-            src="/work-active.mp4"
-            className="absolute inset-0 h-full w-full object-cover opacity-90"
-            autoPlay
-            muted
-            loop
-            playsInline
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/10" />
-          <svg viewBox="0 0 100 100" className="relative h-full w-full opacity-95" style={{ transform: `rotate(${mood.tilt}deg)` }} aria-hidden="true">
-            <g className={hardShift ? 'sweat-wipe' : 'pickaxe-swing'}>
-              <path d="M62 68 L88 42" stroke="#78350f" strokeWidth="5" strokeLinecap="round" />
-              {!hardShift && <path d="M77 36 L94 49" stroke="#cbd5e1" strokeWidth="6" strokeLinecap="round" />}
-              {hardShift && <path d="M82 39 L92 43" stroke="#e2e8f0" strokeWidth="5" strokeLinecap="round" />}
-            </g>
-            <circle cx="50" cy="38" r="22" fill={mood.face} />
-            <path d="M28 34 Q50 15 72 34" fill="none" stroke="#0f172a" strokeWidth="7" strokeLinecap="round" />
-            <path d={`M34 ${34 + mood.brow} L44 ${32 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            <path d={`M56 ${32 + mood.brow} L66 ${34 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            <circle cx="40" cy="41" r="3.5" fill="#0f172a" />
-            <circle cx="60" cy="41" r="3.5" fill="#0f172a" />
-            <path d={mood.mouth} fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            {mood.sweat && <path className="sweat-drop" d="M72 35 C82 45 74 55 68 50 C63 46 68 39 72 35Z" fill="#67e8f9" />}
-            <path d="M31 65 Q50 75 69 65 L76 90 H24Z" fill="#0f172a" opacity="0.9" />
-          </svg>
-        </>
-      ) : (
-        <>
-          <div className="absolute inset-x-5 bottom-4 h-7 rounded-full bg-slate-950/30" />
-          <svg viewBox="0 0 100 100" className="relative h-full w-full sleep-bob" aria-hidden="true">
-            <path d="M25 67 Q50 78 75 67 L82 91 H18Z" fill="#0f172a" opacity="0.92" />
-            <circle cx="50" cy="41" r="24" fill="#e2e8f0" />
-            <path d="M29 35 Q50 17 71 35" fill="none" stroke="#0f172a" strokeWidth="7" strokeLinecap="round" />
-            <path d="M34 43 Q40 39 46 43" fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            <path d="M54 43 Q60 39 66 43" fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            <path d="M40 55 Q50 60 60 55" fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-            <text x="66" y="25" fill="#bae6fd" fontSize="14" fontWeight="700" className="snore-float">Zzz</text>
-          </svg>
-        </>
-      )}
-      <span className={`absolute right-2 top-2 h-3 w-3 rounded-full ${active ? 'bg-emerald-300' : 'bg-slate-400'}`} />
-      {displayName && (
-        <span className="absolute inset-x-2 bottom-2 rounded-full bg-slate-950/75 px-2 py-1 text-center text-[11px] font-bold leading-none text-white">
-          {displayName}
-        </span>
-      )}
-    </div>
-  )
-}
-
 function App() {
   const [oraStart, setOraStart] = useState(null)
   const [inLucru, setInLucru] = useState(false)
@@ -1310,13 +1205,6 @@ function App() {
       const objectName = selectedObj ? selectedObj.name : reportObject
       const fahrzeitMinutes = Math.max(0, Math.round(Number(reportFahrzeitMinutes || 0)))
       const pauseMinutes = Math.max(0, Math.round(Number(reportPauseMinutes || 0)))
-      const startForValidation = new Date(reportStart)
-      const endForValidation = reportEnd ? new Date(reportEnd) : new Date()
-      const workMinutesForValidation = Math.max(0, Math.round((endForValidation.getTime() - startForValidation.getTime()) / 60000) - pauseMinutes)
-      if (!String(objectName || '').trim() && workMinutesForValidation >= 15) {
-        alert(t('objectRequiredForLongReport'))
-        return
-      }
       const selectedWorkers = workers.filter(worker => selectedWorkerIds.includes(worker.id))
       const reportTaskText = [...selectedWorkTemplates, reportTask.trim()].filter(Boolean).join('\n')
       const taskTranslation = await translateToGerman(reportTaskText)
@@ -1925,7 +1813,6 @@ function App() {
                   <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-slate-400 block mb-3">{t('currentStatus')}</span>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      <WorkMoodIcon seconds={activeTotals.total_seconds} active={inLucru} workerName={currentWorker?.name ?? user?.email} />
                       <div>
                         <div className="flex items-center gap-3">
                           <span className={`h-3.5 w-3.5 rounded-full ${inLucru ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
@@ -1945,18 +1832,16 @@ function App() {
                 {!inLucru ? (
                   <button
                     onClick={handleStart}
-                    className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-bold py-5 rounded-3xl shadow-xl shadow-cyan-500/30 transition-transform active:scale-[0.98]"
+                    className="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-5 rounded-3xl shadow-xl shadow-cyan-500/30 transition-transform active:scale-[0.98]"
                   >
-                    <span className="h-3 w-3 rounded-full bg-white/90" />
                     {t('startWork')}
                   </button>
                 ) : (
                   <div className="space-y-4">
                     <button
                       onClick={handleStop}
-                      className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 text-white font-bold py-5 rounded-3xl shadow-xl shadow-rose-500/30 transition-transform active:scale-[0.98]"
+                      className="w-full flex items-center justify-center bg-rose-600 hover:bg-rose-500 text-white font-bold py-5 rounded-3xl shadow-xl shadow-rose-500/30 transition-transform active:scale-[0.98]"
                     >
-                      <span className="h-3 w-3 rounded-full bg-white/90 animate-pulse" />
                       {t('stopWork')}
                     </button>
                   </div>
