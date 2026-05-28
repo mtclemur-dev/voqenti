@@ -1829,23 +1829,16 @@ function App() {
                   </div>
                 </div>
 
-                {!inLucru ? (
-                  <button
-                    onClick={handleStart}
-                    className="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-5 rounded-3xl shadow-xl shadow-cyan-500/30 transition-transform active:scale-[0.98]"
-                  >
-                    {t('startWork')}
-                  </button>
-                ) : (
-                  <div className="space-y-4">
-                    <button
-                      onClick={handleStop}
-                      className="w-full flex items-center justify-center bg-rose-600 hover:bg-rose-500 text-white font-bold py-5 rounded-3xl shadow-xl shadow-rose-500/30 transition-transform active:scale-[0.98]"
-                    >
-                      {t('stopWork')}
-                    </button>
-                  </div>
-                )}
+                <button
+                  onClick={inLucru ? handleStop : handleStart}
+                  className={`w-full flex items-center justify-center text-white font-bold py-5 rounded-3xl shadow-xl transition-transform active:scale-[0.98] ${
+                    inLucru
+                      ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/30'
+                      : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'
+                  }`}
+                >
+                  {inLucru ? t('stopWork') : t('startWork')}
+                </button>
                 <div className="mt-3">
                   <button
                     type="button"
