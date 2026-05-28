@@ -362,16 +362,18 @@ function App() {
     }
 
     const today = DateTime.now().setZone('Europe/Berlin').toISODate()
+    const monthStart = DateTime.now().setZone('Europe/Berlin').startOf('month').toISO()
 
     const { data: pontajData, error: pontajError } = await supabase
       .from('pontaj')
       .select('id, Uhrzeit_Start, Uhrzeit_Ende, status, report_id, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, entry_type, correction_reason, created_at')
       .eq('user_id', user.id)
+      .gte('Uhrzeit_Start', monthStart)
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(200)
 
     if (!pontajError) {
-      setDashboardPontaj((pontajData ?? []).filter(row => isTodayBerlin(row.Uhrzeit_Start ?? row.created_at)))
+      setDashboardPontaj(pontajData ?? [])
     } else {
       setDashboardPontaj([])
     }
@@ -1816,9 +1818,20 @@ function App() {
     ? calculateSessionTotals(activeSession, new Date(nowTick || new Date(activeSession.Uhrzeit_Start).getTime()).toISOString())
     : { total_seconds: 0, pause_seconds: 0, fahrzeit_seconds: 0, effective_seconds: 0 }
   const workerEntriesTotalMinutes = workerEntries.reduce((sum, entry) => sum + Number(entry.effective_minutes ?? 0), 0)
+  const nowBerlin = DateTime.now().setZone('Europe/Berlin')
+  const weekStartBerlin = nowBerlin.startOf('week')
+  const monthStartBerlin = nowBerlin.startOf('month')
   const inactiveDashboardRows = dashboardPontaj.filter(row => row.id !== activeSession?.id)
-  const todayEffectiveSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
-  const todayPauseSeconds = inactiveDashboardRows.reduce((sum, row) => sum + minutesToSeconds(row.pause_minutes), 0) + (activeSession ? activeTotals.pause_seconds : 0)
+  const dashboardRowsInRange = (start) => inactiveDashboardRows.filter(row => {
+    const rowIso = row.Uhrzeit_Start ?? row.created_at
+    if (!rowIso) return false
+    return DateTime.fromISO(rowIso, { zone: 'utc' }).setZone('Europe/Berlin') >= start
+  })
+  const todayRows = inactiveDashboardRows.filter(row => isTodayBerlin(row.Uhrzeit_Start ?? row.created_at))
+  const todayEffectiveSeconds = todayRows.reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
+  const todayPauseSeconds = todayRows.reduce((sum, row) => sum + minutesToSeconds(row.pause_minutes), 0) + (activeSession ? activeTotals.pause_seconds : 0)
+  const weekEffectiveSeconds = dashboardRowsInRange(weekStartBerlin).reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
+  const monthEffectiveSeconds = dashboardRowsInRange(monthStartBerlin).reduce((sum, row) => sum + minutesToSeconds(row.effective_minutes), 0) + (activeSession ? activeTotals.effective_seconds : 0)
   const reportFormDurationSeconds = reportStart && reportEnd
     ? Math.max(0, secondsBetween(new Date(reportStart).toISOString(), new Date(reportEnd).toISOString()) - minutesToSeconds(reportPauseMinutes))
     : 0
@@ -1837,7 +1850,9 @@ function App() {
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const reviewReports = dashboardReports.filter(report => !report.email_sent && isReviewStatus(report.status))
   const dashboardCards = [
-    { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
+    { label: t('todayShort'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-emerald-200' },
+    { label: t('weekShort'), value: formatDurationSeconds(weekEffectiveSeconds), tone: 'text-cyan-100' },
+    { label: t('monthShort'), value: formatDurationSeconds(monthEffectiveSeconds), tone: 'text-indigo-100' },
     { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
