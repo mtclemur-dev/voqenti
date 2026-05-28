@@ -77,16 +77,22 @@ function App() {
   const [customerSignedAt, setCustomerSignedAt] = useState(null)
   const [signatureModalOpen, setSignatureModalOpen] = useState(false)
   const [isModalSigning, setIsModalSigning] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
+  )
   const signatureRef = useRef(null)
   const modalSignatureRef = useRef(null)
+  const notifiedReviewIdsRef = useRef(new Set())
   const isAdmin = user?.email?.toLowerCase() === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === user?.email?.toLowerCase())
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
+  const isReviewStatus = useCallback((status) => status === 'In Prüfung' || status === 'In PrÃ¼fung', [])
   const reportStatusLabel = useCallback((status) => {
     const key = {
-      'In Prüfung': 'inReview',
+      ['In Prüfung']: 'inReview',
+      ['In PrÃ¼fung']: 'inReview',
       'Erfolgreich erfasst': 'successfullyRecorded',
       'Vom Kunden unterschrieben': 'customerSignedStatus',
       Versendet: 'sent',
@@ -96,6 +102,28 @@ function App() {
     }[status]
     return key ? t(key) : (status || t('saved'))
   }, [t])
+  const notifyReviewNeeded = useCallback((report) => {
+    if (!canEditLockedReports || !report?.id || !isReviewStatus(report.status)) return
+    if (notifiedReviewIdsRef.current.has(report.id)) return
+    notifiedReviewIdsRef.current.add(report.id)
+
+    const title = t('reviewNotificationTitle')
+    const body = `${report.object_name || t('report')} ${t('reviewNotificationBody')}`
+
+    if (navigator.vibrate) navigator.vibrate([180, 90, 180])
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(title, { body, tag: `tagesbericht-${report.id}` })
+    }
+  }, [canEditLockedReports, isReviewStatus, t])
+  const handleEnableNotifications = async () => {
+    if (typeof Notification === 'undefined') {
+      alert(t('notificationsUnsupported'))
+      return
+    }
+    const permission = await Notification.requestPermission()
+    setNotificationPermission(permission)
+    if (permission === 'granted' && navigator.vibrate) navigator.vibrate(120)
+  }
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
@@ -600,7 +628,9 @@ function App() {
 
     const channel = supabase
       .channel(`dashboard-summary-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tagesbericht' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tagesbericht' }, (payload) => {
+        const report = payload?.new
+        if (report) notifyReviewNeeded(report)
         incarcaDashboardSummary()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'email_outbox' }, () => {
@@ -624,7 +654,7 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaDashboardSummary, incarcaInventory, user])
+  }, [incarcaDashboardSummary, incarcaInventory, notifyReviewNeeded, user])
 
   const getSignatureDataUrl = () => {
     return reportSignatureDataUrl
@@ -1736,6 +1766,7 @@ function App() {
       ? t('sent')
       : reportStatusLabel(latestReport.status ?? (activeReport ? 'Entwurf' : 'Gespeichert'))
   const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
+  const reviewReports = dashboardReports.filter(report => !report.email_sent && isReviewStatus(report.status))
   const dashboardCards = [
     { label: t('workTimeToday'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-white' },
     { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
@@ -1775,6 +1806,11 @@ function App() {
                       <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 bg-slate-800 rounded-md text-slate-100 text-sm">
                         {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
                       </select>
+                      {canEditLockedReports && notificationPermission !== 'granted' && (
+                        <button onClick={handleEnableNotifications} className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-300/20 rounded-md text-amber-100 text-sm w-full sm:w-auto">
+                          {t('enableNotifications')}
+                        </button>
+                      )}
                       <button onClick={handleSignOut} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-100 text-sm w-full sm:w-auto">{t('signOut')}</button>
                     </div>
                   </div>
@@ -1811,7 +1847,14 @@ function App() {
 	            {user && (
 	              <div className="mb-6 flex flex-wrap gap-2">
 	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
-	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('report')}</button>
+	                <button onClick={() => { setView('reports'); incarcaReports(); }} className={`relative px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                    {t('report')}
+                    {canEditLockedReports && reviewReports.length > 0 && (
+                      <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-slate-950">
+                        {reviewReports.length}
+                      </span>
+                    )}
+                  </button>
 	                <button onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`px-3 py-2 rounded-md text-sm ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('workTimes')}</button>
 	                <button onClick={() => { setView('materials'); incarcaMaterialbedarf(); incarcaInventory(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
 	              </div>
@@ -1819,6 +1862,25 @@ function App() {
 
             {view === 'pontaj' ? (
               <>
+                {canEditLockedReports && reviewReports.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setView('reports'); incarcaReports(); }}
+                    className="mb-4 w-full rounded-2xl border border-amber-300/35 bg-amber-400/12 px-4 py-3 text-left shadow-lg shadow-amber-950/20"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-amber-200">{t('urgentReview')}</p>
+                        <p className="mt-1 text-sm font-semibold text-white">
+                          {reviewReports.length} {t('reportsNeedReview')}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-black text-slate-950">
+                        {t('checkNow')}
+                      </span>
+                    </div>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={inLucru ? handleStop : handleStart}
@@ -2386,7 +2448,11 @@ function App() {
 	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noReports')}</div>
 	                ) : (
 		                  reports.map(r => (
-		                    <div key={r.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm">
+		                    <div key={r.id} className={`rounded-3xl border p-5 shadow-sm ${
+                          isReviewStatus(r.status)
+                            ? 'border-amber-300/40 bg-amber-400/10 shadow-amber-950/20'
+                            : 'border-slate-800 bg-slate-900/80'
+                        }`}>
 			                      <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="text-sm text-slate-400 mb-1">{formatDateBerlin(r.start_time)} {formatTimeBerlin(r.start_time)}</div>
@@ -2395,7 +2461,7 @@ function App() {
                             <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
                               r.email_sent || r.status === 'Versendet'
                                 ? 'bg-emerald-500/20 text-emerald-200'
-                                : r.status === 'In Prüfung'
+                                : isReviewStatus(r.status)
                                   ? 'bg-amber-500/15 text-amber-200'
                                   : r.status === 'Erfolgreich erfasst'
                                     ? 'bg-cyan-500/15 text-cyan-200'
