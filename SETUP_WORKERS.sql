@@ -117,6 +117,12 @@ CREATE POLICY "Worker time select authenticated"
   TO authenticated
   USING (
     lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+    OR EXISTS (
+      SELECT 1
+      FROM public.workers
+      WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+        AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+    )
     OR user_id = auth.uid()
     OR worker_name = (auth.jwt() ->> 'email')
     OR EXISTS (

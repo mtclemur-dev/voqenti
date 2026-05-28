@@ -163,6 +163,12 @@ CREATE POLICY "Select allowed reports"
   TO authenticated
   USING (
     lower(auth.jwt() ->> 'email') = 'mtclemur@gmail.com'
+    OR EXISTS (
+      SELECT 1
+      FROM public.workers
+      WHERE lower(workers.email) = lower(auth.jwt() ->> 'email')
+        AND lower(COALESCE(workers.role, 'mitarbeiter')) IN ('admin', 'vorarbeiter')
+    )
     OR auth.uid() = user_id
     OR lower(worker_email) = lower(auth.jwt() ->> 'email')
     OR EXISTS (

@@ -39,7 +39,7 @@ function App() {
   const [reportAuftragsnummer, setReportAuftragsnummer] = useState('')
   const [reportStart, setReportStart] = useState(new Date().toISOString().slice(0,16))
   const [reportEnd, setReportEnd] = useState('')
-  const [reportPauseMinutes, setReportPauseMinutes] = useState('0')
+  const [reportPauseMinutes, setReportPauseMinutes] = useState('')
   const [reportEntryType, setReportEntryType] = useState('automatic')
   const [reportCorrectionReason, setReportCorrectionReason] = useState('')
   const [reportChecklist, setReportChecklist] = useState({
@@ -51,6 +51,7 @@ function App() {
   const [editingReportId, setEditingReportId] = useState(null)
   const [existingDamageImageUrl, setExistingDamageImageUrl] = useState(null)
   const [workerEntries, setWorkerEntries] = useState([])
+  const [workerReports, setWorkerReports] = useState([])
   const [dashboardPontaj, setDashboardPontaj] = useState([])
   const [dashboardReports, setDashboardReports] = useState([])
   const [dashboardEmails, setDashboardEmails] = useState([])
@@ -180,7 +181,8 @@ function App() {
   const workerSummary = selectedWorkersForReport.length === 0
     ? ''
     : `${selectedWorkersForReport.slice(0, 2).map(worker => worker.name).join(', ')}${selectedWorkersForReport.length > 2 ? ` +${selectedWorkersForReport.length - 2}` : ''}`
-  const filteredWorkers = workers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+  const selectableWorkers = canEditLockedReports ? workers : workers.filter(worker => worker.id !== currentWorker?.id)
+  const filteredWorkers = selectableWorkers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
   const workSummary = selectedWorkTemplates.length === 0
     ? ''
     : `${selectedWorkTemplates.slice(0, 2).join(', ')}${selectedWorkTemplates.length > 2 ? ` +${selectedWorkTemplates.length - 2}` : ''}`
@@ -547,6 +549,7 @@ function App() {
   const incarcaWorkerEntries = useCallback(async () => {
     if (!user) {
       setWorkerEntries([])
+      setWorkerReports([])
       return
     }
 
@@ -572,7 +575,32 @@ function App() {
     } else {
       setWorkerEntries(data ?? [])
     }
-  }, [currentWorker, isAdmin, user, workerSearchDate, workerSearchId])
+
+    const startOfDay = DateTime.fromISO(workerSearchDate, { zone: 'Europe/Berlin' }).startOf('day').toUTC().toISO()
+    const endOfDay = DateTime.fromISO(workerSearchDate, { zone: 'Europe/Berlin' }).endOf('day').toUTC().toISO()
+    const { data: reportData, error: reportError } = await supabase
+      .from('tagesbericht')
+      .select('id, user_id, start_time, end_time, object_name, auftragsnummer, worker_ids, worker_names, status, email_sent, customer_signed_at, locked_by_signature, effective_minutes, total_minutes, pause_minutes, fahrzeit_minutes')
+      .gte('start_time', startOfDay)
+      .lte('start_time', endOfDay)
+      .order('start_time', { ascending: false })
+      .limit(200)
+
+    if (reportError) {
+      console.error('Worker reports load error:', reportError)
+      setWorkerReports([])
+    } else {
+      const filteredReports = (reportData ?? []).filter(report => {
+        if (isAdmin || isVorarbeiter) {
+          return workerSearchId ? (report.worker_ids ?? []).includes(workerSearchId) : true
+        }
+        return report.user_id === user.id
+          || (currentWorker?.id && (report.worker_ids ?? []).includes(currentWorker.id))
+          || report.worker_names?.some(name => name?.toLowerCase() === currentWorker?.name?.toLowerCase())
+      })
+      setWorkerReports(filteredReports)
+    }
+  }, [currentWorker, isAdmin, isVorarbeiter, user, workerSearchDate, workerSearchId])
 
   // Initialize auth and listen for changes
   useEffect(() => {
@@ -818,7 +846,7 @@ function App() {
     setReportFahrzeitMinutes('')
     setReportAuftragsnummer('')
     setReportEnd('')
-    setReportPauseMinutes('0')
+    setReportPauseMinutes('')
     setReportEntryType('automatic')
     setReportCorrectionReason('')
     setReportChecklist({ workTime: false, workDone: false, equipmentBack: false, materialsBack: false })
@@ -863,10 +891,10 @@ function App() {
     setReportDamageImage(null)
     setCustomerSatisfied(fullReport.customer_satisfied !== false)
     setCustomerFeedback(fullReport.customer_feedback ?? '')
-    setReportFahrzeitMinutes(String(fullReport.fahrzeit_minutes ?? ''))
+    setReportFahrzeitMinutes(Number(fullReport.fahrzeit_minutes ?? 0) > 0 ? String(fullReport.fahrzeit_minutes) : '')
     setReportAuftragsnummer(fullReport.auftragsnummer ?? '')
     setReportEnd(fullReport.end_time ? DateTime.fromISO(fullReport.end_time, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("yyyy-MM-dd'T'HH:mm") : '')
-    setReportPauseMinutes(String(fullReport.pause_minutes ?? 0))
+    setReportPauseMinutes(Number(fullReport.pause_minutes ?? 0) > 0 ? String(fullReport.pause_minutes) : '')
     setReportEntryType(fullReport.entry_type ?? 'automatic')
     setReportCorrectionReason(fullReport.correction_reason ?? '')
     setReportSignatureDataUrl(fullReport.customer_signature_data ?? fullReport.client_signature_data_url ?? null)
@@ -1270,7 +1298,10 @@ function App() {
       const objectName = selectedObj ? selectedObj.name : reportObject
       const fahrzeitMinutes = Math.max(0, Math.round(Number(reportFahrzeitMinutes || 0)))
       const pauseMinutes = Math.max(0, Math.round(Number(reportPauseMinutes || 0)))
-      const selectedWorkers = workers.filter(worker => selectedWorkerIds.includes(worker.id))
+      const effectiveWorkerIds = canEditLockedReports
+        ? selectedWorkerIds
+        : Array.from(new Set([...(currentWorker?.id ? [currentWorker.id] : []), ...selectedWorkerIds]))
+      const selectedWorkers = workers.filter(worker => effectiveWorkerIds.includes(worker.id))
       const reportTaskText = [...selectedWorkTemplates, reportTask.trim()].filter(Boolean).join('\n')
       const taskTranslation = await translateToGerman(reportTaskText)
       const damageTranslation = reportDamage ? await translateToGerman(reportDamageDescription) : null
@@ -1281,7 +1312,7 @@ function App() {
         worker_email: user.email ?? 'Benutzer',
         object_name: objectName,
         auftragsnummer: reportAuftragsnummer,
-        worker_ids: selectedWorkerIds,
+        worker_ids: effectiveWorkerIds,
         worker_names: selectedWorkers.map(worker => worker.name),
         end_time: endIsoFromForm,
         task: reportTaskText,
@@ -1633,6 +1664,8 @@ function App() {
         object_id: selectedObject.id,
         object_name: selectedObject.name,
         auftragsnummer: dashboardAuftrag.trim() || null,
+        worker_ids: !canEditLockedReports && currentWorker?.id ? [currentWorker.id] : [],
+        worker_names: !canEditLockedReports ? [currentWorker?.name ?? sessionUser.email ?? 'Benutzer'] : [],
         status: 'In Bearbeitung',
         entry_type: 'automatic',
         pause_minutes: 0,
@@ -1847,7 +1880,6 @@ function App() {
     : latestReport.email_sent || latestReport.status === 'Versendet' || latestEmail?.status === 'sent'
       ? t('sent')
       : reportStatusLabel(latestReport.status ?? (activeReport ? 'Entwurf' : 'Gespeichert'))
-  const todayPhotoCount = dashboardReports.filter(report => report.damage_image_url).length
   const reviewReports = dashboardReports.filter(report => !report.email_sent && isReviewStatus(report.status))
   const dashboardCards = [
     { label: t('todayShort'), value: formatDurationSeconds(todayEffectiveSeconds), tone: 'text-emerald-200' },
@@ -1856,7 +1888,6 @@ function App() {
     { label: t('pause'), value: formatDurationSeconds(todayPauseSeconds), tone: 'text-amber-300' },
     { label: t('currentOrder'), value: currentOrderText, tone: 'text-cyan-100' },
     { label: t('reportStatus'), value: reportStatusText, tone: latestReport ? 'text-emerald-300' : 'text-amber-300' },
-    { label: t('photosToday'), value: todayPhotoCount > 0 ? `${todayPhotoCount} Fotos` : t('noPhotos'), tone: todayPhotoCount > 0 ? 'text-cyan-100' : 'text-slate-300' },
   ]
 
   return (
@@ -2205,7 +2236,7 @@ function App() {
                         step="1"
                         value={reportPauseMinutes}
                         onChange={e => { setReportPauseMinutes(e.target.value); markReportTimeManual() }}
-                        placeholder={t('pause')}
+                        placeholder={t('pauseMinutes')}
                         className="px-3 py-2 rounded-md bg-slate-900 text-slate-100"
                       />
                       <select value={reportEntryType} onChange={e => setReportEntryType(e.target.value)} className="px-3 py-2 rounded-md bg-slate-900 text-slate-100">
@@ -2429,10 +2460,10 @@ function App() {
 	                  <select
 	                    value={workerSearchId}
 	                    onChange={e => setWorkerSearchId(e.target.value)}
-	                    disabled={!isAdmin}
+	                    disabled={!canEditLockedReports}
 	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
 	                  >
-	                    {isAdmin ? (
+	                    {canEditLockedReports ? (
 	                      <>
 	                        <option value="">{t('allWorkers')}</option>
 	                        {workers.map(worker => (
@@ -2443,7 +2474,7 @@ function App() {
 	                      <option value={currentWorker?.id ?? ''}>{currentWorker?.name ?? user.email}</option>
 	                    )}
 	                  </select>
-	                  {!isAdmin && (
+	                  {!canEditLockedReports && (
 	                    <p className="text-xs text-slate-400">{t('onlyOwnTimes')}</p>
 	                  )}
 	                  <button type="button" onClick={incarcaWorkerEntries} className="w-full px-4 py-3 bg-cyan-600 rounded-md text-white font-semibold">
@@ -2731,7 +2762,7 @@ function App() {
 		                  ))
 	                )
 	              ) : view === 'times' ? (
-	                workerEntries.length === 0 ? (
+	                workerEntries.length === 0 && workerReports.length === 0 ? (
 	                  <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('noTimes')}</div>
 	                ) : (
 	                  <>
@@ -2766,8 +2797,43 @@ function App() {
 	                            <span className="font-semibold text-slate-200">{formatDurationMinutes(entry.fahrzeit_minutes)}</span>
 	                          </div>
 	                        </div>
+                          {entry.report_id && (
+                            <button
+                              type="button"
+                              onClick={() => handleEditReport({ id: entry.report_id })}
+                              className="mt-3 w-full rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-cyan-100"
+                            >
+                              {t('openReport')}
+                            </button>
+                          )}
 	                      </div>
 	                    ))}
+                      {workerReports.length > 0 && (
+                        <div className="rounded-3xl border border-cyan-500/20 bg-slate-900/80 p-5">
+                          <div className="text-xs uppercase tracking-[0.25em] text-cyan-200">{t('reports')}</div>
+                          <div className="mt-3 space-y-2">
+                            {workerReports.map(report => (
+                              <button
+                                key={report.id}
+                                type="button"
+                                onClick={() => handleEditReport(report)}
+                                className="w-full rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-left hover:border-cyan-500/30"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-semibold text-white">{report.object_name ?? t('object')}</div>
+                                    <div className="mt-1 text-xs text-slate-400">{formatTimeBerlin(report.start_time)}{report.end_time ? ` - ${formatTimeBerlin(report.end_time)}` : ''}</div>
+                                    {report.worker_names?.length > 0 && <div className="mt-1 text-xs text-slate-500">{report.worker_names.join(', ')}</div>}
+                                  </div>
+                                  <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${reportCardStatus(report).tone}`}>
+                                    {reportCardStatus(report).label}
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 	                  </>
 	                )
 	              ) : view === 'materials' ? (
