@@ -1809,37 +1809,43 @@ function App() {
 
             {view === 'pontaj' ? (
               <>
-                <div className={`mb-8 rounded-[1.75rem] p-6 transition-all ${inLucru ? 'bg-emerald-500/15 ring-1 ring-emerald-400/30' : 'bg-slate-900/85 ring-1 ring-slate-700'}`}>
-                  <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-slate-400 block mb-3">{t('currentStatus')}</span>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <span className={`h-3.5 w-3.5 rounded-full ${inLucru ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                          <span className={`text-3xl font-extrabold ${inLucru ? 'text-emerald-200' : 'text-slate-200'}`}>
-                            {inLucru ? t('working') : t('stopped')}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs text-slate-400">
-                          {inLucru ? formatDurationSeconds(activeTotals.total_seconds) : 'Bereit'}
-                        </p>
+                <button
+                  type="button"
+                  onClick={inLucru ? handleStop : handleStart}
+                  className={`mb-8 w-full rounded-[1.75rem] p-6 text-left shadow-xl transition-transform active:scale-[0.99] ${
+                    inLucru
+                      ? 'bg-emerald-600 hover:bg-emerald-500 ring-1 ring-emerald-300/40 shadow-emerald-900/30'
+                      : 'bg-rose-950/90 hover:bg-rose-900 ring-1 ring-rose-500/30 shadow-rose-950/30'
+                  }`}
+                >
+                  <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-white/70 block mb-5">{t('currentStatus')}</span>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className={`h-3.5 w-3.5 rounded-full ${inLucru ? 'bg-white animate-pulse' : 'bg-rose-200'}`} />
+                        <span className="text-2xl sm:text-3xl font-extrabold text-white">
+                          {inLucru ? t('stopWork') : t('startWork')}
+                        </span>
                       </div>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-white/75">
+                        {inLucru ? t('runningStatus') : t('notRunningStatus')}
+                      </p>
+                      {inLucru && (
+                        <p className="mt-2 text-sm font-semibold text-white/90">
+                          {formatDurationSeconds(activeTotals.total_seconds)}
+                        </p>
+                      )}
                     </div>
-                    {oraStart && <p className="text-sm font-medium text-slate-200/80">{t('start')}: <span className="font-semibold text-white">{oraStart}</span></p>}
-                    <button
-                      onClick={inLucru ? handleStop : handleStart}
-                      className={`w-full flex items-center justify-center text-white font-bold py-4 rounded-2xl shadow-lg transition-transform active:scale-[0.98] ${
-                        inLucru
-                          ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
-                          : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/20'
-                      }`}
-                    >
-                      {inLucru ? t('stopWork') : t('startWork')}
-                    </button>
+                    {oraStart && (
+                      <div className="text-right text-xs font-medium text-white/80">
+                        <span className="block uppercase tracking-[0.18em] text-white/60">{t('start')}</span>
+                        <span className="text-sm font-bold text-white">{oraStart}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
+                </button>
 
-                <div className="-mt-4">
+                <div>
                   <button
                     type="button"
                     onClick={() => { setEquipmentPanelOpen(current => !current); incarcaInventory(); incarcaObjects(); }}
