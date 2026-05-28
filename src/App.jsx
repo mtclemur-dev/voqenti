@@ -1812,34 +1812,34 @@ function App() {
                 <button
                   type="button"
                   onClick={inLucru ? handleStop : handleStart}
-                  className={`mb-8 w-full rounded-[1.75rem] p-6 text-left shadow-xl transition-transform active:scale-[0.99] ${
+                  className={`mb-8 w-full rounded-[1.75rem] p-6 text-left shadow-xl backdrop-blur transition-transform active:scale-[0.99] ${
                     inLucru
-                      ? 'bg-emerald-600 hover:bg-emerald-500 ring-1 ring-emerald-300/40 shadow-emerald-900/30'
-                      : 'bg-rose-950/90 hover:bg-rose-900 ring-1 ring-rose-500/30 shadow-rose-950/30'
+                      ? 'bg-emerald-500/15 hover:bg-emerald-500/20 ring-1 ring-emerald-300/30 shadow-emerald-950/20'
+                      : 'bg-rose-500/10 hover:bg-rose-500/15 ring-1 ring-rose-300/20 shadow-rose-950/20'
                   }`}
                 >
-                  <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-white/70 block mb-5">{t('currentStatus')}</span>
+                  <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-slate-300 block mb-5">{t('currentStatus')}</span>
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-3">
-                        <span className={`h-3.5 w-3.5 rounded-full ${inLucru ? 'bg-white animate-pulse' : 'bg-rose-200'}`} />
-                        <span className="text-2xl sm:text-3xl font-extrabold text-white">
+                        <span className={`h-3.5 w-3.5 rounded-full ${inLucru ? 'bg-emerald-300 animate-pulse' : 'bg-rose-300'}`} />
+                        <span className={`text-2xl sm:text-3xl font-extrabold ${inLucru ? 'text-emerald-100' : 'text-rose-100'}`}>
                           {inLucru ? t('stopWork') : t('startWork')}
                         </span>
                       </div>
-                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-white/75">
+                      <p className={`mt-3 text-xs font-semibold uppercase tracking-[0.2em] ${inLucru ? 'text-emerald-200/80' : 'text-rose-200/75'}`}>
                         {inLucru ? t('runningStatus') : t('notRunningStatus')}
                       </p>
                       {inLucru && (
-                        <p className="mt-2 text-sm font-semibold text-white/90">
+                        <p className="mt-2 text-sm font-semibold text-emerald-100/90">
                           {formatDurationSeconds(activeTotals.total_seconds)}
                         </p>
                       )}
                     </div>
                     {oraStart && (
-                      <div className="text-right text-xs font-medium text-white/80">
-                        <span className="block uppercase tracking-[0.18em] text-white/60">{t('start')}</span>
-                        <span className="text-sm font-bold text-white">{oraStart}</span>
+                      <div className="text-right text-xs font-medium text-slate-200/80">
+                        <span className="block uppercase tracking-[0.18em] text-slate-400">{t('start')}</span>
+                        <span className="text-sm font-bold text-slate-100">{oraStart}</span>
                       </div>
                     )}
                   </div>
