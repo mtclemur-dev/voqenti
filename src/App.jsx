@@ -89,9 +89,8 @@ function App() {
   const signatureRef = useRef(null)
   const modalSignatureRef = useRef(null)
   const notifiedReviewIdsRef = useRef(new Set())
-  const adminEmails = ['mtclemur@gmail.com', 'mtclemur@gmx.de', 'mtclemur@gmxc.de']
   const userEmail = user?.email?.toLowerCase() ?? ''
-  const isAdmin = adminEmails.includes(userEmail)
+  const isAdmin = userEmail === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === userEmail)
   const displayName = currentWorker?.name ?? user?.user_metadata?.name ?? user?.email ?? 'Benutzer'
   const workerNameByEmail = useCallback((email, fallback = 'Benutzer') => {
