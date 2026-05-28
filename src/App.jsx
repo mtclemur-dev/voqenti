@@ -71,6 +71,7 @@ function App() {
   const [materialSummarySending, setMaterialSummarySending] = useState(false)
   const [editingMaterialRequestId, setEditingMaterialRequestId] = useState(null)
   const [inventoryItems, setInventoryItems] = useState([])
+  const [inventoryUsageCounts, setInventoryUsageCounts] = useState({})
   const [openCheckouts, setOpenCheckouts] = useState([])
   const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
   const [equipmentReturnAllOk, setEquipmentReturnAllOk] = useState(false)
@@ -222,6 +223,7 @@ function App() {
     'Sonderreinigung',
   ]
   const correctionReasons = ['Start vergessen', 'Stop vergessen', 'Handy leer', 'Keine Internetverbindung', 'Nachtrag durch Mitarbeiter']
+  const sortByName = (a, b, key = 'name') => (a?.[key] ?? '').localeCompare(b?.[key] ?? '', 'de', { sensitivity: 'base' })
 
   const secondsBetween = (start, end) => {
     if (!start) return 0
@@ -245,11 +247,33 @@ function App() {
   const secondsToMinutes = (seconds = 0) => Math.max(0, Math.round(Number(seconds || 0) / 60))
 
   const selectedReportObject = objects.find(object => object.id === selectedObjectId)
-  const selectedWorkersForReport = workers.filter(worker => selectedWorkerIds.includes(worker.id))
+  const sortedWorkers = [...workers].sort((a, b) => sortByName(a, b))
+  const materialUsageCounts = materialRequests.reduce((counts, request) => {
+    ;(request.material_request_items ?? []).forEach(item => {
+      if (item.material_item_id) counts[item.material_item_id] = (counts[item.material_item_id] ?? 0) + 1
+    })
+    return counts
+  }, {})
+  const sortedMaterialItems = [...materialItems].sort((a, b) => {
+    const frequencyDiff = (materialUsageCounts[b.id] ?? 0) - (materialUsageCounts[a.id] ?? 0)
+    return frequencyDiff || sortByName(a, b)
+  })
+  const sortedInventoryItems = [...inventoryItems].sort((a, b) => {
+    const frequencyDiff = (inventoryUsageCounts[b.id] ?? 0) - (inventoryUsageCounts[a.id] ?? 0)
+    return frequencyDiff || sortByName(a, b, 'category') || sortByName(a, b)
+  })
+  const sortedOpenCheckouts = [...openCheckouts].sort((a, b) => {
+    const workerDiff = (a.worker_name ?? '').localeCompare(b.worker_name ?? '', 'de', { sensitivity: 'base' })
+    if (workerDiff) return workerDiff
+    const nameA = a.inventory_items?.name ?? a.inventory_item_id ?? ''
+    const nameB = b.inventory_items?.name ?? b.inventory_item_id ?? ''
+    return nameA.localeCompare(nameB, 'de', { sensitivity: 'base' })
+  })
+  const selectedWorkersForReport = sortedWorkers.filter(worker => selectedWorkerIds.includes(worker.id))
   const workerSummary = selectedWorkersForReport.length === 0
     ? ''
     : `${selectedWorkersForReport.slice(0, 2).map(worker => worker.name).join(', ')}${selectedWorkersForReport.length > 2 ? ` +${selectedWorkersForReport.length - 2}` : ''}`
-  const selectableWorkers = canEditLockedReports ? workers : workers.filter(worker => worker.id !== currentWorker?.id)
+  const selectableWorkers = canEditLockedReports ? sortedWorkers : sortedWorkers.filter(worker => worker.id !== currentWorker?.id)
   const filteredWorkers = selectableWorkers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
   const workSummary = selectedWorkTemplates.length === 0
     ? ''
@@ -593,6 +617,21 @@ function App() {
       setInventoryItems([])
     } else {
       setInventoryItems(itemsData ?? [])
+    }
+
+    const { data: usageData, error: usageError } = await supabase
+      .from('inventory_checkouts')
+      .select('inventory_item_id')
+      .order('taken_at', { ascending: false })
+      .limit(500)
+
+    if (usageError) {
+      setInventoryUsageCounts({})
+    } else {
+      setInventoryUsageCounts((usageData ?? []).reduce((counts, checkout) => {
+        if (checkout.inventory_item_id) counts[checkout.inventory_item_id] = (counts[checkout.inventory_item_id] ?? 0) + 1
+        return counts
+      }, {}))
     }
 
     let checkoutQuery = supabase
@@ -1371,7 +1410,7 @@ function App() {
       const effectiveWorkerIds = canEditLockedReports
         ? selectedWorkerIds
         : Array.from(new Set([...(currentWorker?.id ? [currentWorker.id] : []), ...selectedWorkerIds]))
-      const selectedWorkers = workers.filter(worker => effectiveWorkerIds.includes(worker.id))
+      const selectedWorkers = sortedWorkers.filter(worker => effectiveWorkerIds.includes(worker.id))
       const reportTaskText = [...selectedWorkTemplates, reportTask.trim()].filter(Boolean).join('\n')
       const taskTranslation = await translateToGerman(reportTaskText)
       const damageTranslation = reportDamage ? await translateToGerman(reportDamageDescription) : null
@@ -2165,9 +2204,9 @@ function App() {
                     <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900/95 p-3">
                       <div className="mb-2 text-sm font-semibold text-white">{t('availableEquipment')}</div>
                       <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                        {inventoryItems.filter(item => item.status === 'verfuegbar').length === 0 ? (
+                        {sortedInventoryItems.filter(item => item.status === 'verfuegbar').length === 0 ? (
                           <div className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-400">{t('noEquipment')}</div>
-                        ) : inventoryItems.filter(item => item.status === 'verfuegbar').map(item => (
+                        ) : sortedInventoryItems.filter(item => item.status === 'verfuegbar').map(item => (
                           <div key={item.id} className="flex items-center justify-between gap-3 rounded-md bg-slate-800 px-3 py-2">
                             <div>
                               <div className="text-sm font-semibold text-white">{item.name}</div>
@@ -2557,7 +2596,7 @@ function App() {
 	                    {canEditLockedReports ? (
 	                      <>
 	                        <option value="">{t('allWorkers')}</option>
-	                        {workers.map(worker => (
+	                        {sortedWorkers.map(worker => (
 	                          <option key={worker.id} value={worker.id}>{worker.name}</option>
 	                        ))}
 	                      </>
@@ -2597,7 +2636,7 @@ function App() {
                     <div className="space-y-2 max-h-80 overflow-auto pr-1">
                       {materialItems.length === 0 ? (
                         <div className="rounded-md bg-slate-900 px-3 py-3 text-sm text-slate-400">{t('noEntries')}</div>
-                      ) : materialItems.map(item => (
+                      ) : sortedMaterialItems.map(item => (
                         <div key={item.id} className="rounded-md bg-slate-900 p-3">
                           <label className="flex items-start gap-2 text-sm text-slate-100">
                             <input
@@ -2963,7 +3002,7 @@ function App() {
                             </div>
                             <div className="mt-3 space-y-1 text-xs text-slate-300">
                               {(request.material_request_items ?? []).map(item => {
-                                const itemName = item.custom_name ?? item.material_items?.name ?? materialItems.find(mat => mat.id === item.material_item_id)?.name ?? item.material_item_id
+                                const itemName = item.custom_name ?? item.material_items?.name ?? sortedMaterialItems.find(mat => mat.id === item.material_item_id)?.name ?? item.material_item_id
                                 return (
                                   <div key={item.id}>- {itemName}{item.quantity ? `: ${Math.round(Number(item.quantity))}` : ''}{item.unit ? ` ${item.unit}` : ''}</div>
                                 )
@@ -2992,7 +3031,7 @@ function App() {
                         <div className="mt-3 space-y-2">
                           {openCheckouts.length === 0 ? (
                             <div className="rounded-lg bg-slate-950/70 px-3 py-2 text-sm text-slate-400">{t('noEntries')}</div>
-                          ) : openCheckouts.map(checkout => (
+                          ) : sortedOpenCheckouts.map(checkout => (
                             <div key={checkout.id} className="rounded-lg bg-slate-950/70 px-3 py-2">
                               <div className="text-sm font-semibold text-white">{checkout.inventory_items?.name ?? checkout.inventory_item_id}</div>
                               <div className="text-xs text-slate-400">{t('workers')}: {checkout.worker_name ?? workerNameByEmail(checkout.worker_email, checkout.worker_email)}</div>
