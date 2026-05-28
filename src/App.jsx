@@ -3,6 +3,71 @@ import { supabase } from './supabaseClient'
 import { DateTime } from 'luxon'
 import { languages as i18nLanguages, uiTranslations } from './i18n'
 
+const WorkMoodIcon = ({ seconds = 0, active = false }) => {
+  const hours = seconds / 3600
+  const level = !active ? 0 : hours >= 9 ? 4 : hours >= 5 ? 3 : hours >= 2 ? 2 : 1
+  const hardShift = active && level >= 3
+  const mood = [
+    { bg: 'from-slate-600 to-slate-800', face: '#cbd5e1', mouth: 'M35 48 Q50 48 65 48', brow: 0, sweat: false, tilt: 0 },
+    { bg: 'from-cyan-400 to-emerald-400', face: '#ecfeff', mouth: 'M35 48 Q50 58 65 48', brow: 0, sweat: false, tilt: -1 },
+    { bg: 'from-emerald-400 to-amber-300', face: '#fffbeb', mouth: 'M35 50 Q50 54 65 50', brow: 2, sweat: false, tilt: 2 },
+    { bg: 'from-amber-300 to-orange-500', face: '#fff7ed', mouth: 'M35 55 Q50 47 65 55', brow: 5, sweat: true, tilt: 5 },
+    { bg: 'from-orange-500 to-rose-600', face: '#fff1f2', mouth: 'M35 57 Q50 43 65 57', brow: 8, sweat: true, tilt: 8 },
+  ][level]
+
+  return (
+    <div className={`relative h-24 w-24 shrink-0 rounded-3xl bg-gradient-to-br ${mood.bg} p-2 shadow-lg ${active ? 'animate-pulse' : ''}`}>
+      <style>{`
+        @keyframes pickaxeSwing {
+          0%, 18%, 100% { transform: rotate(-24deg); }
+          8% { transform: rotate(18deg); }
+        }
+        @keyframes sweatWipe {
+          0%, 56%, 100% { transform: rotate(0deg); opacity: 0; }
+          64% { transform: rotate(-38deg); opacity: 1; }
+          74% { transform: rotate(-18deg); opacity: 1; }
+          84% { transform: rotate(0deg); opacity: 0; }
+        }
+        @keyframes sweatDrop {
+          0%, 55%, 100% { transform: translateY(0); opacity: 0; }
+          66% { opacity: 1; }
+          82% { transform: translateY(9px); opacity: 0; }
+        }
+        .pickaxe-swing { transform-box: fill-box; transform-origin: 54px 72px; animation: pickaxeSwing 2.4s ease-in-out infinite; }
+        .sweat-wipe { transform-box: fill-box; transform-origin: 59px 70px; animation: sweatWipe 5.2s ease-in-out infinite; }
+        .sweat-drop { animation: sweatDrop 5.2s ease-in-out infinite; }
+      `}</style>
+      <div className="absolute inset-x-5 bottom-2 h-6 rounded-full bg-slate-950/25" />
+      <svg viewBox="0 0 100 100" className="relative h-full w-full" style={{ transform: `rotate(${mood.tilt}deg)` }} aria-hidden="true">
+        {active && (
+          <g className={hardShift ? 'sweat-wipe' : 'pickaxe-swing'}>
+            <path d="M62 68 L88 42" stroke="#78350f" strokeWidth="5" strokeLinecap="round" />
+            {!hardShift && <path d="M77 36 L94 49" stroke="#cbd5e1" strokeWidth="6" strokeLinecap="round" />}
+            {hardShift && <path d="M82 39 L92 43" stroke="#e2e8f0" strokeWidth="5" strokeLinecap="round" />}
+          </g>
+        )}
+        <circle cx="50" cy="38" r="24" fill={mood.face} />
+        <path d="M28 34 Q50 15 72 34" fill="none" stroke="#0f172a" strokeWidth="7" strokeLinecap="round" />
+        <path d={`M34 ${34 + mood.brow} L44 ${32 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+        <path d={`M56 ${32 + mood.brow} L66 ${34 + mood.brow}`} stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+        <circle cx="40" cy="41" r="3.5" fill="#0f172a" />
+        <circle cx="60" cy="41" r="3.5" fill="#0f172a" />
+        <path d={mood.mouth} fill="none" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+        {mood.sweat && <path className="sweat-drop" d="M72 35 C82 45 74 55 68 50 C63 46 68 39 72 35Z" fill="#67e8f9" />}
+        <path d="M31 65 Q50 75 69 65 L76 90 H24Z" fill="#0f172a" opacity="0.9" />
+        <path d="M35 66 L50 79 L65 66" fill="none" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
+        {active && (
+          <g>
+            <path d="M34 69 L18 82" stroke={hardShift ? '#fca5a5' : '#ecfeff'} strokeWidth="6" strokeLinecap="round" />
+            <path d="M66 69 L82 82" stroke={hardShift ? '#fca5a5' : '#ecfeff'} strokeWidth="6" strokeLinecap="round" />
+          </g>
+        )}
+      </svg>
+      <span className={`absolute right-2 top-2 h-3 w-3 rounded-full ${active ? 'bg-emerald-300' : 'bg-slate-400'}`} />
+    </div>
+  )
+}
+
 function App() {
   const [oraStart, setOraStart] = useState(null)
   const [inLucru, setInLucru] = useState(false)
