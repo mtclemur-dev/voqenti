@@ -56,6 +56,7 @@ function App() {
   const [dashboardReports, setDashboardReports] = useState([])
   const [dashboardEmails, setDashboardEmails] = useState([])
   const [dashboardMaterialCount, setDashboardMaterialCount] = useState(0)
+  const [learningItem, setLearningItem] = useState(null)
   const [materialItems, setMaterialItems] = useState([])
   const [materialRequests, setMaterialRequests] = useState([])
   const [materialRequestObject, setMaterialRequestObject] = useState('')
@@ -143,6 +144,45 @@ function App() {
     setNotificationPermission(permission)
     if (permission === 'granted' && navigator.vibrate) navigator.vibrate(120)
   }
+  const loadLearningItem = useCallback(async () => {
+    if (!user) {
+      setLearningItem(null)
+      return
+    }
+
+    const today = DateTime.now().setZone('Europe/Berlin').toISODate()
+    const { data: todayItems, error: todayError } = await supabase
+      .from('learning_items')
+      .select('*')
+      .eq('active', true)
+      .eq('shown_date', today)
+      .limit(1)
+
+    if (!todayError && todayItems?.[0]) {
+      setLearningItem(todayItems[0])
+      return
+    }
+
+    const { data: items, error } = await supabase
+      .from('learning_items')
+      .select('*')
+      .eq('active', true)
+      .order('shown_date', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true })
+      .limit(50)
+
+    if (error || !items?.length) {
+      setLearningItem(null)
+      return
+    }
+
+    const nextItem = items.find(item => item.shown_date !== today) ?? items[0]
+    setLearningItem(nextItem)
+    await supabase
+      .from('learning_items')
+      .update({ shown_date: today, updated_at: new Date().toISOString() })
+      .eq('id', nextItem.id)
+  }, [user])
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
@@ -630,6 +670,7 @@ function App() {
   useEffect(() => {
     incarcaIstoric()
     incarcaDashboardSummary()
+    loadLearningItem()
     verificaSesiuneActiva()
 
     const channel = supabase
@@ -651,7 +692,7 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaDashboardSummary, incarcaIstoric, user, verificaSesiuneActiva])
+  }, [incarcaDashboardSummary, incarcaIstoric, loadLearningItem, user, verificaSesiuneActiva])
 
   useEffect(() => {
     if (view === 'reports') {
@@ -2114,6 +2155,27 @@ function App() {
                         ))}
                       </div>
                     </div>
+                  )}
+                </div>
+                <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm">
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.25em] text-amber-200">💡 Schon gewusst?</div>
+                  {learningItem ? (
+                    <div className="space-y-2">
+                      <div className="text-base font-black text-white">{learningItem.german_text}</div>
+                      <div className="grid gap-1 text-xs text-slate-300">
+                        <div>RO: {learningItem.ro_translation}</div>
+                        <div>RU: {learningItem.ru_translation}</div>
+                      </div>
+                      {learningItem.german_example && (
+                        <div className="rounded-xl bg-slate-950/50 p-3 text-xs">
+                          <div className="font-semibold text-cyan-100">{learningItem.german_example}</div>
+                          {learningItem.ro_example && <div className="mt-1 text-slate-300">RO: {learningItem.ro_example}</div>}
+                          {learningItem.ru_example && <div className="text-slate-300">RU: {learningItem.ru_example}</div>}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-slate-300">{t('noLearningItem')}</div>
                   )}
                 </div>
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
