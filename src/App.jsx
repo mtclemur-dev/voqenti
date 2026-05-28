@@ -1811,7 +1811,7 @@ function App() {
               <>
                 <div className={`mb-8 rounded-[1.75rem] p-6 transition-all ${inLucru ? 'bg-emerald-500/15 ring-1 ring-emerald-400/30' : 'bg-slate-900/85 ring-1 ring-slate-700'}`}>
                   <span className="text-[11px] uppercase tracking-[0.3em] font-semibold text-slate-400 block mb-3">{t('currentStatus')}</span>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex flex-col gap-4">
                     <div className="flex items-center gap-4">
                       <div>
                         <div className="flex items-center gap-3">
@@ -1826,20 +1826,20 @@ function App() {
                       </div>
                     </div>
                     {oraStart && <p className="text-sm font-medium text-slate-200/80">{t('start')}: <span className="font-semibold text-white">{oraStart}</span></p>}
+                    <button
+                      onClick={inLucru ? handleStop : handleStart}
+                      className={`w-full flex items-center justify-center text-white font-bold py-4 rounded-2xl shadow-lg transition-transform active:scale-[0.98] ${
+                        inLucru
+                          ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'
+                          : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/20'
+                      }`}
+                    >
+                      {inLucru ? t('stopWork') : t('startWork')}
+                    </button>
                   </div>
                 </div>
 
-                <button
-                  onClick={inLucru ? handleStop : handleStart}
-                  className={`w-full flex items-center justify-center text-white font-bold py-5 rounded-3xl shadow-xl transition-transform active:scale-[0.98] ${
-                    inLucru
-                      ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/30'
-                      : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/30'
-                  }`}
-                >
-                  {inLucru ? t('stopWork') : t('startWork')}
-                </button>
-                <div className="mt-3">
+                <div className="-mt-4">
                   <button
                     type="button"
                     onClick={() => { setEquipmentPanelOpen(current => !current); incarcaInventory(); incarcaObjects(); }}
