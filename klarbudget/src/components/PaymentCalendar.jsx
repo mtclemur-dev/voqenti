@@ -32,7 +32,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
       setGoogleStatus('connected')
     } catch (error) {
       setGoogleStatus('error')
-      setGoogleError(error.message)
+      setGoogleError(buildGoogleCalendarError(error, t))
     }
   }
 
@@ -85,6 +85,13 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
         ))}
     </section>
   )
+}
+
+function buildGoogleCalendarError(error, t) {
+  const message = error?.message || ''
+  if (/popup|closed|failed_to_open/i.test(message)) return t('googleCalendarPopupError')
+  if (/consent|required|access_denied/i.test(message)) return t('googleCalendarConsentError')
+  return `${t('googleCalendarConnectError')} ${message}`.trim()
 }
 
 function MonthCalendar({ currency, items, locale, monthDate, onChangeMonth, onSelectDate, selectedDate, selectedItems, t }) {

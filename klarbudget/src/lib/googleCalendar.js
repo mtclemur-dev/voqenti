@@ -37,10 +37,13 @@ export async function requestGoogleCalendarToken() {
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: googleCalendarConfig.clientId,
       scope: googleCalendarConfig.scope,
-      prompt: 'consent',
+      prompt: '',
       callback: (response) => {
-        if (response.error) reject(new Error(response.error))
+        if (response.error) reject(new Error(response.error_description || response.error))
         else resolve(response.access_token)
+      },
+      error_callback: (error) => {
+        reject(new Error(error?.message || error?.type || 'Google OAuth popup error'))
       },
     })
 
