@@ -14,6 +14,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
   const [googleError, setGoogleError] = useState('')
   const [googleSaveStatus, setGoogleSaveStatus] = useState('')
   const [googleEventForm, setGoogleEventForm] = useState(() => defaultGoogleEventForm(new Date()))
+  const [showGoogleEventForm, setShowGoogleEventForm] = useState(false)
   const grouped = calendarGroups(expenses, settings, new Date(), paymentStatuses)
   const groups = useMemo(() => buildCalendarGroups(grouped, googleEvents, filter), [grouped, googleEvents, filter])
   const monthItems = useMemo(() => buildMonthItems(expenses, settings, paymentStatuses, googleEvents, monthDate), [expenses, settings, paymentStatuses, googleEvents, monthDate])
@@ -60,6 +61,30 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     }
   }
 
+  const syncGoogleCalendar = async () => {
+    if (!hasGoogleCalendarConfig) return
+    setGoogleError('')
+    setGoogleStatus('connecting')
+    try {
+      const token = googleToken || await requestGoogleCalendarToken()
+      setGoogleToken(token)
+      await loadGoogleEvents(token)
+    } catch (error) {
+      clearStoredGoogleCalendarToken()
+      setGoogleToken('')
+      setGoogleStatus('error')
+      setGoogleError(buildGoogleCalendarError(error, t))
+    }
+  }
+
+  const disconnectGoogleCalendar = () => {
+    clearStoredGoogleCalendarToken()
+    setGoogleToken('')
+    setGoogleEvents([])
+    setGoogleStatus('disconnected')
+    setGoogleError('')
+  }
+
   const saveGoogleEvent = async (event) => {
     event.preventDefault()
     if (!hasGoogleCalendarConfig) return
@@ -78,6 +103,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
         reminderMinutes: current.reminderMinutes,
         durationMinutes: current.durationMinutes,
       }))
+      setShowGoogleEventForm(false)
     } catch (error) {
       clearStoredGoogleCalendarToken()
       setGoogleToken('')
@@ -90,9 +116,19 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     <section className="section">
       <div className="section-title">
         <h2>{t('calendar')}</h2>
-        <button type="button" onClick={connectGoogleCalendar} disabled={!hasGoogleCalendarConfig || googleStatus === 'connecting'}>
-          {googleStatus === 'connected' ? t('googleConnected') : t('connectGoogleCalendar')}
-        </button>
+        <div className="calendar-actions">
+          {googleStatus === 'connected' && <span className="calendar-status">{t('googleConnected')}</span>}
+          {googleStatus === 'connected' ? (
+            <>
+              <button type="button" className="secondary" onClick={syncGoogleCalendar} disabled={googleStatus === 'connecting'}>{t('syncGoogleCalendar')}</button>
+              <button type="button" className="ghost danger-ghost" onClick={disconnectGoogleCalendar}>{t('disconnectGoogleCalendar')}</button>
+            </>
+          ) : (
+            <button type="button" onClick={connectGoogleCalendar} disabled={!hasGoogleCalendarConfig || googleStatus === 'connecting'}>
+              {googleStatus === 'connecting' ? t('syncGoogleCalendar') : t('connectGoogleCalendar')}
+            </button>
+          )}
+        </div>
       </div>
       {googleStatus === 'missing_config' && <p className="muted">{t('googleCalendarMissingConfig')}</p>}
       {googleStatus === 'connected' && (
@@ -104,8 +140,16 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
       )}
       {googleError && <div className="notice danger">{googleError}</div>}
       {hasGoogleCalendarConfig && (
+        <div className="calendar-form-toggle">
+          <button type="button" className="secondary" onClick={() => setShowGoogleEventForm((value) => !value)}>
+            {showGoogleEventForm ? t('hideAppointmentForm') : t('addAppointmentToggle')}
+          </button>
+          {googleSaveStatus === 'saved' && <span className="muted">{t('googleEventSaved')}</span>}
+        </div>
+      )}
+      {hasGoogleCalendarConfig && showGoogleEventForm && (
         <form className="google-event-form" onSubmit={saveGoogleEvent}>
-          <div className="form-grid">
+          <div className="form-grid compact-form">
             <label>
               {t('appointmentTitle')}
               <input required value={googleEventForm.title} onChange={(event) => setGoogleEventForm({ ...googleEventForm, title: event.target.value })} />
@@ -143,7 +187,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
           </div>
           <div className="form-actions">
             <button type="submit" disabled={googleSaveStatus === 'saving'}>{googleSaveStatus === 'saving' ? t('saving') : t('addGoogleAppointment')}</button>
-            {googleSaveStatus === 'saved' && <span className="muted">{t('googleEventSaved')}</span>}
+            <button type="button" className="ghost" onClick={() => setShowGoogleEventForm(false)}>{t('cancel')}</button>
           </div>
         </form>
       )}
