@@ -100,11 +100,15 @@ export const upcomingPayments = (expenses, days = 14, settings = {}, now = new D
 
 export const calendarGroups = (expenses, settings = {}, now = new Date(), paymentStatuses = []) => {
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  const monthPayments = upcomingPayments(expenses, daysUntil(lastDay, now), settings, now, paymentStatuses, { includePaid: true })
+  const endOfMonthDays = daysUntil(lastDay, now)
+  const monthPayments = upcomingPayments(expenses, endOfMonthDays, settings, now, paymentStatuses, { includePaid: true })
+  const next90Payments = upcomingPayments(expenses, 90, settings, now, paymentStatuses, { includePaid: true })
   return {
     next7: monthPayments.filter((item) => item.days_until <= 7),
     days8to14: monthPayments.filter((item) => item.days_until >= 8 && item.days_until <= 14),
     restOfMonth: monthPayments.filter((item) => item.days_until >= 15),
+    next90: next90Payments.filter((item) => item.days_until > endOfMonthDays),
+    unscheduled: expenses.filter((expense) => expense.active && !expense.due_date),
   }
 }
 

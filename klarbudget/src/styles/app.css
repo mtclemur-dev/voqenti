@@ -19,7 +19,8 @@ body {
 
 button,
 input,
-select {
+select,
+.button-link {
   font: inherit;
 }
 
@@ -32,6 +33,18 @@ button {
   font-weight: 700;
   padding: 0.75rem 1rem;
   cursor: pointer;
+  user-select: none;
+}
+
+.button-link {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  font-weight: 700;
+  text-decoration: none;
   user-select: none;
 }
 
