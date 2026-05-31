@@ -2,7 +2,7 @@ const GOOGLE_IDENTITY_SRC = 'https://accounts.google.com/gsi/client'
 const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
 export const googleCalendarConfig = {
-  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '11967707869-bv4pp2o2akfp35vf6n9rdgf4fvg1apns.apps.googleusercontent.com',
   scope: import.meta.env.VITE_GOOGLE_CALENDAR_SCOPE || 'https://www.googleapis.com/auth/calendar.readonly',
 }
 
