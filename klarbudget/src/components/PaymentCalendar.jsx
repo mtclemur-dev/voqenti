@@ -23,8 +23,10 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     try {
       const token = await requestGoogleCalendarToken()
       const now = new Date()
+      now.setDate(1)
+      now.setHours(0, 0, 0, 0)
       const max = new Date()
-      max.setDate(max.getDate() + 90)
+      max.setDate(max.getDate() + 180)
       const events = await fetchGoogleCalendarEvents(token, { timeMin: now, timeMax: max })
       setGoogleEvents(events)
       setGoogleStatus('connected')
@@ -43,6 +45,13 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
         </button>
       </div>
       {googleStatus === 'missing_config' && <p className="muted">{t('googleCalendarMissingConfig')}</p>}
+      {googleStatus === 'connected' && (
+        <p className="muted">
+          {googleEvents.length > 0
+            ? t('googleCalendarLoaded').replace('{count}', googleEvents.length)
+            : t('googleCalendarEmpty')}
+        </p>
+      )}
       {googleError && <div className="notice danger">{googleError}</div>}
       <div className="tabbar inline-tabs">
         <button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>{t('monthView')}</button>
@@ -151,6 +160,7 @@ function GoogleCalendarRow({ item, locale, t }) {
       <div>
         <strong>{item.title}</strong>
         <span>{time}</span>
+        {item.calendarName && <span>{item.calendarName}</span>}
         {item.location && <span>{item.location}</span>}
         {item.description && <span>{item.description.slice(0, 120)}</span>}
         <div className="badge-row">

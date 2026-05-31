@@ -1,5 +1,6 @@
 const GOOGLE_IDENTITY_SRC = 'https://accounts.google.com/gsi/client'
-const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
+const CALENDAR_LIST_URL = 'https://www.googleapis.com/calendar/v3/users/me/calendarList'
+const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars'
 
 export const googleCalendarConfig = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '11967707869-bv4pp2o2akfp35vf6n9rdgf4fvg1apns.apps.googleusercontent.com',
@@ -48,6 +49,44 @@ export async function requestGoogleCalendarToken() {
 }
 
 export async function fetchGoogleCalendarEvents(accessToken, { timeMin, timeMax }) {
+  const calendars = await fetchGoogleCalendars(accessToken)
+  const visibleCalendars = calendars.length > 0 ? calendars : [{ id: 'primary', summary: 'Google Calendar', primary: true }]
+
+  const eventLists = await Promise.all(visibleCalendars.map(async (calendar) => {
+    try {
+      return await fetchCalendarEvents(accessToken, calendar, { timeMin, timeMax })
+    } catch {
+      return []
+    }
+  }))
+
+  return eventLists.flat().sort((a, b) => a.startDate - b.startDate)
+}
+
+async function fetchGoogleCalendars(accessToken) {
+  const params = new URLSearchParams({
+    minAccessRole: 'reader',
+    showDeleted: 'false',
+    showHidden: 'false',
+    maxResults: '50',
+  })
+
+  const response = await fetch(`${CALENDAR_LIST_URL}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!response.ok) throw new Error(`Google Calendar list error ${response.status}`)
+  const data = await response.json()
+  return (data.items || [])
+    .filter((calendar) => calendar.selected !== false)
+    .map((calendar) => ({
+      id: calendar.id,
+      summary: calendar.summary || 'Google Calendar',
+      primary: Boolean(calendar.primary),
+    }))
+}
+
+async function fetchCalendarEvents(accessToken, calendar, { timeMin, timeMax }) {
   const params = new URLSearchParams({
     singleEvents: 'true',
     orderBy: 'startTime',
@@ -56,23 +95,26 @@ export async function fetchGoogleCalendarEvents(accessToken, { timeMin, timeMax 
     maxResults: '100',
   })
 
-  const response = await fetch(`${CALENDAR_EVENTS_URL}?${params.toString()}`, {
+  const calendarId = encodeURIComponent(calendar.id)
+  const response = await fetch(`${CALENDAR_EVENTS_URL}/${calendarId}/events?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 
   if (!response.ok) throw new Error(`Google Calendar error ${response.status}`)
   const data = await response.json()
-  return (data.items || []).map(normalizeGoogleEvent)
+  return (data.items || []).map((event) => normalizeGoogleEvent(event, calendar))
 }
 
-function normalizeGoogleEvent(event) {
+function normalizeGoogleEvent(event, calendar) {
   const startValue = event.start?.dateTime || event.start?.date
   const endValue = event.end?.dateTime || event.end?.date
   const startDate = new Date(startValue)
   const endDate = endValue ? new Date(endValue) : null
 
   return {
-    id: event.id,
+    id: `${calendar.id}:${event.id}`,
+    calendarId: calendar.id,
+    calendarName: calendar.summary,
     source: 'google',
     title: event.summary || 'Google Calendar',
     description: event.description || '',
