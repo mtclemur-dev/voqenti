@@ -33,6 +33,7 @@ create table if not exists public.kb_expenses (
   amount numeric(12,2) not null check (amount >= 0),
   frequency text not null check (frequency in ('monthly', 'quarterly', 'semiannual', 'yearly', 'once')),
   due_date date,
+  expense_kind text not null default 'fixed_payment' check (expense_kind in ('fixed_payment', 'variable_budget', 'one_time_expense')),
   expense_type text not null check (expense_type in ('fixed', 'variable')),
   payment_mode text not null default 'automatic_debit' check (payment_mode in ('automatic_debit', 'manual_payment', 'variable_tracking')),
   active boolean not null default true,

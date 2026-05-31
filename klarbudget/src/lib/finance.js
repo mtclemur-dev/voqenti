@@ -23,9 +23,28 @@ export const isSameMonth = (dateString, reference = new Date()) => {
   return monthKey(new Date(dateString)) === monthKey(reference)
 }
 
+export const expenseKind = (expense) => {
+  if (expense?.expense_kind) return expense.expense_kind
+  if (expense?.frequency === 'once') return 'one_time_expense'
+  if (expense?.payment_mode === 'variable_tracking' || expense?.expense_type === 'variable') return 'variable_budget'
+  return 'fixed_payment'
+}
+
+export const isCalendarExpense = (expense) => ['fixed_payment', 'one_time_expense'].includes(expenseKind(expense))
+
+export const daysLeftInMonth = (reference = new Date()) => {
+  const lastDay = new Date(reference.getFullYear(), reference.getMonth() + 1, 0)
+  return Math.max(1, daysUntil(lastDay, reference) + 1)
+}
+
+const isExpenseLike = (item) =>
+  Boolean(item && ('expense_kind' in item || 'expense_type' in item || 'payment_mode' in item || 'due_date' in item))
+
 export const monthlyValue = (item, reference = new Date()) => {
   if (!item?.active && item?.status !== 'active') return 0
   const amount = toNumber(item.amount ?? item.monthly_payment)
+  if (isExpenseLike(item) && expenseKind(item) === 'variable_budget') return amount
+  if (isExpenseLike(item) && expenseKind(item) === 'one_time_expense') return isSameMonth(item.due_date, reference) ? amount : 0
   if (item.frequency === 'quarterly') return amount / 3
   if (item.frequency === 'semiannual') return amount / 6
   if (item.frequency === 'yearly') return amount / 12
@@ -78,7 +97,7 @@ export const upcomingPayments = (expenses, days = 14, settings = {}, now = new D
   const threshold = toNumber(settings.large_payment_threshold) || 300
   const includePaid = Boolean(options.includePaid)
   return expenses
-    .filter((expense) => expense.active)
+    .filter((expense) => expense.active && isCalendarExpense(expense))
     .map((expense) => {
       const due = nextDueDate(expense, now)
       if (!due) return null
@@ -108,7 +127,7 @@ export const calendarGroups = (expenses, settings = {}, now = new Date(), paymen
     days8to14: monthPayments.filter((item) => item.days_until >= 8 && item.days_until <= 14),
     restOfMonth: monthPayments.filter((item) => item.days_until >= 15),
     next90: next90Payments.filter((item) => item.days_until > endOfMonthDays),
-    unscheduled: expenses.filter((expense) => expense.active && !expense.due_date),
+    unscheduled: expenses.filter((expense) => expense.active && isCalendarExpense(expense) && !expense.due_date),
   }
 }
 
@@ -126,13 +145,13 @@ export const splitDebtTotals = (debts) => {
 export const calculateSummary = ({ incomes, expenses, debts, settings, paymentStatuses = [] }) => {
   const incomeTotal = incomes.reduce((sum, item) => sum + monthlyValue(item), 0)
   const fixedTotal = expenses
-    .filter((item) => item.expense_type === 'fixed')
+    .filter((item) => expenseKind(item) === 'fixed_payment')
     .reduce((sum, item) => sum + monthlyValue(item), 0)
   const variableTotal = expenses
-    .filter((item) => item.expense_type === 'variable')
+    .filter((item) => expenseKind(item) === 'variable_budget')
     .reduce((sum, item) => sum + monthlyValue(item), 0)
   const onceThisMonth = expenses
-    .filter((item) => item.frequency === 'once')
+    .filter((item) => expenseKind(item) === 'one_time_expense')
     .reduce((sum, item) => sum + monthlyValue(item), 0)
   const activeDebts = debts.filter((debt) => debt.status === 'active')
   const debtTotals = splitDebtTotals(debts)
@@ -243,6 +262,18 @@ export const debtPlan = (debts, settings) => {
 
 export const formatMoney = (value, currency = 'EUR', locale = 'ro-RO') =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(toNumber(value))
+
+export const variableBudgetStats = (expense, reference = new Date()) => {
+  const budget = toNumber(expense.amount)
+  const spent = 0
+  const remaining = Math.max(0, budget - spent)
+  return {
+    budget,
+    spent,
+    remaining,
+    dailyRemaining: remaining / daysLeftInMonth(reference),
+  }
+}
 
 export const formatMonths = (months, language = 'ro') => {
   if (!months) return language === 'de' ? '0 Monate' : '0 luni'

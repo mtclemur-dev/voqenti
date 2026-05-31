@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { categories, debtCategories } from '../i18n'
 
 const frequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly', 'once']
+const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly']
 
 const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_date: '', active: true, notes: '' }
-const expenseDefaults = { name: '', category: 'locuință', amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', payment_mode: 'automatic_debit', active: true, notes: '' }
+const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
@@ -31,11 +32,18 @@ export function ExpenseForm({ t, initialItem, onSubmit, onCancel }) {
         <>
           <TextInput name="name" label={t('name')} value={values.name} onChange={update} required />
           <SelectInput name="category" label={t('category')} value={values.category} onChange={update} options={categories.map((value) => [value, value])} />
-          <MoneyInput name="amount" label={t('amount')} value={values.amount} onChange={update} />
-          <SelectInput name="frequency" label={t('frequency')} value={values.frequency} onChange={update} options={frequencyOptions.map((value) => [value, t(value)])} />
-          <TextInput name="due_date" label={t('dueDate')} type="date" value={values.due_date} onChange={update} />
-          <SelectInput name="expense_type" label={t('expenseType')} value={values.expense_type} onChange={update} options={[['fixed', t('fixed')], ['variable', t('variable')]]} />
-          <SelectInput name="payment_mode" label={t('paymentMode')} value={values.payment_mode} onChange={update} options={[['automatic_debit', t('automatic_debit')], ['manual_payment', t('manual_payment')], ['variable_tracking', t('variable_tracking')]]} />
+          <SelectInput name="expense_kind" label={t('expenseKind')} value={values.expense_kind} onChange={update} options={[['fixed_payment', t('fixed_payment')], ['variable_budget', t('variable_budget')], ['one_time_expense', t('one_time_expense')]]} />
+          <MoneyInput name="amount" label={values.expense_kind === 'variable_budget' ? t('monthlyBudget') : t('amount')} value={values.amount} onChange={update} />
+          {values.expense_kind === 'fixed_payment' && (
+            <>
+              <SelectInput name="frequency" label={t('frequency')} value={values.frequency} onChange={update} options={recurringFrequencyOptions.map((value) => [value, t(value)])} />
+              <TextInput name="due_date" label={t('dueDate')} type="date" value={values.due_date} onChange={update} required />
+              <SelectInput name="payment_mode" label={t('paymentMode')} value={values.payment_mode} onChange={update} options={[['automatic_debit', t('automatic_debit')], ['manual_payment', t('manual_payment')]]} />
+            </>
+          )}
+          {values.expense_kind === 'one_time_expense' && (
+            <TextInput name="due_date" label={t('expenseDate')} type="date" value={values.due_date} onChange={update} required />
+          )}
           <CheckboxInput name="active" label={t('active')} checked={values.active} onChange={update} />
           <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
         </>
@@ -74,12 +82,12 @@ function FormShell({ title, defaults, initialItem, submitLabel, cancelLabel, onS
 
   const update = (event) => {
     const { checked, name, type, value } = event.target
-    setValues((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+    setValues((current) => normalizeExpenseKindChange({ ...current, [name]: type === 'checkbox' ? checked : value }, name, value, current))
   }
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    onSubmit(values)
+    onSubmit(normalizeSubmit(values))
     if (!initialItem) setValues(defaults)
   }
 
@@ -100,11 +108,44 @@ function FormShell({ title, defaults, initialItem, submitLabel, cancelLabel, onS
   )
 }
 
+function normalizeExpenseKindChange(next, name, value, previous) {
+  if (name !== 'expense_kind') return next
+  if (value === 'variable_budget') {
+    return { ...next, frequency: 'monthly', expense_type: 'variable', payment_mode: 'variable_tracking', due_date: '' }
+  }
+  if (value === 'one_time_expense') {
+    return { ...next, frequency: 'once', expense_type: 'variable', payment_mode: 'manual_payment' }
+  }
+  return {
+    ...next,
+    frequency: previous.frequency === 'once' ? 'monthly' : previous.frequency,
+    expense_type: 'fixed',
+    payment_mode: previous.payment_mode === 'variable_tracking' ? 'automatic_debit' : previous.payment_mode,
+  }
+}
+
+function normalizeSubmit(values) {
+  if (!('expense_kind' in values)) return values
+  if (values.expense_kind === 'variable_budget') {
+    return { ...values, frequency: 'monthly', expense_type: 'variable', payment_mode: 'variable_tracking', due_date: '' }
+  }
+  if (values.expense_kind === 'one_time_expense') {
+    return { ...values, frequency: 'once', expense_type: 'variable', payment_mode: 'manual_payment' }
+  }
+  return { ...values, expense_type: 'fixed', payment_mode: values.payment_mode === 'variable_tracking' ? 'automatic_debit' : values.payment_mode }
+}
+
 function normalizeInitial(defaults, item) {
   if (!item) return defaults
-  return Object.fromEntries(
+  const normalized = Object.fromEntries(
     Object.entries(defaults).map(([key, value]) => [key, item[key] ?? value]),
   )
+  if (!item.expense_kind && 'expense_kind' in defaults) {
+    if (item.frequency === 'once') normalized.expense_kind = 'one_time_expense'
+    else if (item.payment_mode === 'variable_tracking' || item.expense_type === 'variable') normalized.expense_kind = 'variable_budget'
+    else normalized.expense_kind = 'fixed_payment'
+  }
+  return normalizeSubmit(normalized)
 }
 
 function TextInput({ name, label, type = 'text', value, onChange, ...props }) {

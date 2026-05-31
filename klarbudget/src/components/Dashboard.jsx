@@ -6,6 +6,7 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
     ['totalIncome', summary.incomeTotal, 'positive'],
     ['fixedExpenses', summary.fixedTotal, 'neutral'],
     ['variableExpenses', summary.variableTotal, 'warning'],
+    ['totalOnceThisMonth', summary.onceThisMonth, summary.onceThisMonth > 0 ? 'warning' : 'neutral'],
     ['urgentDebt', summary.debtTotals.urgent, 'danger'],
     ['mortgageDebt', summary.debtTotals.mortgage, 'neutral'],
     ['totalDebt', summary.debtTotal, 'danger'],

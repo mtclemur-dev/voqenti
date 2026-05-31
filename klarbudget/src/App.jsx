@@ -7,7 +7,7 @@ import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
-import { calculateSummary, debtRemainingTotal, formatMoney, monthlyValue, statusForPayment, toNumber } from './lib/finance'
+import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
 
@@ -209,8 +209,8 @@ function App() {
     .filter((item) => expenseFilters.category === 'all' ? true : item.category === expenseFilters.category)
     .filter((item) => {
       if (expenseFilters.type === 'all') return true
-      if (expenseFilters.type === 'once') return item.frequency === 'once'
-      return item.expense_type === expenseFilters.type
+      if (expenseFilters.type === 'all') return true
+      return expenseKind(item) === expenseFilters.type
     })
     .sort((a, b) => {
       if (expenseFilters.sort === 'amount') return toNumber(b.amount) - toNumber(a.amount)
@@ -351,9 +351,9 @@ function App() {
                 </select>
                 <select value={expenseFilters.type} onChange={(event) => setExpenseFilters((current) => ({ ...current, type: event.target.value }))}>
                   <option value="all">{t('allTypes')}</option>
-                  <option value="fixed">{t('fixed')}</option>
-                  <option value="variable">{t('variable')}</option>
-                  <option value="once">{t('once')}</option>
+                  <option value="fixed_payment">{t('fixed_payment')}</option>
+                  <option value="variable_budget">{t('variable_budget')}</option>
+                  <option value="one_time_expense">{t('one_time_expense')}</option>
                 </select>
                 <select value={expenseFilters.sort} onChange={(event) => setExpenseFilters((current) => ({ ...current, sort: event.target.value }))}>
                   <option value="date">{t('sortByDate')}</option>
@@ -374,23 +374,19 @@ function App() {
                 onSubmit={(payload) => saveRow('kb_expenses', payload, editing.expenses)}
               />
             )}
-            <EntityList
-              title={t('expenses')}
-              items={filteredExpenses}
+            <ExpenseLists
               currency={currency}
+              expenses={filteredExpenses}
               language={language}
-              emptyText={t('noData')}
-              editText={t('edit')}
-              deleteText={t('delete')}
-              renderMeta={(item) => `${item.category} - ${t(item.expense_type)} - ${t(item.frequency)}${item.due_date ? ` - ${item.due_date}` : ''} - ${t(item.payment_mode || 'automatic_debit')}${toNumber(item.amount) >= toNumber(settings.large_payment_threshold) ? ` - ${t('largePayment')}` : ''}`}
+              locale={locale}
+              settings={settings}
+              t={t}
+              onDelete={(item) => deleteRow('kb_expenses', item)}
               onEdit={(item) => {
                 setEditing({ incomes: null, expenses: item, debts: null })
                 setFormOpen((current) => ({ ...current, expenses: true }))
               }}
-              onDelete={(item) => deleteRow('kb_expenses', item)}
-              renderActions={(item) => (item.payment_mode === 'manual_payment'
-                ? <button type="button" className="ghost" onClick={() => setExpensePaymentStatus(item, 'paid')}>{t('markPaid')}</button>
-                : null)}
+              onPaymentStatus={setExpensePaymentStatus}
             />
           </>
         )}
@@ -459,6 +455,59 @@ function App() {
   )
 }
 
+function ExpenseLists({ currency, expenses, language, locale, settings, t, onDelete, onEdit, onPaymentStatus }) {
+  const fixed = expenses.filter((item) => expenseKind(item) === 'fixed_payment')
+  const variable = expenses.filter((item) => expenseKind(item) === 'variable_budget')
+  const once = expenses.filter((item) => expenseKind(item) === 'one_time_expense')
+
+  return (
+    <>
+      <EntityList
+        title={t('fixedPayments')}
+        items={fixed}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.category} - ${t(item.frequency)}${item.due_date ? ` - ${item.due_date}` : ''} - ${t(item.payment_mode || 'automatic_debit')}${toNumber(item.amount) >= toNumber(settings.large_payment_threshold) ? ` - ${t('largePayment')}` : ''}`}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        renderActions={(item) => (item.payment_mode === 'manual_payment'
+          ? <button type="button" className="ghost" onClick={() => onPaymentStatus(item, 'paid')}>{t('markPaid')}</button>
+          : null)}
+      />
+      <EntityList
+        title={t('variableBudgets')}
+        items={variable}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => {
+          const stats = variableBudgetStats(item)
+          return `${item.category} - ${t('monthlyBudget')}: ${formatMoney(stats.budget, currency, locale)} - ${t('spentThisMonth')}: ${formatMoney(stats.spent, currency, locale)} - ${t('remainingBudget')}: ${formatMoney(stats.remaining, currency, locale)} - ${t('dailyBudget')}: ${formatMoney(stats.dailyRemaining, currency, locale)}/${t('day')}`
+        }}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+      <EntityList
+        title={t('oneTimeExpenses')}
+        items={once}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.category}${item.due_date ? ` - ${item.due_date}` : ''}${toNumber(item.amount) >= toNumber(settings.large_payment_threshold) ? ` - ${t('largePayment')}` : ''}`}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    </>
+  )
+}
+
 function preparePayload(payload) {
   const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority']
   const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date']
@@ -470,6 +519,24 @@ function preparePayload(payload) {
   dateFields.forEach((field) => {
     if (field in result && !result[field]) result[field] = null
   })
+
+  if ('expense_kind' in result) {
+    if (result.expense_kind === 'variable_budget') {
+      result.frequency = 'monthly'
+      result.expense_type = 'variable'
+      result.payment_mode = 'variable_tracking'
+      result.due_date = null
+    }
+    if (result.expense_kind === 'one_time_expense') {
+      result.frequency = 'once'
+      result.expense_type = 'variable'
+      result.payment_mode = 'manual_payment'
+    }
+    if (result.expense_kind === 'fixed_payment') {
+      result.expense_type = 'fixed'
+      if (result.payment_mode === 'variable_tracking') result.payment_mode = 'automatic_debit'
+    }
+  }
 
   return result
 }
