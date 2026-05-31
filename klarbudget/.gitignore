@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+logs
+.vercel
+android/.gradle
+android/app/build
+android
+
+.vercel
