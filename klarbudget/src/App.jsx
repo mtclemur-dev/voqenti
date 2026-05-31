@@ -499,7 +499,7 @@ function App() {
           }} />
         )}
         {view === 'insights' && <Insights t={t} insights={insights} />}
-        {view === 'aiActions' && <AIActionPanel t={t} onConfirm={executeAiAction} />}
+        {view === 'aiActions' && <AIActionPanel t={t} language={language} summary={summary} onConfirm={executeAiAction} />}
       </main>
     </div>
   )
