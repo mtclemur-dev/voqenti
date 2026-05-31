@@ -1,13 +1,21 @@
 const GOOGLE_IDENTITY_SRC = 'https://accounts.google.com/gsi/client'
 const CALENDAR_LIST_URL = 'https://www.googleapis.com/calendar/v3/users/me/calendarList'
 const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars'
+const REQUIRED_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
+]
 
 export const googleCalendarConfig = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '11967707869-bv4pp2o2akfp35vf6n9rdgf4fvg1apns.apps.googleusercontent.com',
-  scope: import.meta.env.VITE_GOOGLE_CALENDAR_SCOPE || 'https://www.googleapis.com/auth/calendar.readonly',
+  scope: mergeScopes(import.meta.env.VITE_GOOGLE_CALENDAR_SCOPE, REQUIRED_SCOPES),
 }
 
 export const hasGoogleCalendarConfig = Boolean(googleCalendarConfig.clientId)
+
+function mergeScopes(envScope, requiredScopes) {
+  return [...new Set([...(envScope || '').split(' ').filter(Boolean), ...requiredScopes])].join(' ')
+}
 
 export function loadGoogleIdentityScript() {
   if (window.google?.accounts?.oauth2) return Promise.resolve()
@@ -30,14 +38,14 @@ export function loadGoogleIdentityScript() {
   })
 }
 
-export async function requestGoogleCalendarToken() {
+export async function requestGoogleCalendarToken({ prompt = '' } = {}) {
   await loadGoogleIdentityScript()
 
   return new Promise((resolve, reject) => {
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: googleCalendarConfig.clientId,
       scope: googleCalendarConfig.scope,
-      prompt: '',
+      prompt,
       callback: (response) => {
         if (response.error) reject(new Error(response.error_description || response.error))
         else resolve(response.access_token)
@@ -49,6 +57,52 @@ export async function requestGoogleCalendarToken() {
 
     tokenClient.requestAccessToken()
   })
+}
+
+export async function createGoogleCalendarEvent(accessToken, eventData) {
+  const calendarId = encodeURIComponent(eventData.calendarId || 'primary')
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin'
+  const startDate = new Date(`${eventData.date}T${eventData.time || '09:00'}`)
+  const endDate = new Date(startDate)
+  endDate.setMinutes(endDate.getMinutes() + Number(eventData.durationMinutes || 60))
+
+  const payload = {
+    summary: eventData.title,
+    description: eventData.notes || '',
+    location: eventData.location || '',
+    start: {
+      dateTime: formatGoogleDateTime(startDate),
+      timeZone,
+    },
+    end: {
+      dateTime: formatGoogleDateTime(endDate),
+      timeZone,
+    },
+    reminders: {
+      useDefault: false,
+      overrides: Number(eventData.reminderMinutes) > 0
+        ? [{ method: 'popup', minutes: Number(eventData.reminderMinutes) }]
+        : [],
+    },
+  }
+
+  const response = await fetch(`${CALENDAR_EVENTS_URL}/${calendarId}/events`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) throw new Error(`Google Calendar create error ${response.status}`)
+  const createdEvent = await response.json()
+  return normalizeGoogleEvent(createdEvent, { id: eventData.calendarId || 'primary', summary: eventData.calendarName || 'Google Calendar' })
+}
+
+function formatGoogleDateTime(date) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`
 }
 
 export async function fetchGoogleCalendarEvents(accessToken, { timeMin, timeMax }) {

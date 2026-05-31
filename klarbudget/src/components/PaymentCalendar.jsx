@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { calendarGroups, daysUntil, formatMoney } from '../lib/finance'
-import { fetchGoogleCalendarEvents, hasGoogleCalendarConfig, requestGoogleCalendarToken } from '../lib/googleCalendar'
+import { createGoogleCalendarEvent, fetchGoogleCalendarEvents, hasGoogleCalendarConfig, requestGoogleCalendarToken } from '../lib/googleCalendar'
 
 export function PaymentCalendar({ t, language, currency, expenses, settings, paymentStatuses, onPaymentStatus, onEdit }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
@@ -9,12 +9,19 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
   const [monthDate, setMonthDate] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [googleEvents, setGoogleEvents] = useState([])
+  const [googleToken, setGoogleToken] = useState('')
   const [googleStatus, setGoogleStatus] = useState(hasGoogleCalendarConfig ? 'disconnected' : 'missing_config')
   const [googleError, setGoogleError] = useState('')
+  const [googleSaveStatus, setGoogleSaveStatus] = useState('')
+  const [googleEventForm, setGoogleEventForm] = useState(() => defaultGoogleEventForm(new Date()))
   const grouped = calendarGroups(expenses, settings, new Date(), paymentStatuses)
   const groups = useMemo(() => buildCalendarGroups(grouped, googleEvents, filter), [grouped, googleEvents, filter])
   const monthItems = useMemo(() => buildMonthItems(expenses, settings, paymentStatuses, googleEvents, monthDate), [expenses, settings, paymentStatuses, googleEvents, monthDate])
   const selectedItems = monthItems.filter((item) => sameDay(eventDate(item), selectedDate))
+
+  useEffect(() => {
+    setGoogleEventForm((current) => ({ ...current, date: dateToInput(selectedDate) }))
+  }, [selectedDate])
 
   const connectGoogleCalendar = async () => {
     if (!hasGoogleCalendarConfig) return
@@ -22,6 +29,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     setGoogleStatus('connecting')
     try {
       const token = await requestGoogleCalendarToken()
+      setGoogleToken(token)
       const now = new Date()
       now.setDate(1)
       now.setHours(0, 0, 0, 0)
@@ -32,6 +40,30 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
       setGoogleStatus('connected')
     } catch (error) {
       setGoogleStatus('error')
+      setGoogleError(buildGoogleCalendarError(error, t))
+    }
+  }
+
+  const saveGoogleEvent = async (event) => {
+    event.preventDefault()
+    if (!hasGoogleCalendarConfig) return
+    setGoogleError('')
+    setGoogleSaveStatus('saving')
+    try {
+      const token = googleToken || await requestGoogleCalendarToken({ prompt: 'consent' })
+      setGoogleToken(token)
+      const createdEvent = await createGoogleCalendarEvent(token, googleEventForm)
+      setGoogleEvents((current) => [...current, createdEvent].sort((a, b) => a.startDate - b.startDate))
+      setGoogleStatus('connected')
+      setGoogleSaveStatus('saved')
+      setGoogleEventForm((current) => ({
+        ...defaultGoogleEventForm(selectedDate),
+        date: current.date,
+        reminderMinutes: current.reminderMinutes,
+        durationMinutes: current.durationMinutes,
+      }))
+    } catch (error) {
+      setGoogleSaveStatus('error')
       setGoogleError(buildGoogleCalendarError(error, t))
     }
   }
@@ -53,6 +85,50 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
         </p>
       )}
       {googleError && <div className="notice danger">{googleError}</div>}
+      {hasGoogleCalendarConfig && (
+        <form className="google-event-form" onSubmit={saveGoogleEvent}>
+          <div className="form-grid">
+            <label>
+              {t('appointmentTitle')}
+              <input required value={googleEventForm.title} onChange={(event) => setGoogleEventForm({ ...googleEventForm, title: event.target.value })} />
+            </label>
+            <label>
+              {t('appointmentDate')}
+              <input required type="date" value={googleEventForm.date} onChange={(event) => setGoogleEventForm({ ...googleEventForm, date: event.target.value })} />
+            </label>
+            <label>
+              {t('appointmentTime')}
+              <input required type="time" value={googleEventForm.time} onChange={(event) => setGoogleEventForm({ ...googleEventForm, time: event.target.value })} />
+            </label>
+            <label>
+              {t('durationMinutes')}
+              <input min="5" step="5" type="number" value={googleEventForm.durationMinutes} onChange={(event) => setGoogleEventForm({ ...googleEventForm, durationMinutes: event.target.value })} />
+            </label>
+            <label>
+              {t('reminder')}
+              <select value={googleEventForm.reminderMinutes} onChange={(event) => setGoogleEventForm({ ...googleEventForm, reminderMinutes: event.target.value })}>
+                <option value="0">{t('noReminder')}</option>
+                <option value="10">10 {t('minutesBefore')}</option>
+                <option value="30">30 {t('minutesBefore')}</option>
+                <option value="60">1 {t('hourBefore')}</option>
+                <option value="1440">1 {t('dayBefore')}</option>
+              </select>
+            </label>
+            <label>
+              {t('location')}
+              <input value={googleEventForm.location} onChange={(event) => setGoogleEventForm({ ...googleEventForm, location: event.target.value })} />
+            </label>
+            <label className="full-span">
+              {t('notes')}
+              <textarea rows="2" value={googleEventForm.notes} onChange={(event) => setGoogleEventForm({ ...googleEventForm, notes: event.target.value })} />
+            </label>
+          </div>
+          <div className="form-actions">
+            <button type="submit" disabled={googleSaveStatus === 'saving'}>{googleSaveStatus === 'saving' ? t('saving') : t('addGoogleAppointment')}</button>
+            {googleSaveStatus === 'saved' && <span className="muted">{t('googleEventSaved')}</span>}
+          </div>
+        </form>
+      )}
       <div className="tabbar inline-tabs">
         <button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>{t('monthView')}</button>
         <button type="button" className={calendarView === 'agenda' ? 'active' : ''} onClick={() => setCalendarView('agenda')}>{t('agendaView')}</button>
@@ -92,6 +168,25 @@ function buildGoogleCalendarError(error, t) {
   if (/popup|closed|failed_to_open/i.test(message)) return t('googleCalendarPopupError')
   if (/consent|required|access_denied/i.test(message)) return t('googleCalendarConsentError')
   return `${t('googleCalendarConnectError')} ${message}`.trim()
+}
+
+function defaultGoogleEventForm(date) {
+  return {
+    title: '',
+    date: dateToInput(date),
+    time: '09:00',
+    durationMinutes: '60',
+    reminderMinutes: '30',
+    location: '',
+    notes: '',
+  }
+}
+
+function dateToInput(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function MonthCalendar({ currency, items, locale, monthDate, onChangeMonth, onSelectDate, selectedDate, selectedItems, t }) {
