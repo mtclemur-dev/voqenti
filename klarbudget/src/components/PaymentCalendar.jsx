@@ -4,12 +4,17 @@ import { fetchGoogleCalendarEvents, hasGoogleCalendarConfig, requestGoogleCalend
 
 export function PaymentCalendar({ t, language, currency, expenses, settings, paymentStatuses, onPaymentStatus, onEdit }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
+  const [calendarView, setCalendarView] = useState('month')
   const [filter, setFilter] = useState('all')
+  const [monthDate, setMonthDate] = useState(() => new Date())
+  const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [googleEvents, setGoogleEvents] = useState([])
   const [googleStatus, setGoogleStatus] = useState(hasGoogleCalendarConfig ? 'disconnected' : 'missing_config')
   const [googleError, setGoogleError] = useState('')
   const grouped = calendarGroups(expenses, settings, new Date(), paymentStatuses)
   const groups = useMemo(() => buildCalendarGroups(grouped, googleEvents, filter), [grouped, googleEvents, filter])
+  const monthItems = useMemo(() => buildMonthItems(expenses, settings, paymentStatuses, googleEvents, monthDate), [expenses, settings, paymentStatuses, googleEvents, monthDate])
+  const selectedItems = monthItems.filter((item) => sameDay(eventDate(item), selectedDate))
 
   const connectGoogleCalendar = async () => {
     if (!hasGoogleCalendarConfig) return
@@ -40,20 +45,77 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
       {googleStatus === 'missing_config' && <p className="muted">{t('googleCalendarMissingConfig')}</p>}
       {googleError && <div className="notice danger">{googleError}</div>}
       <div className="tabbar inline-tabs">
+        <button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>{t('monthView')}</button>
+        <button type="button" className={calendarView === 'agenda' ? 'active' : ''} onClick={() => setCalendarView('agenda')}>{t('agendaView')}</button>
+      </div>
+      <div className="tabbar inline-tabs">
         {['all', 'klarbudget', 'google', 'large', 'termine', 'familie', 'casa', 'masina', 'taxe'].map((item) => (
           <button type="button" className={filter === item ? 'active' : ''} key={item} onClick={() => setFilter(item)}>{t(item)}</button>
         ))}
       </div>
-      {groups.map(([titleKey, items]) => (
-        <div className="calendar-group" key={titleKey}>
-          <h3>{t(titleKey)}</h3>
-          {items.length === 0 ? <p className="muted">{t('noData')}</p> : items.map((item) => item.source === 'google'
-            ? <GoogleCalendarRow item={item} locale={locale} t={t} key={`${title}-google-${item.id}`} />
-            : <KlarBudgetRow item={item} currency={currency} locale={locale} onEdit={onEdit} onPaymentStatus={onPaymentStatus} t={t} key={`${title}-kb-${item.id}-${item.due_date_iso || 'none'}`} />
-          )}
-        </div>
-      ))}
+      {calendarView === 'month' ? (
+        <MonthCalendar
+          currency={currency}
+          items={filterItems(monthItems, filter)}
+          locale={locale}
+          monthDate={monthDate}
+          onChangeMonth={setMonthDate}
+          onSelectDate={setSelectedDate}
+          selectedDate={selectedDate}
+          selectedItems={filterItems(selectedItems, filter)}
+          t={t}
+        />
+      ) : groups.map(([titleKey, items]) => (
+          <div className="calendar-group" key={titleKey}>
+            <h3>{t(titleKey)}</h3>
+            {items.length === 0 ? <p className="muted">{t('noData')}</p> : items.map((item) => item.source === 'google'
+              ? <GoogleCalendarRow item={item} locale={locale} t={t} key={`${titleKey}-google-${item.id}`} />
+              : <KlarBudgetRow item={item} currency={currency} locale={locale} onEdit={onEdit} onPaymentStatus={onPaymentStatus} t={t} key={`${titleKey}-kb-${item.id}-${item.due_date_iso || 'none'}`} />
+            )}
+          </div>
+        ))}
     </section>
+  )
+}
+
+function MonthCalendar({ currency, items, locale, monthDate, onChangeMonth, onSelectDate, selectedDate, selectedItems, t }) {
+  const days = buildMonthDays(monthDate)
+  const title = monthDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+
+  return (
+    <>
+      <div className="calendar-toolbar">
+        <button type="button" className="secondary" onClick={() => onChangeMonth(addMonths(monthDate, -1))}>{'<'}</button>
+        <h3>{title}</h3>
+        <button type="button" className="secondary" onClick={() => onChangeMonth(addMonths(monthDate, 1))}>{'>'}</button>
+      </div>
+      <div className="month-grid">
+        {days.map((day) => {
+          const dayItems = items.filter((item) => sameDay(eventDate(item), day.date))
+          return (
+            <button
+              type="button"
+              className={`day-cell ${day.isCurrentMonth ? '' : 'muted-day'} ${sameDay(day.date, selectedDate) ? 'selected' : ''}`}
+              key={day.date.toISOString()}
+              onClick={() => onSelectDate(day.date)}
+            >
+              <span>{day.date.getDate()}</span>
+              {dayItems.slice(0, 3).map((item) => (
+                <small className={item.source === 'google' ? 'event-dot google' : 'event-dot'} key={`${item.source || 'kb'}-${item.id}`}>{item.source === 'google' ? item.title : item.name}</small>
+              ))}
+              {dayItems.length > 3 && <small>+{dayItems.length - 3}</small>}
+            </button>
+          )
+        })}
+      </div>
+      <div className="calendar-group">
+        <h3>{selectedDate.toLocaleDateString(locale)}</h3>
+        {selectedItems.length === 0 ? <p className="muted">{t('noData')}</p> : selectedItems.map((item) => item.source === 'google'
+          ? <GoogleCalendarRow item={item} locale={locale} t={t} key={`selected-google-${item.id}`} />
+          : <KlarBudgetReadOnlyRow item={item} currency={currency} locale={locale} t={t} key={`selected-kb-${item.id}-${item.due_date_iso || 'none'}`} />
+        )}
+      </div>
+    </>
   )
 }
 
@@ -103,6 +165,24 @@ function GoogleCalendarRow({ item, locale, t }) {
   )
 }
 
+function KlarBudgetReadOnlyRow({ item, currency, locale, t }) {
+  return (
+    <article className={`payment-row ${item.is_large ? 'large' : ''}`}>
+      <div>
+        <strong>{item.name}</strong>
+        <span>{item.next_due_date ? item.next_due_date.toLocaleDateString(locale) : t('noDueDate')} - {item.category} - {t(item.payment_mode || 'automatic_debit')}</span>
+        <div className="badge-row">
+          <span className="badge">KlarBudget</span>
+          {item.is_large && <span className="badge">{t('largePayment')}</span>}
+        </div>
+      </div>
+      <div className="payment-actions">
+        <b>{formatMoney(item.amount, currency, locale)}</b>
+      </div>
+    </article>
+  )
+}
+
 function buildCalendarGroups(klarBudgetGroups, googleEvents, filter) {
   const googleItems = googleEvents.map((event) => ({
     ...event,
@@ -124,6 +204,16 @@ function buildCalendarGroups(klarBudgetGroups, googleEvents, filter) {
   ].map(([title, items]) => [title, items.sort((a, b) => eventDate(a) - eventDate(b))])
 }
 
+function buildMonthItems(expenses, settings, paymentStatuses, googleEvents, monthDate) {
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
+  const last = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0)
+  const monthPayments = calendarGroups(expenses, settings, first, paymentStatuses)
+  const payments = [...monthPayments.next7, ...monthPayments.days8to14, ...monthPayments.restOfMonth, ...monthPayments.next90]
+    .filter((item) => eventDate(item) >= first && eventDate(item) <= last)
+  const google = googleEvents.filter((event) => event.startDate >= first && event.startDate <= last)
+  return [...payments, ...google]
+}
+
 function filterItems(items, filter) {
   if (filter === 'all') return items
   if (filter === 'klarbudget') return items.filter((item) => item.source !== 'google')
@@ -136,6 +226,26 @@ function filterItems(items, filter) {
 
 function eventDate(item) {
   return item.source === 'google' ? item.startDate : item.next_due_date || new Date(8640000000000000)
+}
+
+function buildMonthDays(monthDate) {
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
+  const start = new Date(first)
+  const mondayOffset = (first.getDay() + 6) % 7
+  start.setDate(first.getDate() - mondayOffset)
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    return { date, isCurrentMonth: date.getMonth() === monthDate.getMonth() }
+  })
+}
+
+function addMonths(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
+}
+
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
 function isCurrentMonth(date) {

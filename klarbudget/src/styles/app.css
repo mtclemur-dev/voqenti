@@ -437,6 +437,73 @@ h3 {
   padding: 0;
 }
 
+.calendar-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.calendar-toolbar h3 {
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.day-cell {
+  min-height: 96px;
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  border: 1px solid #e3e9df;
+  background: #fbfcfa;
+  color: #17211f;
+  padding: 0.45rem;
+  text-align: left;
+}
+
+.day-cell.selected {
+  border-color: #214f4b;
+  background: #e6efe9;
+}
+
+.day-cell.muted-day {
+  opacity: 0.45;
+}
+
+.event-dot {
+  overflow: hidden;
+  border-radius: 4px;
+  background: #e6efe9;
+  color: #214f4b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.15rem 0.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-dot.google {
+  background: #e8f0fe;
+  color: #174ea6;
+}
+
+@media (max-width: 480px) {
+  .day-cell {
+    min-height: 68px;
+    padding: 0.3rem;
+  }
+
+  .event-dot {
+    font-size: 0.6rem;
+  }
+}
+
 .payment-row.paid {
   opacity: 0.68;
 }
