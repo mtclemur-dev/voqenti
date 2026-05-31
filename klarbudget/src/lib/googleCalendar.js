@@ -5,6 +5,7 @@ const REQUIRED_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
 ]
+const TOKEN_STORAGE_KEY = 'klarbudget_google_calendar_token'
 
 export const googleCalendarConfig = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '11967707869-bv4pp2o2akfp35vf6n9rdgf4fvg1apns.apps.googleusercontent.com',
@@ -48,7 +49,10 @@ export async function requestGoogleCalendarToken({ prompt = '' } = {}) {
       prompt,
       callback: (response) => {
         if (response.error) reject(new Error(response.error_description || response.error))
-        else resolve(response.access_token)
+        else {
+          persistGoogleCalendarToken(response.access_token, response.expires_in)
+          resolve(response.access_token)
+        }
       },
       error_callback: (error) => {
         reject(new Error(error?.message || error?.type || 'Google OAuth popup error'))
@@ -57,6 +61,42 @@ export async function requestGoogleCalendarToken({ prompt = '' } = {}) {
 
     tokenClient.requestAccessToken()
   })
+}
+
+export function getStoredGoogleCalendarToken() {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(TOKEN_STORAGE_KEY) || 'null')
+    if (!stored?.accessToken || !stored?.expiresAt) return ''
+    if (Date.now() >= stored.expiresAt) {
+      clearStoredGoogleCalendarToken()
+      return ''
+    }
+    return stored.accessToken
+  } catch {
+    clearStoredGoogleCalendarToken()
+    return ''
+  }
+}
+
+export function clearStoredGoogleCalendarToken() {
+  try {
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+  } catch {
+    // sessionStorage can be blocked in private browsing.
+  }
+}
+
+function persistGoogleCalendarToken(accessToken, expiresInSeconds) {
+  try {
+    const expiresIn = Number(expiresInSeconds || 3600)
+    const safetyWindowMs = 60 * 1000
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({
+      accessToken,
+      expiresAt: Date.now() + expiresIn * 1000 - safetyWindowMs,
+    }))
+  } catch {
+    // The app can still work with the in-memory token.
+  }
 }
 
 export async function createGoogleCalendarEvent(accessToken, eventData) {
