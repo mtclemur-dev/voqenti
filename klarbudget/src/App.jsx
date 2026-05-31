@@ -6,10 +6,12 @@ import { EntityList } from './components/EntityList'
 import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
+import { AIActionPanel } from './components/AIActionPanel'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
+import { createGoogleCalendarEvent, getStoredGoogleCalendarToken, requestGoogleCalendarToken } from './lib/googleCalendar'
 
 const defaultSettings = {
   monthly_extra_debt_payment: 0,
@@ -18,7 +20,7 @@ const defaultSettings = {
   include_mortgage_in_plan: false,
 }
 
-const navItems = ['dashboard', 'incomes', 'expenses', 'debts', 'plan', 'calendar', 'insights']
+const navItems = ['dashboard', 'incomes', 'expenses', 'debts', 'plan', 'calendar', 'insights', 'aiActions']
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
@@ -192,6 +194,54 @@ function App() {
     if (error) window.alert(error.message)
   }
 
+  const executeAiAction = async (action) => {
+    const data = action.data || {}
+    if (!action.requires_confirmation) throw new Error(t('aiMissingConfirmation'))
+    if (['delete_debt', 'delete_expense', 'update_debt_balance'].includes(action.action_type)) {
+      throw new Error(t('aiUnsafeActionBlocked'))
+    }
+    if (action.action_type === 'create_income') {
+      await saveRow('kb_incomes', { ...data, active: data.active ?? true })
+      return
+    }
+    if (action.action_type === 'create_expense' || action.action_type === 'create_one_time_expense') {
+      await saveRow('kb_expenses', {
+        ...data,
+        expense_kind: action.action_type === 'create_one_time_expense' ? 'one_time_expense' : data.expense_kind,
+        active: data.active ?? true,
+      })
+      return
+    }
+    if (action.action_type === 'create_debt') {
+      await saveRow('kb_debts', {
+        debt_category: 'credit_consum',
+        initial_amount: 0,
+        remaining_balance: 0,
+        final_payment: 0,
+        monthly_payment: 0,
+        interest_rate: 0,
+        priority: 3,
+        status: 'active',
+        ...data,
+      })
+      return
+    }
+    if (action.action_type === 'update_debt_final_payment') {
+      const debtName = String(data.debt_name || data.name || '').toLowerCase()
+      const debt = debts.find((item) => item.name.toLowerCase().includes(debtName) || debtName.includes(item.name.toLowerCase()))
+      if (!debt) throw new Error(t('aiDebtNotFound'))
+      await saveRow('kb_debts', { final_payment: data.final_payment }, debt)
+      return
+    }
+    if (action.action_type === 'create_google_event') {
+      const token = getStoredGoogleCalendarToken() || await requestGoogleCalendarToken({ prompt: 'consent' })
+      await createGoogleCalendarEvent(token, data)
+      setNotice(t('googleEventSaved'))
+      return
+    }
+    throw new Error(t('aiUnsupportedAction'))
+  }
+
   const changeLanguage = async (nextLanguage) => {
     setLanguage(nextLanguage)
     if (user) {
@@ -208,7 +258,6 @@ function App() {
     .filter((item) => expenseFilters.search ? item.name.toLowerCase().includes(expenseFilters.search.toLowerCase()) : true)
     .filter((item) => expenseFilters.category === 'all' ? true : item.category === expenseFilters.category)
     .filter((item) => {
-      if (expenseFilters.type === 'all') return true
       if (expenseFilters.type === 'all') return true
       return expenseKind(item) === expenseFilters.type
     })
@@ -450,6 +499,7 @@ function App() {
           }} />
         )}
         {view === 'insights' && <Insights t={t} insights={insights} />}
+        {view === 'aiActions' && <AIActionPanel t={t} onConfirm={executeAiAction} />}
       </main>
     </div>
   )

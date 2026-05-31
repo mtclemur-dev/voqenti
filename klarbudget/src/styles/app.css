@@ -609,6 +609,36 @@ h3 {
   color: #735214;
 }
 
+.ai-actions textarea {
+  font-family: inherit;
+}
+
+.ai-preview-card {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+  padding: 0.9rem;
+}
+
+.ai-preview-card.risk {
+  border-color: var(--gold);
+  background: #fff7df;
+}
+
+.ai-preview-card div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ai-risk-check {
+  border-radius: 8px;
+  background: var(--red-soft);
+  color: var(--red);
+  padding: 0.75rem;
+}
+
 .steps {
   margin: 0;
   padding-left: 1.25rem;
