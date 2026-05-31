@@ -396,6 +396,17 @@ h3 {
   padding: 0.25rem 0.55rem;
 }
 
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.badge.google {
+  background: #e8f0fe;
+  color: #174ea6;
+}
+
 .badge.danger {
   background: #f8e4df;
   color: #8c2d22;
@@ -414,6 +425,16 @@ h3 {
 .payment-row.large {
   border-color: #d6a95a;
   background: #fff8e8;
+}
+
+.payment-row.google-event {
+  border-color: #d2e3fc;
+}
+
+.inline-tabs {
+  position: static;
+  border: 0;
+  padding: 0;
 }
 
 .payment-row.paid {
