@@ -1,5 +1,8 @@
 {
   "appId": "com.klarbudget.app",
   "appName": "klarbudget",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http"
+  }
 }

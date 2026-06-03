@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { calendarGroups, daysUntil, formatMoney } from '../lib/finance'
 import { clearStoredGoogleCalendarToken, createGoogleCalendarEvent, fetchGoogleCalendarEvents, getStoredGoogleCalendarToken, hasGoogleCalendarConfig, requestGoogleCalendarToken } from '../lib/googleCalendar'
 
@@ -24,17 +24,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     setGoogleEventForm((current) => ({ ...current, date: dateToInput(selectedDate) }))
   }, [selectedDate])
 
-  useEffect(() => {
-    if (!hasGoogleCalendarConfig || !googleToken || googleEvents.length > 0) return
-    loadGoogleEvents(googleToken).catch((error) => {
-      clearStoredGoogleCalendarToken()
-      setGoogleToken('')
-      setGoogleStatus('disconnected')
-      setGoogleError(buildGoogleCalendarError(error, t))
-    })
-  }, [googleToken])
-
-  const loadGoogleEvents = async (token) => {
+  const loadGoogleEvents = useCallback(async (token) => {
     const now = new Date()
     now.setDate(1)
     now.setHours(0, 0, 0, 0)
@@ -43,7 +33,17 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
     const events = await fetchGoogleCalendarEvents(token, { timeMin: now, timeMax: max })
     setGoogleEvents(events)
     setGoogleStatus('connected')
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!hasGoogleCalendarConfig || !googleToken || googleEvents.length > 0) return
+    loadGoogleEvents(googleToken).catch((error) => {
+      clearStoredGoogleCalendarToken()
+      setGoogleToken('')
+      setGoogleStatus('disconnected')
+      setGoogleError(buildGoogleCalendarError(error, t))
+    })
+  }, [googleToken, googleEvents.length, loadGoogleEvents, t])
 
   const connectGoogleCalendar = async () => {
     if (!hasGoogleCalendarConfig) return
