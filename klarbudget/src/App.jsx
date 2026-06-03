@@ -18,8 +18,6 @@ const defaultSettings = {
   large_payment_threshold: 300,
   include_mortgage_in_plan: false,
   minimum_reserve: 200,
-  salary_day_victor: null,
-  salary_day_doina: null,
   include_overdraft_in_debt_plan: false,
 }
 
@@ -40,6 +38,7 @@ function App() {
   const [accountSnapshots, setAccountSnapshots] = useState([])
   const [paymentStatuses, setPaymentStatuses] = useState([])
   const [settings, setSettings] = useState(defaultSettings)
+  const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
   const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null })
   const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false })
@@ -105,9 +104,13 @@ function App() {
         })
         .select('*')
         .single()
-      setSettings({ ...defaultSettings, ...(data || {}) })
+      const nextSettings = { ...defaultSettings, ...(data || {}) }
+      setSettings(nextSettings)
+      setSettingsDraft(nextSettings)
     } else {
-      setSettings({ ...defaultSettings, ...settingsRes.data })
+      const nextSettings = { ...defaultSettings, ...settingsRes.data }
+      setSettings(nextSettings)
+      setSettingsDraft(nextSettings)
     }
 
     setIncomes(incomesRes.data || [])
@@ -234,6 +237,14 @@ function App() {
       .from('kb_settings')
       .upsert({ ...next, user_id: user.id }, { onConflict: 'user_id' })
     if (error) window.alert(error.message)
+  }
+
+  const saveFinancialSettings = async () => {
+    await updateSettings({
+      minimum_reserve: Number(settingsDraft.minimum_reserve || 0),
+      include_overdraft_in_debt_plan: Boolean(settingsDraft.include_overdraft_in_debt_plan),
+    })
+    setNotice(t('savedSuccess'))
   }
 
   const changeLanguage = async (nextLanguage) => {
@@ -363,7 +374,9 @@ function App() {
             <section className="section">
               <div className="section-title">
                 <h2>{t('financialSettings')}</h2>
+                <button type="button" onClick={saveFinancialSettings}>{t('saveSettings')}</button>
               </div>
+              <p className="muted">{t('salaryFromIncomesHint')}</p>
               <div className="controls">
                 <label>
                   {t('minimumReserve')}
@@ -371,35 +384,15 @@ function App() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={settings.minimum_reserve ?? 200}
-                    onChange={(event) => updateSettings({ minimum_reserve: Number(event.target.value || 0) })}
-                  />
-                </label>
-                <label>
-                  {t('salaryDayVictor')}
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={settings.salary_day_victor ?? ''}
-                    onChange={(event) => updateSettings({ salary_day_victor: event.target.value ? Number(event.target.value) : null })}
-                  />
-                </label>
-                <label>
-                  {t('salaryDayDoina')}
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={settings.salary_day_doina ?? ''}
-                    onChange={(event) => updateSettings({ salary_day_doina: event.target.value ? Number(event.target.value) : null })}
+                    value={settingsDraft.minimum_reserve ?? 200}
+                    onChange={(event) => setSettingsDraft((current) => ({ ...current, minimum_reserve: Number(event.target.value || 0) }))}
                   />
                 </label>
                 <label className="checkbox">
                   <input
                     type="checkbox"
-                    checked={Boolean(settings.include_overdraft_in_debt_plan)}
-                    onChange={(event) => updateSettings({ include_overdraft_in_debt_plan: event.target.checked })}
+                    checked={Boolean(settingsDraft.include_overdraft_in_debt_plan)}
+                    onChange={(event) => setSettingsDraft((current) => ({ ...current, include_overdraft_in_debt_plan: event.target.checked }))}
                   />
                   {t('includeOverdraftInDebtPlan')}
                 </label>

@@ -96,21 +96,6 @@ export const nextIncomeDate = (incomes, now = new Date()) => {
   return dates[0] ?? null
 }
 
-export const nextSalaryDateFromSettings = (settings = {}, now = new Date()) => {
-  const days = [settings.salary_day_victor, settings.salary_day_doina]
-    .map((day) => Number(day))
-    .filter((day) => day >= 1 && day <= 31)
-  if (!days.length) return null
-  const today = startOfDay(now)
-  const candidates = days.flatMap((day) => [
-    clampedDate(now.getFullYear(), now.getMonth(), day),
-    clampedDate(now.getFullYear(), now.getMonth() + 1, day),
-  ])
-    .filter((date) => date >= today)
-    .sort((a, b) => a - b)
-  return candidates[0] ?? null
-}
-
 export const paymentKey = (expenseId, dueDate) => `${expenseId}:${isoDate(dueDate)}`
 
 export const statusForPayment = (paymentStatuses = [], expenseId, dueDate) =>
@@ -224,7 +209,7 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
   const debtPayments = activeDebts.reduce((sum, debt) => sum + toNumber(debt.monthly_payment), 0)
   const plannedRemaining = incomeTotal - fixedTotal - variableTotal - debtPayments
   const now = new Date()
-  const salaryDate = nextSalaryDateFromSettings(settings, now) || nextIncomeDate(incomes, now)
+  const salaryDate = nextIncomeDate(incomes, now)
   const fallbackDays = Math.max(1, daysUntil(new Date(now.getFullYear(), now.getMonth() + 1, 0), now))
   const daysUntilSalary = salaryDate ? Math.max(1, daysUntil(salaryDate, now)) : fallbackDays
   const next14 = upcomingPayments(expenses, 14, settings, now, paymentStatuses)
@@ -353,12 +338,6 @@ const addMonthsClamped = (date, months, preferredDay) => {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
   target.setDate(Math.min(preferredDay, lastDay))
   return target
-}
-
-const clampedDate = (year, month, preferredDay) => {
-  const base = new Date(year, month, 1)
-  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate()
-  return new Date(base.getFullYear(), base.getMonth(), Math.min(preferredDay, lastDay))
 }
 
 const parseDateTime = (value) => {
