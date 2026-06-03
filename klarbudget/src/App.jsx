@@ -177,7 +177,7 @@ function App() {
   }
 
   const saveAccount = async (payload, currentItem = null) => {
-    const prepared = preparePayload(payload)
+    const prepared = preparePayload(cleanAccountPayload(payload))
     const query = currentItem
       ? supabase.from('kb_accounts').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
       : supabase.from('kb_accounts').insert({ ...prepared, user_id: user.id }).select('*').single()
@@ -360,6 +360,51 @@ function App() {
               <div className="notice">{t('bankingLater')}</div>
               {hasPossibleOverdraftDuplicate(accounts, debts) && <div className="notice danger">{t('possibleOverdraftDuplicate')}</div>}
             </section>
+            <section className="section">
+              <div className="section-title">
+                <h2>{t('financialSettings')}</h2>
+              </div>
+              <div className="controls">
+                <label>
+                  {t('minimumReserve')}
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={settings.minimum_reserve ?? 200}
+                    onChange={(event) => updateSettings({ minimum_reserve: Number(event.target.value || 0) })}
+                  />
+                </label>
+                <label>
+                  {t('salaryDayVictor')}
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={settings.salary_day_victor ?? ''}
+                    onChange={(event) => updateSettings({ salary_day_victor: event.target.value ? Number(event.target.value) : null })}
+                  />
+                </label>
+                <label>
+                  {t('salaryDayDoina')}
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={settings.salary_day_doina ?? ''}
+                    onChange={(event) => updateSettings({ salary_day_doina: event.target.value ? Number(event.target.value) : null })}
+                  />
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(settings.include_overdraft_in_debt_plan)}
+                    onChange={(event) => updateSettings({ include_overdraft_in_debt_plan: event.target.checked })}
+                  />
+                  {t('includeOverdraftInDebtPlan')}
+                </label>
+              </div>
+            </section>
             {(formOpen.accounts || editing.accounts) && (
               <AccountForm
                 t={t}
@@ -382,6 +427,11 @@ function App() {
                 setFormOpen((current) => ({ ...current, accounts: true }))
               }}
               onDelete={(item) => deleteRow('kb_accounts', item)}
+              onQuickBalance={async (item) => {
+                const value = window.prompt(t('newBalance'), item.current_balance ?? 0)
+                if (value === null) return
+                await saveAccount({ ...item, current_balance: value }, item)
+              }}
             />
           </>
         )}
@@ -612,7 +662,7 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
   )
 }
 
-function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdit }) {
+function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdit, onQuickBalance }) {
   return (
     <EntityList
       title={t('accounts')}
@@ -638,6 +688,7 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
       onDelete={onDelete}
       renderActions={(item) => (
         <>
+          <button type="button" className="ghost" onClick={() => onQuickBalance(item)}>{t('quickBalanceUpdate')}</button>
           {toNumber(item.current_balance) < 0 && <span className="badge danger">{t('inOverdraft')}</span>}
           {item.include_in_safe_balance === false && <span className="badge">{t('excludedFromSafeBalance')}</span>}
         </>
@@ -683,6 +734,20 @@ function hasPossibleOverdraftDuplicate(accounts, debts) {
   const hasNegativeAccount = accounts.some((account) => toNumber(account.current_balance) < 0)
   const hasDispoDebt = debts.some((debt) => debt.status === 'active' && /dispo|overdraft/i.test(`${debt.name} ${debt.debt_category}`))
   return hasNegativeAccount && hasDispoDebt
+}
+
+function cleanAccountPayload(payload) {
+  return {
+    name: payload.name,
+    account_type: payload.account_type,
+    current_balance: payload.current_balance,
+    currency: payload.currency,
+    include_in_safe_balance: payload.include_in_safe_balance,
+    has_overdraft: payload.has_overdraft,
+    overdraft_limit: payload.overdraft_limit,
+    overdraft_interest: payload.overdraft_interest,
+    notes: payload.notes,
+  }
 }
 
 export default App

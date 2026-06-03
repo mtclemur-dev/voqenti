@@ -96,6 +96,21 @@ export const nextIncomeDate = (incomes, now = new Date()) => {
   return dates[0] ?? null
 }
 
+export const nextSalaryDateFromSettings = (settings = {}, now = new Date()) => {
+  const days = [settings.salary_day_victor, settings.salary_day_doina]
+    .map((day) => Number(day))
+    .filter((day) => day >= 1 && day <= 31)
+  if (!days.length) return null
+  const today = startOfDay(now)
+  const candidates = days.flatMap((day) => [
+    clampedDate(now.getFullYear(), now.getMonth(), day),
+    clampedDate(now.getFullYear(), now.getMonth() + 1, day),
+  ])
+    .filter((date) => date >= today)
+    .sort((a, b) => a - b)
+  return candidates[0] ?? null
+}
+
 export const paymentKey = (expenseId, dueDate) => `${expenseId}:${isoDate(dueDate)}`
 
 export const statusForPayment = (paymentStatuses = [], expenseId, dueDate) =>
@@ -209,7 +224,7 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
   const debtPayments = activeDebts.reduce((sum, debt) => sum + toNumber(debt.monthly_payment), 0)
   const plannedRemaining = incomeTotal - fixedTotal - variableTotal - debtPayments
   const now = new Date()
-  const salaryDate = nextIncomeDate(incomes, now)
+  const salaryDate = nextSalaryDateFromSettings(settings, now) || nextIncomeDate(incomes, now)
   const fallbackDays = Math.max(1, daysUntil(new Date(now.getFullYear(), now.getMonth() + 1, 0), now))
   const daysUntilSalary = salaryDate ? Math.max(1, daysUntil(salaryDate, now)) : fallbackDays
   const next14 = upcomingPayments(expenses, 14, settings, now, paymentStatuses)
@@ -287,7 +302,12 @@ export const debtPlan = (debts, settings) => {
   const method = settings.debt_method ?? 'snowball'
   const extra = toNumber(settings.monthly_extra_debt_payment)
   const includeMortgage = Boolean(settings.include_mortgage_in_plan)
-  const includedDebts = debts.filter((debt) => includeMortgage || debt.debt_category !== 'credit_casa')
+  const includeOverdraft = Boolean(settings.include_overdraft_in_debt_plan)
+  const includedDebts = debts.filter((debt) => {
+    if (!includeMortgage && debt.debt_category === 'credit_casa') return false
+    if (!includeOverdraft && /dispo|overdraft/i.test(`${debt.name} ${debt.debt_category}`)) return false
+    return true
+  })
   const ordered = sortDebts(includedDebts, method)
   const base = simulateMonths(includedDebts, 0, method)
   const withExtra = simulateMonths(includedDebts, extra, method)
@@ -303,6 +323,7 @@ export const debtPlan = (debts, settings) => {
     method,
     extra,
     includeMortgage,
+    includeOverdraft,
     ordered,
     firstDebt: ordered[0] ?? null,
     monthsWithoutExtra: base.months,
@@ -332,6 +353,12 @@ const addMonthsClamped = (date, months, preferredDay) => {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
   target.setDate(Math.min(preferredDay, lastDay))
   return target
+}
+
+const clampedDate = (year, month, preferredDay) => {
+  const base = new Date(year, month, 1)
+  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate()
+  return new Date(base.getFullYear(), base.getMonth(), Math.min(preferredDay, lastDay))
 }
 
 const parseDateTime = (value) => {
