@@ -318,6 +318,15 @@ h3 {
   padding: 1rem;
 }
 
+.metric-card.clickable {
+  cursor: pointer;
+}
+
+.metric-card.clickable:hover {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
 .metric-card span {
   color: var(--muted);
   font-size: 0.82rem;

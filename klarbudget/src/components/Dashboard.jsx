@@ -1,6 +1,6 @@
 import { formatMoney } from '../lib/finance'
 
-export function Dashboard({ t, language, currency, summary }) {
+export function Dashboard({ t, language, currency, summary, onNavigate }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const cards = [
     ['totalIncome', summary.incomeTotal, 'positive'],
@@ -43,9 +43,19 @@ export function Dashboard({ t, language, currency, summary }) {
       )}
       <div className="metric-grid">
         {cards.map(([label, value, tone, hint, unit]) => (
-          <article className={`metric-card ${tone}`} key={label}>
+          <article
+            className={`metric-card ${tone} ${label === 'journalTodayTotal' ? 'clickable' : ''}`}
+            key={label}
+            onClick={label === 'journalTodayTotal' ? () => onNavigate('journal') : undefined}
+            role={label === 'journalTodayTotal' ? 'button' : undefined}
+            tabIndex={label === 'journalTodayTotal' ? 0 : undefined}
+            onKeyDown={label === 'journalTodayTotal' ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') onNavigate('journal')
+            } : undefined}
+          >
             <span>{t(label)}</span>
             <strong>{unit === 'days' ? `${Math.round(value)} ${t('days')}` : formatMoney(value, currency, locale)}</strong>
+            {label === 'journalTodayTotal' && <small>{t('openJournal')}</small>}
             {hint && <small>{hint}</small>}
           </article>
         ))}

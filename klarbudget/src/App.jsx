@@ -39,6 +39,7 @@ function App() {
   const [paymentStatuses, setPaymentStatuses] = useState([])
   const [journalEntries, setJournalEntries] = useState([])
   const [dailyClosures, setDailyClosures] = useState([])
+  const [journalSchemaReady, setJournalSchemaReady] = useState(true)
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
@@ -125,6 +126,7 @@ function App() {
     setAccountSnapshots(snapshotsRes.data || [])
     setJournalEntries(journalRes.data || [])
     setDailyClosures(closuresRes.data || [])
+    setJournalSchemaReady(!journalRes.error && !closuresRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -385,6 +387,7 @@ function App() {
             language={language}
             currency={currency}
             summary={summary}
+            onNavigate={(nextView) => setView(nextView)}
           />
         )}
         {view === 'journal' && (
@@ -397,6 +400,7 @@ function App() {
             t={t}
             editing={editing.journal}
             formOpen={formOpen.journal}
+            schemaReady={journalSchemaReady}
             onCloseDay={closeJournalDay}
             onDelete={(item) => deleteRow('kb_daily_entries', item)}
             onEdit={(item) => {
@@ -716,7 +720,7 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
   )
 }
 
-function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, language, locale, t, onCancel, onCloseDay, onDelete, onEdit, onSubmit, onToggleForm }) {
+function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, language, locale, schemaReady, t, onCancel, onCloseDay, onDelete, onEdit, onSubmit, onToggleForm }) {
   const today = new Date().toISOString().slice(0, 10)
   const todayEntries = entries.filter((item) => item.entry_date === today)
   const todayTotal = todayEntries.reduce((sum, item) => sum + toNumber(item.amount), 0)
@@ -731,6 +735,7 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
           <h2>{t('dailyJournal')}</h2>
           <button type="button" onClick={onToggleForm}>{formOpen ? t('hideForm') : t('addJournalEntry')}</button>
         </div>
+        {!schemaReady && <div className="notice danger">{t('journalMigrationMissing')}</div>}
         <div className="mini-stats">
           <span>{t('todayTotal')}: <strong>{formatMoney(todayTotal, currency, locale)}</strong></span>
           <span>{t('entriesToday')}: <strong>{todayEntries.length}</strong></span>
