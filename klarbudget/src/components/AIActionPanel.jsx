@@ -3,6 +3,7 @@ import { buildChatGptBudgetSummary } from '../lib/chatGptExport'
 
 export function AIActionPanel({ currency, debts, expenses, incomes, language, paymentStatuses, settings, summary, t }) {
   const [copyStatus, setCopyStatus] = useState('')
+  const [syncedAt, setSyncedAt] = useState(() => new Date())
   const exportText = useMemo(
     () => buildChatGptBudgetSummary({
       currency,
@@ -13,9 +14,15 @@ export function AIActionPanel({ currency, debts, expenses, incomes, language, pa
       paymentStatuses,
       settings,
       summary,
+      syncedAt,
     }),
-    [currency, debts, expenses, incomes, language, paymentStatuses, settings, summary],
+    [currency, debts, expenses, incomes, language, paymentStatuses, settings, summary, syncedAt],
   )
+
+  const syncSummary = () => {
+    setSyncedAt(new Date())
+    setCopyStatus(t('chatGptExportSynced'))
+  }
 
   const copyForChatGpt = async () => {
     try {
@@ -37,7 +44,10 @@ export function AIActionPanel({ currency, debts, expenses, incomes, language, pa
       <section className="ai-box">
         <div className="section-title">
           <h3>{t('chatGptExportTitle')}</h3>
-          <button type="button" onClick={copyForChatGpt}>{t('copyForChatGpt')}</button>
+          <div className="button-pair">
+            <button type="button" className="secondary" onClick={syncSummary}>{t('syncSummary')}</button>
+            <button type="button" onClick={copyForChatGpt}>{t('copyForChatGpt')}</button>
+          </div>
         </div>
         <p className="muted">{t('chatGptExportHint')}</p>
         {copyStatus && <div className="notice">{copyStatus}</div>}

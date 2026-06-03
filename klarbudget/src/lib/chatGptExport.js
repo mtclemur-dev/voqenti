@@ -16,9 +16,11 @@ export function buildChatGptBudgetSummary({
   paymentStatuses,
   settings,
   summary,
+  syncedAt,
 }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const now = new Date()
+  const generatedAt = syncedAt || now
   const monthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(now)
   const next7 = upcomingPayments(expenses, 7, settings, now, paymentStatuses)
   const next14 = upcomingPayments(expenses, 14, settings, now, paymentStatuses)
@@ -34,6 +36,7 @@ export function buildChatGptBudgetSummary({
     'Analizeaza bugetul meu KlarBudget si da-mi recomandari pentru urmatoarele 7 zile.',
     '',
     `Luna curenta: ${monthLabel}`,
+    `Rezumat generat la: ${new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(generatedAt)}`,
     '',
     'Rezumat lunar:',
     `- Venit total lunar: ${formatMoney(summary.incomeTotal, currency, locale)}`,
