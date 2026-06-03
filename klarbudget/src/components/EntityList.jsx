@@ -15,7 +15,7 @@ export function EntityList({ title, items, currency, language, emptyText, editTe
               <span>{renderMeta(item)}</span>
             </div>
             <div className="list-value">
-              <b>{formatMoney(item.amount ?? item.remaining_balance, currency, locale)}</b>
+              <b>{formatMoney(item.amount ?? item.remaining_balance ?? item.current_balance, currency, locale)}</b>
               <div className="row-actions">
                 {renderActions?.(item)}
                 <button type="button" className="ghost" onClick={() => onEdit(item)}>{editText}</button>

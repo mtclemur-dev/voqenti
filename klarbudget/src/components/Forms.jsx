@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { categories, debtCategories } from '../i18n'
+import { accountTypes, categories, debtCategories } from '../i18n'
 
 const frequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly', 'once']
 const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly']
@@ -7,6 +7,7 @@ const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly
 const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_date: '', active: true, notes: '' }
 const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
+const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
   return (
@@ -67,6 +68,30 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
           <TextInput name="estimated_end_date" label={t('estimatedEndDate')} type="date" value={values.estimated_end_date} onChange={update} />
           <TextInput name="priority" label={t('priority')} type="number" value={values.priority} onChange={update} />
           <SelectInput name="status" label={t('status')} value={values.status} onChange={update} options={[['active', t('active')], ['paid', t('paid')], ['paused', t('paused')]]} />
+        </>
+      )}
+    </FormShell>
+  )
+}
+
+export function AccountForm({ t, initialItem, onSubmit, onCancel }) {
+  return (
+    <FormShell title={t('accounts')} defaults={accountDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('addAccount')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
+      {({ values, update }) => (
+        <>
+          <TextInput name="name" label={t('accountName')} value={values.name} onChange={update} required />
+          <SelectInput name="account_type" label={t('accountType')} value={values.account_type} onChange={update} options={accountTypes.map(([value, labelKey]) => [value, t(labelKey)])} />
+          <TextInput name="current_balance" label={t('currentBalance')} type="number" step="0.01" value={values.current_balance} onChange={update} required />
+          <TextInput name="currency" label={t('currency')} value={values.currency} onChange={update} required />
+          <CheckboxInput name="include_in_safe_balance" label={t('includeInSafeBalance')} checked={values.include_in_safe_balance} onChange={update} />
+          <CheckboxInput name="has_overdraft" label={t('hasOverdraft')} checked={values.has_overdraft} onChange={update} />
+          {values.has_overdraft && (
+            <>
+              <MoneyInput name="overdraft_limit" label={t('overdraftLimit')} value={values.overdraft_limit} onChange={update} />
+              <TextInput name="overdraft_interest" label={t('overdraftInterest')} type="number" min="0" step="0.001" value={values.overdraft_interest} onChange={update} />
+            </>
+          )}
+          <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
         </>
       )}
     </FormShell>

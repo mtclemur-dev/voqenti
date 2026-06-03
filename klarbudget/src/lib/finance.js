@@ -150,7 +150,50 @@ export const splitDebtTotals = (debts) => {
   return { urgent, monthlyCredits, mortgage, total }
 }
 
-export const calculateSummary = ({ incomes, expenses, debts, settings, paymentStatuses = [] }) => {
+export const calculateAccountSummary = ({ accounts = [], snapshots = [], summarySeed = {}, settings = {} }) => {
+  const included = accounts.filter((account) => account.include_in_safe_balance !== false)
+  const positiveTotal = included
+    .filter((account) => toNumber(account.current_balance) > 0)
+    .reduce((sum, account) => sum + toNumber(account.current_balance), 0)
+  const overdraftUsed = included
+    .filter((account) => toNumber(account.current_balance) < 0)
+    .reduce((sum, account) => sum + Math.abs(toNumber(account.current_balance)), 0)
+  const netBalance = positiveTotal - overdraftUsed
+  const overdraftAvailable = accounts
+    .filter((account) => account.has_overdraft)
+    .reduce((sum, account) => {
+      const used = Math.max(0, -toNumber(account.current_balance))
+      return sum + Math.max(0, toNumber(account.overdraft_limit) - used)
+    }, 0)
+  const variableNeeded = Math.max(0, toNumber(summarySeed.variableTotal) / 30 * toNumber(summarySeed.daysUntilSalary || 0))
+  const safeAvailable = positiveTotal
+    - toNumber(summarySeed.upcomingUntilSalaryTotal)
+    - variableNeeded
+    - toNumber(settings.minimum_reserve ?? 200)
+  const latestUpdate = accounts
+    .map((account) => parseDateTime(account.updated_at))
+    .filter(Boolean)
+    .sort((a, b) => b - a)[0] ?? null
+  const balances7DaysAgo = netBalanceFromSnapshots(accounts, snapshots, 7)
+  const trendDifference = balances7DaysAgo === null ? null : netBalance - balances7DaysAgo
+
+  return {
+    positiveTotal,
+    overdraftUsed,
+    netBalance,
+    overdraftAvailable,
+    variableNeededUntilSalary: variableNeeded,
+    minimumReserve: toNumber(settings.minimum_reserve ?? 200),
+    safeAvailable,
+    latestUpdate,
+    balances7DaysAgo,
+    trendDifference,
+    stale: latestUpdate ? daysUntil(new Date(), latestUpdate) > 7 : accounts.length > 0,
+    hasAccounts: accounts.length > 0,
+  }
+}
+
+export const calculateSummary = ({ incomes, expenses, debts, settings, paymentStatuses = [], accounts = [], accountSnapshots = [] }) => {
   const incomeTotal = incomes.reduce((sum, item) => sum + monthlyValue(item), 0)
   const fixedTotal = expenses
     .filter((item) => expenseKind(item) === 'fixed_payment')
@@ -180,7 +223,7 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
   if (plannedRemaining < 0 || dailyBudget < 0) status = 'riskNegative'
   else if (next14.some((item) => item.is_large)) status = 'largePaymentsSoon'
 
-  return {
+  const baseSummary = {
     incomeTotal,
     fixedTotal,
     variableTotal,
@@ -196,6 +239,11 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
     dailyBudget,
     upcomingUntilSalaryTotal,
     status,
+  }
+
+  return {
+    ...baseSummary,
+    accounts: calculateAccountSummary({ accounts, snapshots: accountSnapshots, summarySeed: baseSummary, settings }),
   }
 }
 
@@ -284,6 +332,35 @@ const addMonthsClamped = (date, months, preferredDay) => {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
   target.setDate(Math.min(preferredDay, lastDay))
   return target
+}
+
+const parseDateTime = (value) => {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const netBalanceFromSnapshots = (accounts, snapshots, daysAgo) => {
+  if (!accounts.length || !snapshots.length) return null
+  const target = new Date()
+  target.setDate(target.getDate() - daysAgo)
+  const targetKey = isoDate(target)
+  const byAccount = new Map()
+
+  snapshots
+    .filter((snapshot) => snapshot.snapshot_date <= targetKey)
+    .sort((a, b) => String(b.snapshot_date).localeCompare(String(a.snapshot_date)))
+    .forEach((snapshot) => {
+      if (!byAccount.has(snapshot.account_id)) byAccount.set(snapshot.account_id, snapshot)
+    })
+
+  if (!byAccount.size) return null
+
+  return accounts.reduce((sum, account) => {
+    if (account.include_in_safe_balance === false) return sum
+    const snapshot = byAccount.get(account.id)
+    return sum + toNumber(snapshot?.balance ?? account.current_balance)
+  }, 0)
 }
 
 export const variableBudgetStats = (expense, reference = new Date()) => {

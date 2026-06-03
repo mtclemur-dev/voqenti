@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
-import { DebtForm, ExpenseForm, IncomeForm } from './components/Forms'
+import { AccountForm, DebtForm, ExpenseForm, IncomeForm } from './components/Forms'
 import { EntityList } from './components/EntityList'
 import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
@@ -17,9 +17,13 @@ const defaultSettings = {
   debt_method: 'snowball',
   large_payment_threshold: 300,
   include_mortgage_in_plan: false,
+  minimum_reserve: 200,
+  salary_day_victor: null,
+  salary_day_doina: null,
+  include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'incomes', 'expenses', 'debts', 'plan', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'accounts', 'incomes', 'expenses', 'debts', 'plan', 'calendar', 'insights', 'aiActions']
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
@@ -32,11 +36,13 @@ function App() {
   const [incomes, setIncomes] = useState([])
   const [expenses, setExpenses] = useState([])
   const [debts, setDebts] = useState([])
+  const [accounts, setAccounts] = useState([])
+  const [accountSnapshots, setAccountSnapshots] = useState([])
   const [paymentStatuses, setPaymentStatuses] = useState([])
   const [settings, setSettings] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
-  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null })
-  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false })
+  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null })
+  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false })
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
@@ -69,13 +75,15 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_debts').select('*').eq('user_id', user.id).order('priority', { ascending: true }),
       supabase.from('kb_payment_status').select('*').eq('user_id', user.id).order('due_date', { ascending: true }),
       supabase.from('kb_settings').select('*').eq('user_id', user.id).maybeSingle(),
+      supabase.from('kb_accounts').select('*').eq('user_id', user.id).order('updated_at', { ascending: false }),
+      supabase.from('kb_account_snapshots').select('*').eq('user_id', user.id).order('snapshot_date', { ascending: false }),
     ])
 
     if (!profileRes.data) {
@@ -88,18 +96,26 @@ function App() {
     if (!settingsRes.data) {
       const { data } = await supabase
         .from('kb_settings')
-        .insert({ user_id: user.id, ...defaultSettings })
+        .insert({
+          user_id: user.id,
+          monthly_extra_debt_payment: defaultSettings.monthly_extra_debt_payment,
+          debt_method: defaultSettings.debt_method,
+          large_payment_threshold: defaultSettings.large_payment_threshold,
+          include_mortgage_in_plan: defaultSettings.include_mortgage_in_plan,
+        })
         .select('*')
         .single()
-      setSettings(data || defaultSettings)
+      setSettings({ ...defaultSettings, ...(data || {}) })
     } else {
-      setSettings(settingsRes.data)
+      setSettings({ ...defaultSettings, ...settingsRes.data })
     }
 
     setIncomes(incomesRes.data || [])
     setExpenses(expensesRes.data || [])
     setDebts(debtsRes.data || [])
     setPaymentStatuses(paymentsRes.data || [])
+    setAccounts(accountsRes.data || [])
+    setAccountSnapshots(snapshotsRes.data || [])
     setLoading(false)
   }, [language, user])
 
@@ -108,8 +124,8 @@ function App() {
   }, [loadData])
 
   const summary = useMemo(
-    () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses }),
-    [incomes, expenses, debts, settings, paymentStatuses],
+    () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots }),
+    [incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots],
   )
 
   const insights = useMemo(
@@ -140,8 +156,8 @@ function App() {
       window.alert(error.message)
       return
     }
-    setEditing({ incomes: null, expenses: null, debts: null })
-    setFormOpen({ incomes: false, expenses: false, debts: false })
+    setEditing({ incomes: null, expenses: null, debts: null, accounts: null })
+    setFormOpen({ incomes: false, expenses: false, debts: false, accounts: false })
     setNotice(t('savedSuccess'))
     loadData()
   }
@@ -154,10 +170,37 @@ function App() {
       window.alert(error.message)
     }
     else {
-      setEditing({ incomes: null, expenses: null, debts: null })
+      setEditing({ incomes: null, expenses: null, debts: null, accounts: null })
       setNotice(t('deletedSuccess'))
       loadData()
     }
+  }
+
+  const saveAccount = async (payload, currentItem = null) => {
+    const prepared = preparePayload(payload)
+    const query = currentItem
+      ? supabase.from('kb_accounts').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
+      : supabase.from('kb_accounts').insert({ ...prepared, user_id: user.id }).select('*').single()
+    const { data, error } = await query
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+
+    const accountId = currentItem?.id || data?.id
+    if (accountId) {
+      await supabase.from('kb_account_snapshots').insert({
+        user_id: user.id,
+        account_id: accountId,
+        balance: prepared.current_balance,
+      })
+    }
+
+    setEditing((current) => ({ ...current, accounts: null }))
+    setFormOpen((current) => ({ ...current, accounts: false }))
+    setNotice(t('savedSuccess'))
+    loadData()
   }
 
   const setExpensePaymentStatus = async (expense, status) => {
@@ -293,6 +336,54 @@ function App() {
               setFormOpen((current) => ({ ...current, [nextView]: true }))
             }}
           />
+        )}
+        {view === 'accounts' && (
+          <>
+            <section className="section">
+              <div className="section-title">
+                <h2>{t('accounts')}</h2>
+                <button type="button" onClick={() => setFormOpen((current) => ({ ...current, accounts: true }))}>{t('addAccount')}</button>
+              </div>
+              <div className="mini-stats">
+                <span>{t('positiveBalanceTotal')}: <strong>{formatMoney(summary.accounts.positiveTotal, currency, locale)}</strong></span>
+                <span>{t('overdraftUsed')}: <strong>{formatMoney(summary.accounts.overdraftUsed, currency, locale)}</strong></span>
+                <span>{t('netBalance')}: <strong>{formatMoney(summary.accounts.netBalance, currency, locale)}</strong></span>
+                <span>{t('safeAvailableReal')}: <strong>{formatMoney(summary.accounts.safeAvailable, currency, locale)}</strong></span>
+                <span>{t('overdraftAvailable')}: <strong>{formatMoney(summary.accounts.overdraftAvailable, currency, locale)}</strong></span>
+                <span>{t('minimumReserve')}: <strong>{formatMoney(summary.accounts.minimumReserve, currency, locale)}</strong></span>
+              </div>
+              <div className="mini-stats">
+                <span>{t('balanceToday')}: <strong>{formatMoney(summary.accounts.netBalance, currency, locale)}</strong></span>
+                <span>{t('balance7DaysAgo')}: <strong>{summary.accounts.balances7DaysAgo === null ? '-' : formatMoney(summary.accounts.balances7DaysAgo, currency, locale)}</strong></span>
+                <span>{t('balanceDifference')}: <strong>{summary.accounts.trendDifference === null ? '-' : formatMoney(summary.accounts.trendDifference, currency, locale)}</strong></span>
+              </div>
+              <div className="notice">{t('bankingLater')}</div>
+              {hasPossibleOverdraftDuplicate(accounts, debts) && <div className="notice danger">{t('possibleOverdraftDuplicate')}</div>}
+            </section>
+            {(formOpen.accounts || editing.accounts) && (
+              <AccountForm
+                t={t}
+                initialItem={editing.accounts}
+                onCancel={() => {
+                  setEditing((current) => ({ ...current, accounts: null }))
+                  setFormOpen((current) => ({ ...current, accounts: false }))
+                }}
+                onSubmit={(payload) => saveAccount(payload, editing.accounts)}
+              />
+            )}
+            <AccountLists
+              accounts={accounts}
+              currency={currency}
+              language={language}
+              locale={locale}
+              t={t}
+              onEdit={(item) => {
+                setEditing({ incomes: null, expenses: null, debts: null, accounts: item })
+                setFormOpen((current) => ({ ...current, accounts: true }))
+              }}
+              onDelete={(item) => deleteRow('kb_accounts', item)}
+            />
+          </>
         )}
         {view === 'incomes' && (
           <>
@@ -521,8 +612,42 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
   )
 }
 
+function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdit }) {
+  return (
+    <EntityList
+      title={t('accounts')}
+      items={accounts}
+      currency={currency}
+      language={language}
+      emptyText={t('noData')}
+      editText={t('edit')}
+      deleteText={t('delete')}
+      renderMeta={(item) => {
+        const balance = toNumber(item.current_balance)
+        const overdraftUsed = Math.max(0, -balance)
+        const overdraftAvailable = Math.max(0, toNumber(item.overdraft_limit) - overdraftUsed)
+        return [
+          t(item.account_type),
+          balance < 0 ? `${t('inOverdraft')}: ${formatMoney(overdraftUsed, item.currency || currency, locale)}` : t('positiveBalance'),
+          item.has_overdraft ? `${t('overdraftAvailable')}: ${formatMoney(overdraftAvailable, item.currency || currency, locale)}` : '',
+          item.include_in_safe_balance === false ? t('excludedFromSafeBalance') : '',
+          item.updated_at ? `${t('updatedAt')}: ${new Date(item.updated_at).toLocaleDateString(locale)}` : '',
+        ].filter(Boolean).join(' - ')
+      }}
+      onEdit={onEdit}
+      onDelete={onDelete}
+      renderActions={(item) => (
+        <>
+          {toNumber(item.current_balance) < 0 && <span className="badge danger">{t('inOverdraft')}</span>}
+          {item.include_in_safe_balance === false && <span className="badge">{t('excludedFromSafeBalance')}</span>}
+        </>
+      )}
+    />
+  )
+}
+
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority']
+  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest']
   const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date']
   const result = { ...payload }
 
@@ -552,6 +677,12 @@ function preparePayload(payload) {
   }
 
   return result
+}
+
+function hasPossibleOverdraftDuplicate(accounts, debts) {
+  const hasNegativeAccount = accounts.some((account) => toNumber(account.current_balance) < 0)
+  const hasDispoDebt = debts.some((debt) => debt.status === 'active' && /dispo|overdraft/i.test(`${debt.name} ${debt.debt_category}`))
+  return hasNegativeAccount && hasDispoDebt
 }
 
 export default App

@@ -9,6 +9,43 @@ export const buildInsights = ({ summary, incomes, expenses, debts, settings, t, 
   const noPaymentDebts = activeDebts.filter((debt) => toNumber(debt.monthly_payment) <= 0)
   const finalPaymentDebt = activeDebts.find((debt) => toNumber(debt.final_payment) > 0)
   const plan = debtPlan(debts, settings)
+  const accountSummary = summary.accounts || {}
+
+  if (accountSummary.hasAccounts) {
+    items.push({
+      level: accountSummary.netBalance < 0 ? 'attention' : 'info',
+      title: t('netBalance'),
+      text: `Ai acum ${formatMoney(accountSummary.positiveTotal, currency, locale)} sold pozitiv in conturile incluse. Sold net: ${formatMoney(accountSummary.netBalance, currency, locale)}.`,
+      action: accountSummary.netBalance < 0 ? t('overdraftPriority') : 'Pastreaza soldurile actualizate pentru un buget realist.',
+    })
+  }
+
+  if (toNumber(accountSummary.overdraftUsed) > 0) {
+    items.push({
+      level: 'critical',
+      title: t('overdraftUsed'),
+      text: t('overdraftUsedWarning').replace('{amount}', formatMoney(accountSummary.overdraftUsed, currency, locale)),
+      action: 'Nu considera Dispo disponibil ca bani liberi. Redu Dispo inainte de cumparaturi neesentiale.',
+    })
+  }
+
+  if (accountSummary.stale) {
+    items.push({
+      level: 'attention',
+      title: t('balancesOutdated'),
+      text: 'Soldurile reale pot fi diferite de calculul afisat.',
+      action: t('updateBalances'),
+    })
+  }
+
+  if (toNumber(accountSummary.overdraftUsed) > 0 && activeDebts.some((debt) => /dispo|overdraft/i.test(`${debt.name} ${debt.debt_category}`))) {
+    items.push({
+      level: 'attention',
+      title: t('overdraftUsed'),
+      text: t('possibleOverdraftDuplicate'),
+      action: 'Verifica daca Dispo este introdus si ca datorie manuala.',
+    })
+  }
 
   if (summary.remaining < 0) {
     items.push({
@@ -87,6 +124,7 @@ export const buildInsights = ({ summary, incomes, expenses, debts, settings, t, 
   const state = summary.remaining < 0 || summary.dailyBudget < 0 ? 'critical' : summary.nextPaymentTotal > summary.incomeTotal * 0.4 ? 'attention' : 'good'
   const risk = state === 'critical' ? 'high' : state === 'attention' ? 'medium' : 'low'
   const steps = [
+    accountSummary.safeAvailable < 0 ? `Disponibil sigur real negativ: ${formatMoney(accountSummary.safeAvailable, currency, locale)}.` : `Disponibil sigur real: ${formatMoney(accountSummary.safeAvailable || 0, currency, locale)}.`,
     summary.nextPaymentTotal > 0 ? `Păstrează ${formatMoney(summary.nextPaymentTotal, currency, locale)} pentru plățile apropiate.` : 'Păstrează bugetul planificat pentru luna curentă.',
     'Evită cheltuielile variabile mari până la salariu.',
     plan.firstDebt ? `Direcționează extra către ${plan.firstDebt.name}.` : 'Adaugă datoriile active pentru recomandări mai bune.',
