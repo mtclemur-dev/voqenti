@@ -520,7 +520,7 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
         emptyText={t('noData')}
         editText={t('edit')}
         deleteText={t('delete')}
-        renderMeta={(item) => `${item.category} - ${t(item.frequency)}${item.due_date ? ` - ${item.due_date}` : ''} - ${t(item.payment_mode || 'automatic_debit')}${toNumber(item.amount) >= toNumber(settings.large_payment_threshold) ? ` - ${t('largePayment')}` : ''}`}
+        renderMeta={(item) => `${item.category} - ${t(item.frequency)}${item.due_date ? ` - ${t('payment')}: ${item.due_date}` : ''} - ${t(item.payment_mode || 'automatic_debit')}${toNumber(item.amount) >= toNumber(settings.large_payment_threshold) ? ` - ${t('largePayment')}` : ''}`}
         onEdit={onEdit}
         onDelete={onDelete}
         renderActions={(item) => (item.payment_mode === 'manual_payment'

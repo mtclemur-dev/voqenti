@@ -13,17 +13,19 @@ export const safeActionTypes = [
 const riskyActionTypes = ['delete_debt', 'delete_expense', 'update_debt_balance', 'create_google_event']
 
 export function classifyIntent(prompt) {
-  const text = prompt.toLowerCase()
-  if (/(sterge|șterge|delete|löschen|loeschen|remove)/i.test(text)) return 'blocked_delete'
-  if (/^(ce|cine|cum|de ce|cat|cât|pot|care|unde|wann|warum|wie|was|welches)\b|\?$/.test(text.trim())) return 'question'
-  if (/(adaug|adaugă|adauga|creeaz|creează|creaza|pune|registreaza|înregistrează|hinzuf|erstell|create|add)/i.test(text)) {
+  const text = normalizePrompt(prompt)
+  if (/(sterge|delete|loschen|loeschen|remove)/i.test(text)) return 'blocked_delete'
+  if (/^(ce|cine|cum|de ce|cat|pot|care|unde|cand|wann|warum|wie|was|welches)\b|\?$/.test(text.trim())) return 'question'
+
+  if (/(adaug|adauga|creeaz|creeaza|creaza|pune|registreaza|inregistreaza|hinzuf|erstell|create|add)/i.test(text)) {
     if (/(venit|salariu|income|einnahme|gehalt)/i.test(text)) return 'create_income'
     if (/(datorie|credit|schuld|schlussrate)/i.test(text)) return 'create_debt'
-    if (/(calendar|programare|termin|reminder|reamintire|tüv|tuv)/i.test(text)) return 'create_calendar_event'
-    if (/(unic|o singura data|o singură dată|einmalig|plată unică|plata unica)/i.test(text)) return 'create_one_time_expense'
-    if (/(cheltuial|plată|plata|expense|ausgabe|lidl|kaufland|netflix|telekom)/i.test(text)) return 'create_expense'
+    if (/(calendar|programare|termin|reminder|reamintire|tuv)/i.test(text)) return 'create_calendar_event'
+    if (/(unic|o singura data|einmalig|plata unica|cheltuiala unica)/i.test(text)) return 'create_one_time_expense'
+    if (/(cheltuial|plata|expense|ausgabe|lidl|kaufland|netflix|telekom)/i.test(text)) return 'create_expense'
   }
-  if (/(modifica|modifică|schimba|schimbă|actualizeaza|actualizează|update|change|ändern|aendern)/i.test(text)) return 'update_record'
+
+  if (/(modifica|schimba|actualizeaza|update|change|andern|aendern)/i.test(text)) return 'update_record'
   return 'unknown'
 }
 
@@ -82,13 +84,7 @@ export async function requestAiActionPreview(prompt, language = 'ro') {
   const intent = classifyIntent(prompt)
   if (intent === 'question') return { kind: 'answer', intent, answer: 'question' }
   if (intent === 'unknown') return { kind: 'clarification', intent, message: 'clarify' }
-  if (intent === 'blocked_delete') {
-    return {
-      kind: 'clarification',
-      intent,
-      message: 'blocked_delete',
-    }
-  }
+  if (intent === 'blocked_delete') return { kind: 'clarification', intent, message: 'blocked_delete' }
 
   try {
     const { data, error } = await supabase.functions.invoke('kb-ai-action-preview', {
@@ -108,14 +104,21 @@ export async function requestAiActionPreview(prompt, language = 'ro') {
 }
 
 function isModelQuestion(prompt) {
-  return /(ce model|model de ai|what model|welches modell|ki modell|ai model)/i.test(prompt)
+  return /(ce model|model de ai|what model|welches modell|ki modell|ai model)/i.test(normalizePrompt(prompt))
 }
 
 function localModelAnswer() {
   return {
     kind: 'answer',
-    answer: 'Sunt conectat prin modulul AI KlarBudget. Modelul exact depinde de configurația backend-ului. Dacă este folosit OpenAI, modelul este cel setat în Supabase Edge Function.',
+    answer: 'Sunt conectat prin modulul AI KlarBudget. Modelul exact depinde de configuratia backend-ului. Daca este folosit OpenAI, modelul este cel setat in Supabase Edge Function.',
   }
+}
+
+function normalizePrompt(prompt) {
+  return String(prompt || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function sanitizeError(error) {

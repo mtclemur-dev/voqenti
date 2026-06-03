@@ -37,7 +37,7 @@ export function ExpenseForm({ t, initialItem, onSubmit, onCancel }) {
           {values.expense_kind === 'fixed_payment' && (
             <>
               <SelectInput name="frequency" label={t('frequency')} value={values.frequency} onChange={update} options={recurringFrequencyOptions.map((value) => [value, t(value)])} />
-              <TextInput name="due_date" label={t('dueDate')} type="date" value={values.due_date} onChange={update} required />
+              <TextInput name="due_date" label={t('paymentDate')} type="date" value={values.due_date} onChange={update} required />
               <SelectInput name="payment_mode" label={t('paymentMode')} value={values.payment_mode} onChange={update} options={[['automatic_debit', t('automatic_debit')], ['manual_payment', t('manual_payment')]]} />
             </>
           )}

@@ -39,7 +39,8 @@ export function AIActionPanel({ t, language, summary, onConfirm }) {
       return
     }
     if (result.kind === 'clarification') {
-      if (['openai_key_missing', 'edge_function_failed'].includes(result.message)) setError(t('aiEdgeNoAction'))
+      if (result.message === 'openai_unavailable') setError(t('aiOpenAiUnavailable'))
+      else if (['openai_key_missing', 'edge_function_failed'].includes(result.message)) setError(t('aiEdgeNoAction'))
       else setError(result.message === 'blocked_delete' || result.intent === 'blocked_delete' ? t('aiUnsafeActionBlocked') : t('aiClarifyIntent'))
       setActionStatus('')
       return
