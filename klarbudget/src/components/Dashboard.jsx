@@ -1,11 +1,12 @@
 import { formatMoney } from '../lib/finance'
 
-export function Dashboard({ t, language, currency, summary, onNavigate }) {
+export function Dashboard({ t, language, currency, summary }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const cards = [
     ['totalIncome', summary.incomeTotal, 'positive'],
     ['fixedExpenses', summary.fixedTotal, 'neutral'],
     ['variableExpenses', summary.variableTotal, 'warning'],
+    ['journalTodayTotal', summary.journalTodayTotal || 0, summary.journalTodayTotal > 0 ? 'warning' : 'neutral'],
     ['totalOnceThisMonth', summary.onceThisMonth, summary.onceThisMonth > 0 ? 'warning' : 'neutral'],
     ['urgentDebt', summary.debtTotals.urgent, 'danger'],
     ['mortgageDebt', summary.debtTotals.mortgage, 'neutral'],
@@ -34,12 +35,6 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
         <strong>{t(summary.status)}</strong>
         <span>{statusText}</span>
         {largestText && <span>{largestText}</span>}
-      </div>
-      <div className="quick-actions">
-        <button type="button" onClick={() => onNavigate('incomes')}>{t('addIncome')}</button>
-        <button type="button" onClick={() => onNavigate('expenses')}>{t('addExpense')}</button>
-        <button type="button" onClick={() => onNavigate('debts')}>{t('addDebt')}</button>
-        <button type="button" onClick={() => onNavigate('accounts')}>{t('updateBalances')}</button>
       </div>
       {summary.accounts.stale && <div className="notice danger">{t('balancesOutdated')}</div>}
       {summary.accounts.netBalance < 0 && <div className="notice danger">{t('overdraftPriority')}</div>}

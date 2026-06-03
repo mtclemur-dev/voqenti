@@ -193,7 +193,7 @@ export const calculateAccountSummary = ({ accounts = [], snapshots = [], summary
   }
 }
 
-export const calculateSummary = ({ incomes, expenses, debts, settings, paymentStatuses = [], accounts = [], accountSnapshots = [] }) => {
+export const calculateSummary = ({ incomes, expenses, debts, settings, paymentStatuses = [], accounts = [], accountSnapshots = [], journalEntries = [] }) => {
   const incomeTotal = incomes.reduce((sum, item) => sum + monthlyValue(item), 0)
   const fixedTotal = expenses
     .filter((item) => expenseKind(item) === 'fixed_payment')
@@ -218,6 +218,9 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
   const upcomingUntilSalaryTotal = nextUntilSalary.reduce((sum, item) => sum + toNumber(item.amount), 0)
   const dailyBudget = (plannedRemaining - upcomingUntilSalaryTotal) / daysUntilSalary
   const largestPayment = next14.reduce((largest, item) => toNumber(item.amount) > toNumber(largest?.amount) ? item : largest, null)
+  const todayKey = isoDate(now)
+  const journalToday = journalEntries.filter((item) => item.entry_date === todayKey)
+  const journalTodayTotal = journalToday.reduce((sum, item) => sum + toNumber(item.amount), 0)
 
   let status = 'onTrack'
   if (plannedRemaining < 0 || dailyBudget < 0) status = 'riskNegative'
@@ -238,6 +241,8 @@ export const calculateSummary = ({ incomes, expenses, debts, settings, paymentSt
     daysUntilSalary,
     dailyBudget,
     upcomingUntilSalaryTotal,
+    journalToday,
+    journalTodayTotal,
     status,
   }
 

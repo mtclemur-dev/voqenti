@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { buildChatGptBudgetSummary } from '../lib/chatGptExport'
 
-export function AIActionPanel({ currency, debts, expenses, incomes, language, paymentStatuses, settings, summary, t }) {
+export function AIActionPanel({ currency, debts, expenses, incomes, journalEntries = [], language, paymentStatuses, settings, summary, t }) {
   const [copyStatus, setCopyStatus] = useState('')
   const [syncedAt, setSyncedAt] = useState(() => new Date())
   const exportText = useMemo(
@@ -15,8 +15,9 @@ export function AIActionPanel({ currency, debts, expenses, incomes, language, pa
       settings,
       summary,
       syncedAt,
+      journalEntries,
     }),
-    [currency, debts, expenses, incomes, language, paymentStatuses, settings, summary, syncedAt],
+    [currency, debts, expenses, incomes, journalEntries, language, paymentStatuses, settings, summary, syncedAt],
   )
 
   const syncSummary = () => {

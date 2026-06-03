@@ -12,6 +12,7 @@ export function buildChatGptBudgetSummary({
   debts,
   expenses,
   incomes,
+  journalEntries = [],
   language,
   paymentStatuses,
   settings,
@@ -31,6 +32,9 @@ export function buildChatGptBudgetSummary({
   const finalPaymentDebts = activeDebts.filter((debt) => toNumber(debt.final_payment) > 0)
   const variableBudgets = expenses.filter((expense) => expense.active && expenseKind(expense) === 'variable_budget')
   const foodBudgets = variableBudgets.filter((expense) => /mancare|mâncare|essen|food|lidl|kaufland/i.test(`${expense.name} ${expense.category}`))
+  const todayKey = now.toISOString().slice(0, 10)
+  const todayJournal = journalEntries.filter((item) => item.entry_date === todayKey)
+  const todayJournalTotal = todayJournal.reduce((sum, item) => sum + toNumber(item.amount), 0)
 
   return [
     'Analizeaza bugetul meu KlarBudget si da-mi recomandari pentru urmatoarele 7 zile.',
@@ -48,6 +52,7 @@ export function buildChatGptBudgetSummary({
     `- Bani ramasi estimat: ${formatMoney(summary.remaining, currency, locale)}`,
     `- Zile pana la salariu: ${summary.daysUntilSalary}`,
     `- Buget zilnic ramas: ${formatMoney(summary.dailyBudget, currency, locale)}/zi`,
+    `- Cheltuieli reale introduse azi: ${formatMoney(todayJournalTotal, currency, locale)} (${todayJournal.length} intrari)`,
     '',
     'Conturi si solduri reale:',
     `- Sold pozitiv total inclus: ${formatMoney(summary.accounts?.positiveTotal || 0, currency, locale)}`,
@@ -87,6 +92,9 @@ export function buildChatGptBudgetSummary({
     'Buget mancare:',
     formatVariableBudgets(foodBudgets, currency, locale),
     '',
+    'Jurnal zilnic - ultimele cheltuieli reale:',
+    formatJournalEntries(journalEntries.slice(0, 20), currency, locale),
+    '',
     'Google Calendar:',
     '- Evenimentele Google Calendar sunt vizibile in ecranul Calendar dupa conectare. Exportul nu trimite automat date catre Google sau OpenAI.',
     '',
@@ -112,6 +120,11 @@ function formatIncomeList(incomes, currency, locale) {
   const active = incomes.filter((income) => income.active)
   if (!active.length) return '- nu sunt venituri active.'
   return active.map((income) => `- ${income.name}: ${formatMoney(income.amount, currency, locale)}, ${income.frequency}`).join('\n')
+}
+
+function formatJournalEntries(entries, currency, locale) {
+  if (!entries.length) return '- nu exista cheltuieli reale introduse.'
+  return entries.map((item) => `- ${item.entry_date}: ${item.description}, ${formatMoney(item.amount, currency, locale)}, ${item.category}${item.store ? `, ${item.store}` : ''}`).join('\n')
 }
 
 function formatDebtList(debts, currency, locale) {

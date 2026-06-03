@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
-import { AccountForm, DebtForm, ExpenseForm, IncomeForm } from './components/Forms'
+import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm } from './components/Forms'
 import { EntityList } from './components/EntityList'
 import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
@@ -21,7 +21,7 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'accounts', 'incomes', 'expenses', 'debts', 'plan', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'journal', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
@@ -37,11 +37,13 @@ function App() {
   const [accounts, setAccounts] = useState([])
   const [accountSnapshots, setAccountSnapshots] = useState([])
   const [paymentStatuses, setPaymentStatuses] = useState([])
+  const [journalEntries, setJournalEntries] = useState([])
+  const [dailyClosures, setDailyClosures] = useState([])
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
-  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null })
-  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false })
+  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null, journal: null })
+  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false, journal: true })
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
@@ -74,7 +76,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -83,6 +85,8 @@ function App() {
       supabase.from('kb_settings').select('*').eq('user_id', user.id).maybeSingle(),
       supabase.from('kb_accounts').select('*').eq('user_id', user.id).order('updated_at', { ascending: false }),
       supabase.from('kb_account_snapshots').select('*').eq('user_id', user.id).order('snapshot_date', { ascending: false }),
+      supabase.from('kb_daily_entries').select('*').eq('user_id', user.id).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('kb_daily_closures').select('*').eq('user_id', user.id).order('closure_date', { ascending: false }),
     ])
 
     if (!profileRes.data) {
@@ -119,6 +123,8 @@ function App() {
     setPaymentStatuses(paymentsRes.data || [])
     setAccounts(accountsRes.data || [])
     setAccountSnapshots(snapshotsRes.data || [])
+    setJournalEntries(journalRes.data || [])
+    setDailyClosures(closuresRes.data || [])
     setLoading(false)
   }, [language, user])
 
@@ -127,8 +133,8 @@ function App() {
   }, [loadData])
 
   const summary = useMemo(
-    () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots }),
-    [incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots],
+    () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots, journalEntries }),
+    [incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots, journalEntries],
   )
 
   const insights = useMemo(
@@ -203,6 +209,43 @@ function App() {
     setEditing((current) => ({ ...current, accounts: null }))
     setFormOpen((current) => ({ ...current, accounts: false }))
     setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const saveJournalEntry = async (payload, currentItem = null) => {
+    const prepared = preparePayload({
+      ...payload,
+      product_name: payload.product_name || inferProductName(payload.description),
+    })
+    const query = currentItem
+      ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
+      : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: user.id })
+    const { error } = await query
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setEditing((current) => ({ ...current, journal: null }))
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const closeJournalDay = async (date) => {
+    const entries = journalEntries.filter((item) => item.entry_date === date)
+    const total = entries.reduce((sum, item) => sum + toNumber(item.amount), 0)
+    const { error } = await supabase.from('kb_daily_closures').upsert({
+      user_id: user.id,
+      closure_date: date,
+      total_amount: total,
+      entry_count: entries.length,
+    }, { onConflict: 'user_id,closure_date' })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('dayClosed'))
     loadData()
   }
 
@@ -342,10 +385,27 @@ function App() {
             language={language}
             currency={currency}
             summary={summary}
-            onNavigate={(nextView) => {
-              setView(nextView)
-              setFormOpen((current) => ({ ...current, [nextView]: true }))
+          />
+        )}
+        {view === 'journal' && (
+          <DailyJournal
+            currency={currency}
+            dailyClosures={dailyClosures}
+            entries={journalEntries}
+            language={language}
+            locale={locale}
+            t={t}
+            editing={editing.journal}
+            formOpen={formOpen.journal}
+            onCloseDay={closeJournalDay}
+            onDelete={(item) => deleteRow('kb_daily_entries', item)}
+            onEdit={(item) => {
+              setEditing((current) => ({ ...current, journal: item }))
+              setFormOpen((current) => ({ ...current, journal: true }))
             }}
+            onSubmit={(payload) => saveJournalEntry(payload, editing.journal)}
+            onCancel={() => setEditing((current) => ({ ...current, journal: null }))}
+            onToggleForm={() => setFormOpen((current) => ({ ...current, journal: !current.journal }))}
           />
         )}
         {view === 'accounts' && (
@@ -595,6 +655,7 @@ function App() {
             debts={debts}
             settings={settings}
             paymentStatuses={paymentStatuses}
+            journalEntries={journalEntries}
           />
         )}
       </main>
@@ -655,6 +716,87 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
   )
 }
 
+function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, language, locale, t, onCancel, onCloseDay, onDelete, onEdit, onSubmit, onToggleForm }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const todayEntries = entries.filter((item) => item.entry_date === today)
+  const todayTotal = todayEntries.reduce((sum, item) => sum + toNumber(item.amount), 0)
+  const closedToday = dailyClosures.some((item) => item.closure_date === today)
+  const recentEntries = entries.slice(0, 30)
+  const priceRows = buildPriceRows(entries)
+
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <h2>{t('dailyJournal')}</h2>
+          <button type="button" onClick={onToggleForm}>{formOpen ? t('hideForm') : t('addJournalEntry')}</button>
+        </div>
+        <div className="mini-stats">
+          <span>{t('todayTotal')}: <strong>{formatMoney(todayTotal, currency, locale)}</strong></span>
+          <span>{t('entriesToday')}: <strong>{todayEntries.length}</strong></span>
+          <span>{t('dayStatus')}: <strong>{closedToday ? t('dayClosedShort') : t('dayOpen')}</strong></span>
+        </div>
+        <div className="form-actions">
+          <button type="button" onClick={() => onCloseDay(today)}>{t('closeDay')}</button>
+        </div>
+      </section>
+
+      {formOpen && (
+        <JournalEntryForm
+          t={t}
+          initialItem={editing}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+        />
+      )}
+
+      <EntityList
+        title={t('todayEntries')}
+        items={todayEntries}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.category} - ${item.store || t('noStore')} - ${t(item.person)}${item.product_name ? ` - ${t('productName')}: ${item.product_name}` : ''}`}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+
+      <EntityList
+        title={t('recentJournalEntries')}
+        items={recentEntries}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.entry_date} - ${item.category} - ${item.store || t('noStore')}`}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+
+      <section className="section">
+        <h2>{t('priceHistory')}</h2>
+        <div className="list">
+          {priceRows.length === 0 ? <div className="empty">{t('noData')}</div> : priceRows.map((row) => (
+            <article className="list-item" key={row.product}>
+              <div>
+                <strong>{row.product}</strong>
+                <span>{t('lowestObservedPrice')}: {formatMoney(row.min, currency, locale)} - {t('lastObservedPrice')}: {formatMoney(row.last, currency, locale)}</span>
+              </div>
+              <div className="list-value">
+                <b>{row.change >= 0 ? '+' : ''}{row.change.toFixed(1)}%</b>
+                <span>{row.bestStore || t('noStore')}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+}
+
 function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdit, onQuickBalance }) {
   return (
     <EntityList
@@ -691,8 +833,8 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
 }
 
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest']
-  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date']
+  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity']
+  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date']
   const result = { ...payload }
 
   numberFields.forEach((field) => {
@@ -721,6 +863,37 @@ function preparePayload(payload) {
   }
 
   return result
+}
+
+function inferProductName(description = '') {
+  return String(description)
+    .replace(/\d+([.,]\d+)?\s*(eur|euro|€)/gi, '')
+    .trim()
+}
+
+function buildPriceRows(entries) {
+  const byProduct = new Map()
+  entries
+    .filter((item) => item.product_name && toNumber(item.amount) > 0)
+    .forEach((item) => {
+      const key = item.product_name.trim().toLowerCase()
+      if (!byProduct.has(key)) byProduct.set(key, [])
+      byProduct.get(key).push(item)
+    })
+
+  return [...byProduct.entries()].map(([product, rows]) => {
+    const sorted = [...rows].sort((a, b) => String(a.entry_date).localeCompare(String(b.entry_date)))
+    const minRow = sorted.reduce((min, item) => toNumber(item.amount) < toNumber(min.amount) ? item : min, sorted[0])
+    const first = toNumber(sorted[0].amount)
+    const last = toNumber(sorted[sorted.length - 1].amount)
+    return {
+      product,
+      min: toNumber(minRow.amount),
+      last,
+      change: first > 0 ? ((last - first) / first) * 100 : 0,
+      bestStore: minRow.store,
+    }
+  }).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 10)
 }
 
 function hasPossibleOverdraftDuplicate(accounts, debts) {

@@ -8,6 +8,7 @@ const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_
 const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
 const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
+const journalDefaults = { entry_date: new Date().toISOString().slice(0, 10), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', notes: '' }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
   return (
@@ -91,6 +92,27 @@ export function AccountForm({ t, initialItem, onSubmit, onCancel }) {
               <TextInput name="overdraft_interest" label={t('overdraftInterest')} type="number" min="0" step="0.001" value={values.overdraft_interest} onChange={update} />
             </>
           )}
+          <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+        </>
+      )}
+    </FormShell>
+  )
+}
+
+export function JournalEntryForm({ t, initialItem, onSubmit, onCancel }) {
+  return (
+    <FormShell title={t('dailyJournal')} defaults={journalDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('addJournalEntry')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
+      {({ values, update }) => (
+        <>
+          <TextInput name="entry_date" label={t('date')} type="date" value={values.entry_date} onChange={update} required />
+          <TextInput name="description" label={t('description')} value={values.description} onChange={update} placeholder={t('journalExample')} required />
+          <MoneyInput name="amount" label={t('amount')} value={values.amount} onChange={update} />
+          <SelectInput name="category" label={t('category')} value={values.category} onChange={update} options={categories.map((value) => [value, value])} />
+          <TextInput name="store" label={t('store')} value={values.store} onChange={update} />
+          <SelectInput name="person" label={t('person')} value={values.person} onChange={update} options={[['family', t('family')], ['victor', 'Victor'], ['doina', 'Doina']]} />
+          <TextInput name="product_name" label={t('productName')} value={values.product_name} onChange={update} />
+          <TextInput name="quantity" label={t('quantity')} type="number" min="0" step="0.001" value={values.quantity} onChange={update} />
+          <TextInput name="unit" label={t('unit')} value={values.unit} onChange={update} />
           <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
         </>
       )}
