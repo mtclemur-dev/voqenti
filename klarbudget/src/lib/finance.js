@@ -7,6 +7,13 @@ export const debtRemainingTotal = (debt) =>
 
 export const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
+export const parseLocalDate = (dateString) => {
+  if (!dateString) return null
+  const [year, month, day] = String(dateString).split('-').map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
 export const daysUntil = (date, now = new Date()) =>
   Math.ceil((startOfDay(date).getTime() - startOfDay(now).getTime()) / MS_PER_DAY)
 
@@ -20,7 +27,7 @@ export const isoDate = (date) => {
 
 export const isSameMonth = (dateString, reference = new Date()) => {
   if (!dateString) return false
-  return monthKey(new Date(dateString)) === monthKey(reference)
+  return monthKey(parseLocalDate(dateString)) === monthKey(reference)
 }
 
 export const expenseKind = (expense) => {
@@ -56,14 +63,14 @@ export const monthlyValue = (item, reference = new Date()) => {
 
 export const nextDueDate = (expense, now = new Date()) => {
   if (!expense?.due_date) return null
-  const source = new Date(expense.due_date)
+  const source = parseLocalDate(expense.due_date)
+  if (!source) return null
   if (expense.frequency === 'once') return source
 
-  const candidate = new Date(now.getFullYear(), now.getMonth(), source.getDate())
-  if (expense.frequency === 'yearly') candidate.setMonth(source.getMonth())
+  const step = recurrenceStepMonths(expense.frequency)
+  let candidate = startOfDay(source)
   while (candidate < startOfDay(now)) {
-    const step = expense.frequency === 'quarterly' ? 3 : expense.frequency === 'semiannual' ? 6 : expense.frequency === 'yearly' ? 12 : 1
-    candidate.setMonth(candidate.getMonth() + step)
+    candidate = addMonthsClamped(candidate, step, source.getDate())
   }
   return candidate
 }
@@ -72,16 +79,17 @@ export const nextIncomeDate = (incomes, now = new Date()) => {
   const dates = incomes
     .filter((income) => income.active && income.occurrence_date)
     .map((income) => {
-      const source = new Date(income.occurrence_date)
+      const source = parseLocalDate(income.occurrence_date)
+      if (!source) return null
       if (income.frequency === 'once') return source
-      const candidate = new Date(now.getFullYear(), now.getMonth(), source.getDate())
-      if (income.frequency === 'yearly') candidate.setMonth(source.getMonth())
+      const step = recurrenceStepMonths(income.frequency)
+      let candidate = startOfDay(source)
       while (candidate < startOfDay(now)) {
-        const step = income.frequency === 'quarterly' ? 3 : income.frequency === 'semiannual' ? 6 : income.frequency === 'yearly' ? 12 : 1
-        candidate.setMonth(candidate.getMonth() + step)
+        candidate = addMonthsClamped(candidate, step, source.getDate())
       }
       return candidate
     })
+    .filter(Boolean)
     .filter((date) => date >= startOfDay(now))
     .sort((a, b) => a - b)
 
@@ -262,6 +270,21 @@ export const debtPlan = (debts, settings) => {
 
 export const formatMoney = (value, currency = 'EUR', locale = 'ro-RO') =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(toNumber(value))
+
+const recurrenceStepMonths = (frequency) => {
+  if (frequency === 'quarterly') return 3
+  if (frequency === 'semiannual') return 6
+  if (frequency === 'yearly') return 12
+  return 1
+}
+
+const addMonthsClamped = (date, months, preferredDay) => {
+  const targetMonth = date.getMonth() + months
+  const target = new Date(date.getFullYear(), targetMonth, 1)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(preferredDay, lastDay))
+  return target
+}
 
 export const variableBudgetStats = (expense, reference = new Date()) => {
   const budget = toNumber(expense.amount)
