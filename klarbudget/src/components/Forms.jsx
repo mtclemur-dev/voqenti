@@ -9,7 +9,7 @@ const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_
 const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
 const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
-const journalDefaults = { entry_date: isoDate(new Date()), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', notes: '' }
+const journalDefaults = { entry_date: isoDate(new Date()), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', unit_price: '', entry_mode: 'quick', notes: '' }
 const workAbsenceDefaults = { work_date: isoDate(new Date()), start_time: '07:00', end_time: '16:00', location: '', object_name: '', work_reason: '', kilometers: '', break_minutes: '0', entry_source: 'manual', notes: '', confirmed: false }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
@@ -102,20 +102,34 @@ export function AccountForm({ t, initialItem, onSubmit, onCancel }) {
 }
 
 export function JournalEntryForm({ t, initialItem, onSubmit, onCancel }) {
+  const [mode, setMode] = useState(initialItem?.entry_mode || (initialItem ? 'detailed' : 'quick'))
+
+  useEffect(() => {
+    setMode(initialItem?.entry_mode || (initialItem ? 'detailed' : 'quick'))
+  }, [initialItem])
+
   return (
-    <FormShell title={t('dailyJournal')} defaults={journalDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('addJournalEntry')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
+    <FormShell title={t('dailyJournal')} defaults={journalDefaults} initialItem={initialItem} isEditing={Boolean(initialItem?.id)} submitLabel={initialItem?.id ? t('save') : t('addJournalEntry')} cancelLabel={t('cancel')} onSubmit={(values) => onSubmit({ ...values, entry_mode: mode })} onCancel={onCancel}>
       {({ values, update }) => (
         <>
-          <TextInput name="entry_date" label={t('date')} type="date" value={values.entry_date} onChange={update} required />
+          <div className="mode-tabs full-span">
+            <button type="button" className={mode === 'quick' ? 'active' : 'secondary'} onClick={() => setMode('quick')}>{t('quickAdd')}</button>
+            <button type="button" className={mode === 'detailed' ? 'active' : 'secondary'} onClick={() => setMode('detailed')}>{t('detailedAdd')}</button>
+          </div>
+          {mode === 'detailed' && <TextInput name="entry_date" label={t('date')} type="date" value={values.entry_date} onChange={update} required />}
           <TextInput name="description" label={t('description')} value={values.description} onChange={update} placeholder={t('journalExample')} required />
           <MoneyInput name="amount" label={t('amount')} value={values.amount} onChange={update} />
           <SelectInput name="category" label={t('category')} value={values.category} onChange={update} options={categories.map((value) => [value, value])} />
           <TextInput name="store" label={t('store')} value={values.store} onChange={update} />
           <SelectInput name="person" label={t('person')} value={values.person} onChange={update} options={[['family', t('family')], ['victor', 'Victor'], ['doina', 'Doina']]} />
-          <TextInput name="product_name" label={t('productName')} value={values.product_name} onChange={update} />
-          <TextInput name="quantity" label={t('quantity')} type="number" min="0" step="0.001" value={values.quantity} onChange={update} />
-          <TextInput name="unit" label={t('unit')} value={values.unit} onChange={update} />
-          <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+          {mode === 'detailed' && (
+            <>
+              <TextInput name="product_name" label={t('productName')} value={values.product_name} onChange={update} />
+              <TextInput name="quantity" label={t('quantity')} type="number" min="0" step="0.001" value={values.quantity} onChange={update} placeholder="1, 500, 1.2" />
+              <TextInput name="unit" label={t('unit')} value={values.unit} onChange={update} placeholder="buc, kg, g, L, ml" />
+              <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+            </>
+          )}
         </>
       )}
     </FormShell>
@@ -143,7 +157,7 @@ export function WorkAbsenceForm({ t, initialItem, onSubmit, onCancel }) {
   )
 }
 
-function FormShell({ title, defaults, initialItem, submitLabel, cancelLabel, onSubmit, onCancel, children }) {
+function FormShell({ title, defaults, initialItem, isEditing = Boolean(initialItem), submitLabel, cancelLabel, onSubmit, onCancel, children }) {
   const [values, setValues] = useState(() => normalizeInitial(defaults, initialItem))
 
   useEffect(() => {
@@ -158,19 +172,19 @@ function FormShell({ title, defaults, initialItem, submitLabel, cancelLabel, onS
   const handleSubmit = (event) => {
     event.preventDefault()
     onSubmit(normalizeSubmit(values))
-    if (!initialItem) setValues(defaults)
+    if (!isEditing) setValues(defaults)
   }
 
   return (
     <section className="section form-section">
       <div className="section-title">
         <h2>{title}</h2>
-        {initialItem && <span>{submitLabel}</span>}
+        {isEditing && <span>{submitLabel}</span>}
       </div>
       <form onSubmit={handleSubmit} className="form-grid">
         {children({ values, update })}
         <div className="form-actions">
-          {initialItem && <button type="button" className="secondary" onClick={onCancel}>{cancelLabel}</button>}
+          {isEditing && <button type="button" className="secondary" onClick={onCancel}>{cancelLabel}</button>}
           <button type="submit">{submitLabel}</button>
         </div>
       </form>
@@ -195,6 +209,9 @@ function normalizeExpenseKindChange(next, name, value, previous) {
 }
 
 function normalizeSubmit(values) {
+  if ('entry_mode' in values) {
+    return { ...values, unit_price: calculateUnitPrice(values) }
+  }
   if (!('expense_kind' in values)) return values
   if (values.expense_kind === 'variable_budget') {
     return { ...values, frequency: 'monthly', expense_type: 'variable', payment_mode: 'variable_tracking', due_date: '' }
@@ -203,6 +220,16 @@ function normalizeSubmit(values) {
     return { ...values, frequency: 'once', expense_type: 'variable', payment_mode: 'manual_payment' }
   }
   return { ...values, expense_type: 'fixed', payment_mode: values.payment_mode === 'variable_tracking' ? 'automatic_debit' : values.payment_mode }
+}
+
+function calculateUnitPrice(values) {
+  const amount = Number(values.amount || 0)
+  const quantity = Number(String(values.quantity || '').replace(',', '.'))
+  const unit = String(values.unit || '').trim().toLowerCase()
+  if (!values.product_name || !amount || !quantity || !unit) return ''
+  if (unit === 'g') return amount / (quantity / 1000)
+  if (unit === 'ml') return amount / (quantity / 1000)
+  return amount / quantity
 }
 
 function normalizeInitial(defaults, item) {

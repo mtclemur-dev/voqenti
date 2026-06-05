@@ -88,10 +88,10 @@ export function buildChatGptBudgetSummary({
     formatFinalPayments(finalPaymentDebts, currency, locale),
     '',
     'Bugete variabile:',
-    formatVariableBudgets(variableBudgets, currency, locale),
+    formatVariableBudgets(variableBudgets, currency, locale, journalEntries),
     '',
     'Buget mancare:',
-    formatVariableBudgets(foodBudgets, currency, locale),
+    formatVariableBudgets(foodBudgets, currency, locale, journalEntries),
     '',
     'Jurnal zilnic - ultimele cheltuieli reale:',
     formatJournalEntries(journalEntries.slice(0, 20), currency, locale),
@@ -145,10 +145,10 @@ function formatFinalPayments(debts, currency, locale) {
   return debts.map((debt) => `- ${debt.name}: Schlussrate ${formatMoney(debt.final_payment, currency, locale)}, total ramas ${formatMoney(debtRemainingTotal(debt), currency, locale)}`).join('\n')
 }
 
-function formatVariableBudgets(expenses, currency, locale) {
+function formatVariableBudgets(expenses, currency, locale, journalEntries = []) {
   if (!expenses.length) return '- nu exista.'
   return expenses.map((expense) => {
-    const stats = variableBudgetStats(expense)
+    const stats = variableBudgetStats(expense, new Date(), journalEntries)
     return `- ${expense.name} (${expense.category}): buget ${formatMoney(stats.budget, currency, locale)}, cheltuit ${formatMoney(stats.spent, currency, locale)}, ramas ${formatMoney(stats.remaining, currency, locale)}`
   }).join('\n')
 }

@@ -374,9 +374,12 @@ const netBalanceFromSnapshots = (accounts, snapshots, daysAgo) => {
   }, 0)
 }
 
-export const variableBudgetStats = (expense, reference = new Date()) => {
+export const variableBudgetStats = (expense, reference = new Date(), journalEntries = []) => {
   const budget = toNumber(expense.amount)
-  const spent = 0
+  const spent = journalEntries
+    .filter((entry) => isSameMonth(entry.entry_date, reference))
+    .filter((entry) => sameCategory(entry.category, expense.category))
+    .reduce((sum, entry) => sum + toNumber(entry.amount), 0)
   const remaining = Math.max(0, budget - spent)
   return {
     budget,
@@ -385,6 +388,9 @@ export const variableBudgetStats = (expense, reference = new Date()) => {
     dailyRemaining: remaining / daysLeftInMonth(reference),
   }
 }
+
+const sameCategory = (left = '', right = '') =>
+  String(left).trim().toLowerCase() === String(right).trim().toLowerCase()
 
 export const formatMonths = (months, language = 'ro') => {
   if (!months) return language === 'de' ? '0 Monate' : '0 luni'

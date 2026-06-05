@@ -220,14 +220,29 @@ function App() {
   }
 
   const saveJournalEntry = async (payload, currentItem = null) => {
+    const targetDate = payload.entry_date || isoDate(new Date())
+    const closed = dailyClosures.some((item) => item.closure_date === targetDate)
+    if (!currentItem && closed) {
+      setNotice(t('journalDayClosedBlocked'))
+      return
+    }
     const prepared = preparePayload({
       ...payload,
       product_name: payload.product_name || inferProductName(payload.description),
     })
-    const query = currentItem
+    let query = currentItem
       ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
       : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: user.id })
-    const { error } = await query
+    let { error } = await query
+    if (error && /entry_mode|unit_price/i.test(error.message || '')) {
+      const fallback = { ...prepared }
+      delete fallback.entry_mode
+      delete fallback.unit_price
+      query = currentItem
+        ? supabase.from('kb_daily_entries').update(fallback).eq('id', currentItem.id).eq('user_id', user.id)
+        : supabase.from('kb_daily_entries').insert({ ...fallback, user_id: user.id })
+      ;({ error } = await query)
+    }
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -239,6 +254,19 @@ function App() {
   }
 
   const closeJournalDay = async (date) => {
+    const closed = dailyClosures.find((item) => item.closure_date === date)
+    if (closed) {
+      if (!window.confirm(t('reopenDayConfirm'))) return
+      const { error } = await supabase.from('kb_daily_closures').delete().eq('id', closed.id).eq('user_id', user.id)
+      if (error) {
+        setNotice(t('saveError'))
+        window.alert(error.message)
+        return
+      }
+      setNotice(t('dayReopened'))
+      loadData()
+      return
+    }
     const entries = journalEntries.filter((item) => item.entry_date === date)
     const total = entries.reduce((sum, item) => sum + toNumber(item.amount), 0)
     const { error } = await supabase.from('kb_daily_closures').upsert({
@@ -253,6 +281,21 @@ function App() {
       return
     }
     setNotice(t('dayClosed'))
+    loadData()
+  }
+
+  const deleteJournalEntry = async (item) => {
+    const closed = dailyClosures.some((closure) => closure.closure_date === item.entry_date)
+    if (closed && !window.confirm(t('deleteClosedDayConfirm'))) return
+    if (!window.confirm(t('journalDeleteConfirm'))) return
+    const { error } = await supabase.from('kb_daily_entries').delete().eq('id', item.id).eq('user_id', user.id)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setEditing((current) => ({ ...current, journal: null }))
+    setNotice(t('deletedSuccess'))
     loadData()
   }
 
@@ -463,6 +506,7 @@ function App() {
           <DailyJournal
             currency={currency}
             dailyClosures={dailyClosures}
+            dailyBudget={summary.dailyBudget}
             entries={journalEntries}
             language={language}
             locale={locale}
@@ -471,12 +515,16 @@ function App() {
             formOpen={formOpen.journal}
             schemaReady={journalSchemaReady}
             onCloseDay={closeJournalDay}
-            onDelete={(item) => deleteRow('kb_daily_entries', item)}
+            onDelete={deleteJournalEntry}
             onEdit={(item) => {
               setEditing((current) => ({ ...current, journal: item }))
               setFormOpen((current) => ({ ...current, journal: true }))
             }}
-            onSubmit={(payload) => saveJournalEntry(payload, editing.journal)}
+            onRepeat={(item) => {
+              setEditing((current) => ({ ...current, journal: { ...item, id: null, entry_date: isoDate(new Date()), entry_mode: item.entry_mode || 'quick' } }))
+              setFormOpen((current) => ({ ...current, journal: true }))
+            }}
+            onSubmit={(payload) => saveJournalEntry(payload, editing.journal?.id ? editing.journal : null)}
             onCancel={() => setEditing((current) => ({ ...current, journal: null }))}
             onToggleForm={() => setFormOpen((current) => ({ ...current, journal: !current.journal }))}
           />
@@ -677,6 +725,7 @@ function App() {
               language={language}
               locale={locale}
               settings={settings}
+              journalEntries={journalEntries}
               t={t}
               onDelete={(item) => deleteRow('kb_expenses', item)}
               onEdit={(item) => {
@@ -766,7 +815,7 @@ function App() {
   )
 }
 
-function ExpenseLists({ currency, expenses, language, locale, settings, t, onDelete, onEdit, onPaymentStatus }) {
+function ExpenseLists({ currency, expenses, journalEntries = [], language, locale, settings, t, onDelete, onEdit, onPaymentStatus }) {
   const fixed = expenses.filter((item) => expenseKind(item) === 'fixed_payment')
   const variable = expenses.filter((item) => expenseKind(item) === 'variable_budget')
   const once = expenses.filter((item) => expenseKind(item) === 'one_time_expense')
@@ -797,7 +846,7 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
         editText={t('edit')}
         deleteText={t('delete')}
         renderMeta={(item) => {
-          const stats = variableBudgetStats(item)
+          const stats = variableBudgetStats(item, new Date(), journalEntries)
           return `${item.category} - ${t('monthlyBudget')}: ${formatMoney(stats.budget, currency, locale)} - ${t('spentThisMonth')}: ${formatMoney(stats.spent, currency, locale)} - ${t('remainingBudget')}: ${formatMoney(stats.remaining, currency, locale)} - ${t('dailyBudget')}: ${formatMoney(stats.dailyRemaining, currency, locale)}/${t('day')}`
         }}
         onEdit={onEdit}
@@ -819,13 +868,15 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
   )
 }
 
-function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, language, locale, schemaReady, t, onCancel, onCloseDay, onDelete, onEdit, onSubmit, onToggleForm }) {
+function DailyJournal({ currency, dailyBudget, dailyClosures, editing, entries, formOpen, language, locale, schemaReady, t, onCancel, onCloseDay, onDelete, onEdit, onRepeat, onSubmit, onToggleForm }) {
   const today = isoDate(new Date())
   const todayEntries = entries.filter((item) => item.entry_date === today)
   const todayTotal = todayEntries.reduce((sum, item) => sum + toNumber(item.amount), 0)
-  const closedToday = dailyClosures.some((item) => item.closure_date === today)
+  const closedToday = dailyClosures.find((item) => item.closure_date === today)
   const recentEntries = entries.slice(0, 30)
-  const priceRows = buildPriceRows(entries)
+  const priceRows = buildPriceRows(entries, currency, locale, t)
+  const remainingToday = toNumber(dailyBudget) - todayTotal
+  const topCategory = topJournalCategory(todayEntries)
 
   return (
     <>
@@ -839,13 +890,31 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
           <span>{t('todayTotal')}: <strong>{formatMoney(todayTotal, currency, locale)}</strong></span>
           <span>{t('entriesToday')}: <strong>{todayEntries.length}</strong></span>
           <span>{t('dayStatus')}: <strong>{closedToday ? t('dayClosedShort') : t('dayOpen')}</strong></span>
+          <span>{t('recommendedBudgetToday')}: <strong>{formatMoney(dailyBudget, currency, locale)}</strong></span>
+          <span>{t('remainingToday')}: <strong>{formatMoney(remainingToday, currency, locale)}</strong></span>
         </div>
+        <div className={`notice ${remainingToday < 0 ? 'danger' : ''}`}>
+          {remainingToday < 0
+            ? t('dailyBudgetExceeded').replace('{amount}', formatMoney(Math.abs(remainingToday), currency, locale))
+            : t('dailyBudgetLeft').replace('{amount}', formatMoney(remainingToday, currency, locale))}
+        </div>
+        {closedToday && (
+          <div className="notice">
+            <strong>{t('dayClosedSummary')}</strong>
+            <span>{t('todayTotal')}: {formatMoney(todayTotal, currency, locale)}</span>
+            <span>{t('entriesToday')}: {todayEntries.length}</span>
+            <span>{t('mainCategory')}: {topCategory || '-'}</span>
+            <span>{remainingToday >= 0
+              ? t('underBudgetBy').replace('{amount}', formatMoney(remainingToday, currency, locale))
+              : t('overBudgetBy').replace('{amount}', formatMoney(Math.abs(remainingToday), currency, locale))}</span>
+          </div>
+        )}
         <div className="form-actions">
-          <button type="button" onClick={() => onCloseDay(today)}>{t('closeDay')}</button>
+          <button type="button" onClick={() => onCloseDay(today)}>{closedToday ? t('reopenDay') : t('closeDay')}</button>
         </div>
       </section>
 
-      {formOpen && (
+      {formOpen && !closedToday && (
         <JournalEntryForm
           t={t}
           initialItem={editing}
@@ -853,6 +922,7 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
           onCancel={onCancel}
         />
       )}
+      {formOpen && closedToday && <div className="notice danger">{t('journalDayClosedBlocked')}</div>}
 
       <EntityList
         title={t('todayEntries')}
@@ -878,6 +948,7 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
         renderMeta={(item) => `${item.entry_date} - ${item.category} - ${item.store || t('noStore')}`}
         onEdit={onEdit}
         onDelete={onDelete}
+        renderActions={(item) => <button type="button" className="ghost" onClick={() => onRepeat(item)}>{t('repeat')}</button>}
       />
 
       <section className="section">
@@ -887,7 +958,8 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
             <article className="list-item" key={row.product}>
               <div>
                 <strong>{row.product}</strong>
-                <span>{t('lowestObservedPrice')}: {formatMoney(row.min, currency, locale)} - {t('lastObservedPrice')}: {formatMoney(row.last, currency, locale)}</span>
+                <span>{row.summary}</span>
+                <span>{row.unitComparison ? t('unitComparison') : t('totalPriceComparison')}</span>
               </div>
               <div className="list-value">
                 <b>{row.change >= 0 ? '+' : ''}{row.change.toFixed(1)}%</b>
@@ -1052,13 +1124,16 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
 }
 
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity']
+  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price']
   const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date']
   const result = { ...payload }
 
   numberFields.forEach((field) => {
     if (field in result) result[field] = result[field] === '' ? 0 : Number(result[field])
   })
+  if ('unit_price' in payload && (payload.unit_price === '' || payload.unit_price === null || payload.unit_price === undefined)) {
+    result.unit_price = null
+  }
   dateFields.forEach((field) => {
     if (field in result && !result[field]) result[field] = null
   })
@@ -1090,7 +1165,7 @@ function inferProductName(description = '') {
     .trim()
 }
 
-function buildPriceRows(entries) {
+function buildPriceRows(entries, currency = 'EUR', locale = 'ro-RO', t = (key) => key) {
   const byProduct = new Map()
   entries
     .filter((item) => item.product_name && toNumber(item.amount) > 0)
@@ -1102,17 +1177,52 @@ function buildPriceRows(entries) {
 
   return [...byProduct.entries()].map(([product, rows]) => {
     const sorted = [...rows].sort((a, b) => String(a.entry_date).localeCompare(String(b.entry_date)))
-    const minRow = sorted.reduce((min, item) => toNumber(item.amount) < toNumber(min.amount) ? item : min, sorted[0])
-    const first = toNumber(sorted[0].amount)
-    const last = toNumber(sorted[sorted.length - 1].amount)
+    const enriched = sorted.map((item) => ({ ...item, unitInfo: normalizedUnitPrice(item) }))
+    const comparable = enriched.filter((item) => item.unitInfo)
+    const sourceRows = comparable.length >= 2 ? comparable : enriched
+    const valueOf = (item) => item.unitInfo?.price ?? toNumber(item.amount)
+    const minRow = sourceRows.reduce((min, item) => valueOf(item) < valueOf(min) ? item : min, sourceRows[0])
+    const maxRow = sourceRows.reduce((max, item) => valueOf(item) > valueOf(max) ? item : max, sourceRows[0])
+    const first = valueOf(sourceRows[0])
+    const lastRow = sourceRows[sourceRows.length - 1]
+    const last = valueOf(lastRow)
+    const unitComparison = comparable.length >= 2
+    const unitLabel = lastRow.unitInfo?.unit
     return {
       product,
-      min: toNumber(minRow.amount),
+      min: valueOf(minRow),
+      max: valueOf(maxRow),
       last,
       change: first > 0 ? ((last - first) / first) * 100 : 0,
-      bestStore: minRow.store,
+      bestStore: lastRow.store || minRow.store,
+      unitComparison,
+      summary: unitComparison
+        ? `${tMoney(t('lastObservedPrice'), last, currency, locale)}/${unitLabel} - ${tMoney(t('lowestObservedPrice'), valueOf(minRow), currency, locale)}/${unitLabel} - ${tMoney(t('highestObservedPrice'), valueOf(maxRow), currency, locale)}/${unitLabel}`
+        : `${tMoney(t('lastObservedPrice'), last, currency, locale)} - ${tMoney(t('lowestObservedPrice'), valueOf(minRow), currency, locale)} - ${tMoney(t('highestObservedPrice'), valueOf(maxRow), currency, locale)}`,
     }
   }).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 10)
+}
+
+function normalizedUnitPrice(item) {
+  const amount = toNumber(item.amount)
+  const quantity = toNumber(item.quantity)
+  const unit = String(item.unit || '').trim().toLowerCase()
+  if (!item.product_name || !amount || !quantity || !unit) return null
+  if (unit === 'g') return { price: amount / (quantity / 1000), unit: 'kg' }
+  if (unit === 'ml') return { price: amount / (quantity / 1000), unit: 'L' }
+  return { price: toNumber(item.unit_price) || amount / quantity, unit }
+}
+
+function tMoney(label, value, currency, locale) {
+  return `${label}: ${formatMoney(value, currency, locale)}`
+}
+
+function topJournalCategory(entries) {
+  const totals = new Map()
+  entries.forEach((item) => {
+    totals.set(item.category, (totals.get(item.category) || 0) + toNumber(item.amount))
+  })
+  return [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
 }
 
 function hasPossibleOverdraftDuplicate(accounts, debts) {
