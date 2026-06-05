@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { accountTypes, categories, debtCategories } from '../i18n'
+import { isoDate } from '../lib/finance'
 
 const frequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly', 'once']
 const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly']
@@ -8,7 +9,7 @@ const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_
 const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
 const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
-const journalDefaults = { entry_date: new Date().toISOString().slice(0, 10), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', notes: '' }
+const journalDefaults = { entry_date: isoDate(new Date()), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', notes: '' }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
   return (

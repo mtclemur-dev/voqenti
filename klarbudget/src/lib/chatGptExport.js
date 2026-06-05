@@ -2,6 +2,7 @@ import {
   debtRemainingTotal,
   expenseKind,
   formatMoney,
+  isoDate,
   upcomingPayments,
   variableBudgetStats,
   toNumber,
@@ -32,7 +33,7 @@ export function buildChatGptBudgetSummary({
   const finalPaymentDebts = activeDebts.filter((debt) => toNumber(debt.final_payment) > 0)
   const variableBudgets = expenses.filter((expense) => expense.active && expenseKind(expense) === 'variable_budget')
   const foodBudgets = variableBudgets.filter((expense) => /mancare|mâncare|essen|food|lidl|kaufland/i.test(`${expense.name} ${expense.category}`))
-  const todayKey = now.toISOString().slice(0, 10)
+  const todayKey = isoDate(now)
   const todayJournal = journalEntries.filter((item) => item.entry_date === todayKey)
   const todayJournalTotal = todayJournal.reduce((sum, item) => sum + toNumber(item.amount), 0)
 
@@ -61,8 +62,8 @@ export function buildChatGptBudgetSummary({
     `- Plati pana la salariu: ${formatMoney(summary.upcomingUntilSalaryTotal || 0, currency, locale)}`,
     `- Bugete variabile necesare pana la salariu: ${formatMoney(summary.accounts?.variableNeededUntilSalary || 0, currency, locale)}`,
     `- Rezerva minima: ${formatMoney(summary.accounts?.minimumReserve || 0, currency, locale)}`,
-    `- Disponibil sigur real: ${formatMoney(summary.accounts?.safeAvailable || 0, currency, locale)}`,
-    `- Dispo disponibil ramas, informativ: ${formatMoney(summary.accounts?.overdraftAvailable || 0, currency, locale)}`,
+    `- Proiectie disponibil pana la salariu: ${formatMoney(summary.accounts?.safeAvailable || 0, currency, locale)}`,
+    `- Dispo disponibil ramas, informativ: ${formatMoney(summary.accounts?.overdraftAvailable || 0, currency, locale)} (credit disponibil, nu bani liberi)`,
     '',
     'Plati urmatoare:',
     formatPayments('- Urmatoarele 7 zile', next7, currency, locale),

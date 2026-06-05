@@ -14,8 +14,8 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
     ['positiveBalanceTotal', summary.accounts.positiveTotal, 'positive'],
     ['overdraftUsed', summary.accounts.overdraftUsed, summary.accounts.overdraftUsed > 0 ? 'danger' : 'neutral'],
     ['netBalance', summary.accounts.netBalance, summary.accounts.netBalance >= 0 ? 'positive' : 'danger'],
-    ['safeAvailableReal', summary.accounts.safeAvailable, summary.accounts.safeAvailable >= 0 ? 'positive' : 'danger'],
-    ['overdraftAvailable', summary.accounts.overdraftAvailable, 'neutral'],
+    ['safeAvailableReal', summary.accounts.safeAvailable, summary.accounts.safeAvailable >= 0 ? 'positive' : 'danger', t('safeAvailableHint')],
+    ['overdraftAvailable', summary.accounts.overdraftAvailable, 'neutral', t('overdraftAvailableHint')],
     ['remainingMoney', summary.remaining, summary.remaining >= 0 ? 'positive' : 'danger', t('estimatedAfterPlanned')],
     ['daysUntilSalary', summary.daysUntilSalary, 'neutral', null, 'days'],
     ['dailyBudget', summary.dailyBudget, summary.dailyBudget >= 0 ? 'positive' : 'danger', t('untilSalary')],
@@ -37,6 +37,13 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
         {largestText && <span>{largestText}</span>}
       </div>
       {summary.accounts.stale && <div className="notice danger">{t('balancesOutdated')}</div>}
+      {(summary.accounts.overdraftUsed > 0 || summary.accounts.netBalance < 0) && (
+        <div className="notice danger">
+          <strong>{t('priorityNow')}</strong>
+          <span>{summary.accounts.overdraftUsed > 0 ? t('reduceOverdraftPriority') : t('accountsNegative')}</span>
+        </div>
+      )}
+      {summary.accounts.positiveTotal <= 0 && <div className="notice">{t('noPositiveBalanceIncluded')}</div>}
       {summary.accounts.netBalance < 0 && <div className="notice danger">{t('overdraftPriority')}</div>}
       {summary.accounts.overdraftUsed > 0 && (
         <div className="notice danger">{t('overdraftUsedWarning').replace('{amount}', formatMoney(summary.accounts.overdraftUsed, currency, locale))}</div>

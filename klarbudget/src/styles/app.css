@@ -185,6 +185,15 @@ h3 {
   color: #574932;
 }
 
+.notice strong,
+.notice span {
+  display: block;
+}
+
+.notice strong + span {
+  margin-top: 0.25rem;
+}
+
 .notice.danger {
   background: var(--red-soft);
   color: var(--red);

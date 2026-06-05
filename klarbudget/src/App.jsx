@@ -8,7 +8,7 @@ import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
-import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, toNumber, variableBudgetStats } from './lib/finance'
+import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
 
@@ -261,7 +261,7 @@ function App() {
       amount: toNumber(expense.amount),
       due_date: dueDate,
       status,
-      paid_date: status === 'paid' ? new Date().toISOString().slice(0, 10) : null,
+      paid_date: status === 'paid' ? isoDate(new Date()) : null,
     }
     const { error } = await supabase
       .from('kb_payment_status')
@@ -423,10 +423,17 @@ function App() {
                 <span>{t('positiveBalanceTotal')}: <strong>{formatMoney(summary.accounts.positiveTotal, currency, locale)}</strong></span>
                 <span>{t('overdraftUsed')}: <strong>{formatMoney(summary.accounts.overdraftUsed, currency, locale)}</strong></span>
                 <span>{t('netBalance')}: <strong>{formatMoney(summary.accounts.netBalance, currency, locale)}</strong></span>
-                <span>{t('safeAvailableReal')}: <strong>{formatMoney(summary.accounts.safeAvailable, currency, locale)}</strong></span>
-                <span>{t('overdraftAvailable')}: <strong>{formatMoney(summary.accounts.overdraftAvailable, currency, locale)}</strong></span>
+                <span>{t('safeAvailableReal')}: <strong>{formatMoney(summary.accounts.safeAvailable, currency, locale)}</strong> <small>{t('safeAvailableHint')}</small></span>
+                <span>{t('overdraftAvailable')}: <strong>{formatMoney(summary.accounts.overdraftAvailable, currency, locale)}</strong> <small>{t('overdraftAvailableHint')}</small></span>
                 <span>{t('minimumReserve')}: <strong>{formatMoney(summary.accounts.minimumReserve, currency, locale)}</strong></span>
               </div>
+              {(summary.accounts.overdraftUsed > 0 || summary.accounts.netBalance < 0) && (
+                <div className="notice danger">
+                  <strong>{t('priorityNow')}</strong>
+                  <span>{summary.accounts.overdraftUsed > 0 ? t('reduceOverdraftPriority') : t('accountsNegative')}</span>
+                </div>
+              )}
+              {summary.accounts.positiveTotal <= 0 && <div className="notice">{t('noPositiveBalanceIncluded')}</div>}
               <div className="mini-stats">
                 <span>{t('balanceToday')}: <strong>{formatMoney(summary.accounts.netBalance, currency, locale)}</strong></span>
                 <span>{t('balance7DaysAgo')}: <strong>{summary.accounts.balances7DaysAgo === null ? '-' : formatMoney(summary.accounts.balances7DaysAgo, currency, locale)}</strong></span>
@@ -721,7 +728,7 @@ function ExpenseLists({ currency, expenses, language, locale, settings, t, onDel
 }
 
 function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, language, locale, schemaReady, t, onCancel, onCloseDay, onDelete, onEdit, onSubmit, onToggleForm }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = isoDate(new Date())
   const todayEntries = entries.filter((item) => item.entry_date === today)
   const todayTotal = todayEntries.reduce((sum, item) => sum + toNumber(item.amount), 0)
   const closedToday = dailyClosures.some((item) => item.closure_date === today)
@@ -815,10 +822,11 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
       renderMeta={(item) => {
         const balance = toNumber(item.current_balance)
         const overdraftUsed = Math.max(0, -balance)
+        const negativeLabel = item.account_type === 'credit_card' ? 'cardCreditUsed' : 'inOverdraft'
         const overdraftAvailable = Math.max(0, toNumber(item.overdraft_limit) - overdraftUsed)
         return [
           t(item.account_type),
-          balance < 0 ? `${t('inOverdraft')}: ${formatMoney(overdraftUsed, item.currency || currency, locale)}` : t('positiveBalance'),
+          balance < 0 ? `${t(negativeLabel)}: ${formatMoney(overdraftUsed, item.currency || currency, locale)}` : t('positiveBalance'),
           item.has_overdraft ? `${t('overdraftAvailable')}: ${formatMoney(overdraftAvailable, item.currency || currency, locale)}` : '',
           item.include_in_safe_balance === false ? t('excludedFromSafeBalance') : '',
           item.updated_at ? `${t('updatedAt')}: ${new Date(item.updated_at).toLocaleDateString(locale)}` : '',
@@ -829,7 +837,7 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
       renderActions={(item) => (
         <>
           <button type="button" className="ghost" onClick={() => onQuickBalance(item)}>{t('quickBalanceUpdate')}</button>
-          {toNumber(item.current_balance) < 0 && <span className="badge danger">{t('inOverdraft')}</span>}
+          {toNumber(item.current_balance) < 0 && <span className="badge danger">{t(item.account_type === 'credit_card' ? 'cardCreditUsed' : 'inOverdraft')}</span>}
           {item.include_in_safe_balance === false && <span className="badge">{t('excludedFromSafeBalance')}</span>}
         </>
       )}
