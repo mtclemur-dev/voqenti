@@ -497,8 +497,31 @@ function App() {
   }
 
   const importOffer = async (offer) => {
-    const prepared = normalizeOfferPayload({ ...offer, status: 'confirmed' })
-    const { error } = await supabase.from('kb_weekly_offers').insert({ ...prepared, user_id: user.id })
+    const noteLines = []
+    if (offer.price !== undefined) {
+      noteLines.push(`Preț ofertă: ${offer.price}€` + (offer.old_price ? ` (redus de la ${offer.old_price}€)` : ''))
+    }
+    if (offer.brand) {
+      noteLines.push(`Brand: ${offer.brand}`)
+    }
+    if (offer.valid_until) {
+      noteLines.push(`${t('kaufdaValidUntil')}: ${offer.valid_until}`)
+    }
+    const notesStr = noteLines.join('\n')
+
+    const insertData = preparePayload({
+      product_name: offer.product_name,
+      category: offer.category || 'mâncare',
+      desired_quantity: offer.quantity || 1,
+      unit: offer.unit || 'buc',
+      priority: 'normal',
+      preferred_store: offer.store_name,
+      purchased: false,
+      notes: notesStr
+    })
+    insertData.user_id = user.id
+
+    const { error } = await supabase.from('kb_shopping_list').insert(insertData)
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -1210,14 +1233,14 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs">
-          {['list', 'kaufda', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
+          {['list', 'kaufda'].map((item) => (
             <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
           ))}
         </div>
       </section>
 
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
-      {tab === 'kaufda' && <KaufdaFeedTab savedOffers={offers} t={t} onImportOffer={onImportOffer} />}
+      {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
       {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
       {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
       {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
@@ -1922,62 +1945,157 @@ const kaufdaMockOffers = [
     unit_price: 5.00,
     app_price: false,
   },
-  // Eier & Brot (Ouă & Pâine)
+  // Kartoffeln (Cartofi)
   {
-    product_name: 'Oua proaspete BIO Clasa A (10 buc)',
+    product_name: 'Cartofi BIO (Speisekartoffeln)',
+    store_name: 'Norma',
+    brand: 'Bio Sonne',
+    category: 'mâncare',
+    price: 1.99,
+    old_price: 2.79,
+    discount_percent: 28,
+    quantity: 2.5,
+    unit: 'kg',
+    unit_price: 0.80,
+    app_price: false,
+  },
+  {
+    product_name: 'Cartofi timpurii (Frühkartoffeln)',
+    store_name: 'Aldi',
+    brand: 'Gartenkrone',
+    category: 'mâncare',
+    price: 2.49,
+    old_price: 3.49,
+    discount_percent: 28,
+    quantity: 2.5,
+    unit: 'kg',
+    unit_price: 1.00,
+    app_price: false,
+  },
+  {
+    product_name: 'Cartofi rosii (Rote Kartoffeln)',
     store_name: 'Lidl',
     brand: 'Landjunker',
     category: 'mâncare',
-    price: 2.49,
-    old_price: 2.99,
-    discount_percent: 16,
-    quantity: 10,
-    unit: 'buc',
-    unit_price: 0.25,
+    price: 2.99,
+    old_price: 3.99,
+    discount_percent: 25,
+    quantity: 5,
+    unit: 'kg',
+    unit_price: 0.60,
     app_price: false,
   },
+  // Zwiebeln (Ceapă)
   {
-    product_name: 'Oua proaspete crescute la sol (10 buc)',
-    store_name: 'Norma',
-    brand: 'Landfein',
+    product_name: 'Ceapa galbena (Speisezwiebeln)',
+    store_name: 'Netto',
+    brand: 'Gartenfrisch',
     category: 'mâncare',
-    price: 1.69,
-    old_price: 1.99,
-    discount_percent: 15,
-    quantity: 10,
-    unit: 'buc',
-    unit_price: 0.17,
+    price: 1.19,
+    old_price: 1.59,
+    discount_percent: 25,
+    quantity: 2,
+    unit: 'kg',
+    unit_price: 0.60,
     app_price: false,
   },
   {
-    product_name: 'Paine toast Butter Toastbrot',
-    store_name: 'Aldi',
-    brand: 'Goldähren',
+    product_name: 'Ceapa rosie BIO (Rote Zwiebeln)',
+    store_name: 'Edeka',
+    brand: 'Edeka Bio',
     category: 'mâncare',
     price: 0.99,
-    old_price: 1.29,
-    discount_percent: 23,
+    old_price: 1.39,
+    discount_percent: 28,
     quantity: 500,
     unit: 'g',
     unit_price: 1.98,
     app_price: false,
   },
   {
-    product_name: 'Paine traditionala germana Krustenbrot',
-    store_name: 'Netto',
-    brand: 'Bäcker Krone',
+    product_name: 'Ceapa verde (Frühlingszwiebeln)',
+    store_name: 'Lidl',
+    brand: 'Lidl Fresh',
     category: 'mâncare',
-    price: 1.49,
-    old_price: 1.99,
-    discount_percent: 25,
+    price: 0.49,
+    old_price: 0.79,
+    discount_percent: 37,
+    quantity: 1,
+    unit: 'leg',
+    unit_price: 0.49,
+    app_price: true,
+  },
+  // Tomaten (Roșii)
+  {
+    product_name: 'Rosii Cherry (Cherrytomaten)',
+    store_name: 'Rewe',
+    brand: 'Rewe Beste Wahl',
+    category: 'mâncare',
+    price: 1.29,
+    old_price: 1.89,
+    discount_percent: 31,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 2.58,
+    app_price: false,
+  },
+  {
+    product_name: 'Rosii pe ciorchine (Strauchtomaten)',
+    store_name: 'Kaufland',
+    brand: 'K-Classic',
+    category: 'mâncare',
+    price: 1.79,
+    old_price: 2.49,
+    discount_percent: 28,
     quantity: 1000,
     unit: 'g',
-    unit_price: 1.49,
+    unit_price: 1.79,
+    app_price: false,
+  },
+  // Obst (Banane & Äpfel)
+  {
+    product_name: 'Banane ecologice BIO',
+    store_name: 'Aldi',
+    brand: 'Fairtrade Bio',
+    category: 'mâncare',
+    price: 1.69,
+    old_price: 2.19,
+    discount_percent: 22,
+    quantity: 1,
+    unit: 'kg',
+    unit_price: 1.69,
+    app_price: false,
+  },
+  {
+    product_name: 'Mere rosii Jonagold (Äpfel)',
+    store_name: 'Netto',
+    brand: 'Heimatliebe',
+    category: 'mâncare',
+    price: 1.99,
+    old_price: 2.99,
+    discount_percent: 33,
+    quantity: 2,
+    unit: 'kg',
+    unit_price: 1.00,
+    app_price: false,
+  },
+  // Sonnenblumenöl (Ulei)
+  {
+    product_name: 'Ulei de floarea soarelui (Sonnenblumenöl)',
+    store_name: 'Lidl',
+    brand: 'Vita D\'or',
+    category: 'mâncare',
+    price: 1.39,
+    old_price: 1.79,
+    discount_percent: 22,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 1.39,
     app_price: false,
   }
 ]
 
-function KaufdaFeedTab({ t, savedOffers, onImportOffer }) {
+function KaufdaFeedTab({ t, shoppingList = [], onImportOffer }) {
   const [search, setSearch] = useState('')
   const [storeFilter, setStoreFilter] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -2038,17 +2156,24 @@ function KaufdaFeedTab({ t, savedOffers, onImportOffer }) {
       const matchesStore = !storeFilter || offer.store_name.toLowerCase() === storeFilter.toLowerCase()
       
       let matchesCat = true
+      const isMilk = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
+      const isCoffee = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
+      const isButter = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
+      const isVeg = /zwiebel|kartoffel|ceapa|ceapă|cartof|tomate/i.test(offer.product_name)
+      const isFruit = /banan|apfel|mere|obst/i.test(offer.product_name)
+
       if (selectedCategory === 'milk') {
-        matchesCat = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
+        matchesCat = isMilk
       } else if (selectedCategory === 'coffee') {
-        matchesCat = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
+        matchesCat = isCoffee
       } else if (selectedCategory === 'butter') {
-        matchesCat = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
+        matchesCat = isButter
+      } else if (selectedCategory === 'veg') {
+        matchesCat = isVeg
+      } else if (selectedCategory === 'fruit') {
+        matchesCat = isFruit
       } else if (selectedCategory === 'other') {
-        const isMilk = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
-        const isCoffee = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
-        const isButter = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
-        matchesCat = !isMilk && !isCoffee && !isButter
+        matchesCat = !isMilk && !isCoffee && !isButter && !isVeg && !isFruit
       }
       
       return matchesSearch && matchesStore && matchesCat
@@ -2060,6 +2185,8 @@ function KaufdaFeedTab({ t, savedOffers, onImportOffer }) {
     { key: 'milk', label: t('kaufdaMilkOnly') },
     { key: 'coffee', label: t('kaufdaCoffeeOnly') },
     { key: 'butter', label: t('kaufdaButterOnly') },
+    { key: 'veg', label: t('kaufdaVegOnly') },
+    { key: 'fruit', label: t('kaufdaFruitOnly') },
     { key: 'other', label: t('kaufdaOthersOnly') }
   ]
 
@@ -2203,10 +2330,11 @@ function KaufdaFeedTab({ t, savedOffers, onImportOffer }) {
             </div>
           ) : (
             filteredOffers.map((offer, idx) => {
-              const isAlreadyImported = savedOffers.some(saved => 
-                normalizeProduct(saved.product_name) === normalizeProduct(offer.product_name) &&
-                String(saved.store_name).toLowerCase() === String(offer.store_name).toLowerCase() &&
-                toNumber(saved.price) === toNumber(offer.price)
+              const isAlreadyImported = shoppingList.some(saved => 
+                !saved.purchased &&
+                (normalizeProduct(saved.product_name).includes(normalizeProduct(offer.product_name)) ||
+                 normalizeProduct(offer.product_name).includes(normalizeProduct(saved.product_name))) &&
+                String(saved.preferred_store).toLowerCase() === String(offer.store_name).toLowerCase()
               )
 
               const storeColors = {
