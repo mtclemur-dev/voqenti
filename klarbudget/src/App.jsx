@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
-import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm } from './components/Forms'
+import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm, WorkAbsenceForm } from './components/Forms'
 import { EntityList } from './components/EntityList'
 import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
@@ -21,7 +21,7 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'journal', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'journal', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
@@ -40,11 +40,13 @@ function App() {
   const [journalEntries, setJournalEntries] = useState([])
   const [dailyClosures, setDailyClosures] = useState([])
   const [journalSchemaReady, setJournalSchemaReady] = useState(true)
+  const [workAbsences, setWorkAbsences] = useState([])
+  const [workAbsenceSchemaReady, setWorkAbsenceSchemaReady] = useState(true)
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
-  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null, journal: null })
-  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false, journal: true })
+  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null, journal: null, workAbsence: null })
+  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false, journal: true, workAbsence: false })
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
@@ -77,7 +79,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -88,6 +90,7 @@ function App() {
       supabase.from('kb_account_snapshots').select('*').eq('user_id', user.id).order('snapshot_date', { ascending: false }),
       supabase.from('kb_daily_entries').select('*').eq('user_id', user.id).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('kb_daily_closures').select('*').eq('user_id', user.id).order('closure_date', { ascending: false }),
+      supabase.from('kb_work_absences').select('*').eq('user_id', user.id).order('work_date', { ascending: false }).order('start_time', { ascending: false }),
     ])
 
     if (!profileRes.data) {
@@ -127,6 +130,8 @@ function App() {
     setJournalEntries(journalRes.data || [])
     setDailyClosures(closuresRes.data || [])
     setJournalSchemaReady(!journalRes.error && !closuresRes.error)
+    setWorkAbsences(workAbsencesRes.data || [])
+    setWorkAbsenceSchemaReady(!workAbsencesRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -248,6 +253,70 @@ function App() {
       return
     }
     setNotice(t('dayClosed'))
+    loadData()
+  }
+
+  const saveWorkAbsence = async (payload, currentItem = null) => {
+    const prepared = normalizeWorkAbsencePayload(payload)
+    const query = currentItem
+      ? supabase.from('kb_work_absences').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
+      : supabase.from('kb_work_absences').insert({ ...prepared, user_id: user.id })
+    const { error } = await query
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setEditing((current) => ({ ...current, workAbsence: null }))
+    setFormOpen((current) => ({ ...current, workAbsence: false }))
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const startWorkAbsence = async () => {
+    if (!workAbsenceSchemaReady) return
+    const active = workAbsences.find((item) => item.is_active)
+    if (active) return
+    const now = new Date()
+    const { error } = await supabase.from('kb_work_absences').insert({
+      user_id: user.id,
+      work_date: isoDate(now),
+      start_time: timeValue(now),
+      break_minutes: 0,
+      entry_source: 'automatic',
+      is_active: true,
+      confirmed: false,
+    })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('workAbsenceStarted'))
+    loadData()
+  }
+
+  const stopWorkAbsence = async (active) => {
+    if (!active) return
+    const now = new Date()
+    const payload = normalizeWorkAbsencePayload({
+      ...active,
+      end_time: timeValue(now),
+      entry_source: 'automatic',
+      is_active: false,
+      confirmed: window.confirm(t('workConfirmOnStop')),
+    })
+    const { error } = await supabase
+      .from('kb_work_absences')
+      .update(payload)
+      .eq('id', active.id)
+      .eq('user_id', user.id)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('workAbsenceStopped'))
     loadData()
   }
 
@@ -410,6 +479,29 @@ function App() {
             onSubmit={(payload) => saveJournalEntry(payload, editing.journal)}
             onCancel={() => setEditing((current) => ({ ...current, journal: null }))}
             onToggleForm={() => setFormOpen((current) => ({ ...current, journal: !current.journal }))}
+          />
+        )}
+        {view === 'workAbsence' && (
+          <WorkAbsence
+            absences={workAbsences}
+            currency={currency}
+            editing={editing.workAbsence}
+            formOpen={formOpen.workAbsence}
+            language={language}
+            locale={locale}
+            schemaReady={workAbsenceSchemaReady}
+            t={t}
+            onCancel={() => setEditing((current) => ({ ...current, workAbsence: null }))}
+            onDelete={(item) => deleteRow('kb_work_absences', item)}
+            onEdit={(item) => {
+              setEditing((current) => ({ ...current, workAbsence: item }))
+              setFormOpen((current) => ({ ...current, workAbsence: true }))
+            }}
+            onExport={(scope) => exportWorkAbsenceCsv(workAbsences, scope, t)}
+            onStart={startWorkAbsence}
+            onStop={stopWorkAbsence}
+            onSubmit={(payload) => saveWorkAbsence(payload, editing.workAbsence)}
+            onToggleForm={() => setFormOpen((current) => ({ ...current, workAbsence: !current.workAbsence }))}
           />
         )}
         {view === 'accounts' && (
@@ -809,6 +901,120 @@ function DailyJournal({ currency, dailyClosures, editing, entries, formOpen, lan
   )
 }
 
+function WorkAbsence({ absences, currency, editing, formOpen, language, locale, schemaReady, t, onCancel, onDelete, onEdit, onExport, onStart, onStop, onSubmit, onToggleForm }) {
+  const [, setTick] = useState(0)
+  const active = absences.find((item) => item.is_active)
+  const monthlyStats = workAbsenceStats(absences, 'month')
+  const yearlyStats = workAbsenceStats(absences, 'year')
+  const recentAbsences = absences.slice(0, 30).map((item) => ({
+    ...item,
+    name: item.work_date,
+    amount: item.estimated_allowance,
+  }))
+
+  useEffect(() => {
+    if (!active) return undefined
+    const timer = window.setInterval(() => setTick((current) => current + 1), 60_000)
+    return () => window.clearInterval(timer)
+  }, [active])
+
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <div>
+            <h2>{t('workAbsence')}</h2>
+            <p className="muted">{t('workAbsenceSubtitle')}</p>
+          </div>
+          <button type="button" onClick={onToggleForm}>{formOpen ? t('hideForm') : t('workAbsenceManualAdd')}</button>
+        </div>
+        {!schemaReady && <div className="notice danger">{t('workAbsenceMigrationMissing')}</div>}
+        <div className="work-start-card">
+          {active ? (
+            <>
+              <div>
+                <strong>{t('workAbsenceActive')}</strong>
+                <span>{active.work_date} · {active.start_time?.slice(0, 5)} · {formatDuration(minutesSinceStart(active.start_time))}</span>
+              </div>
+              <button type="button" className="danger-ghost" onClick={() => onStop(active)}>{t('stopWorkAbsence')}</button>
+            </>
+          ) : (
+            <>
+              <div>
+                <strong>{t('noActiveWorkAbsence')}</strong>
+                <span>{t('workAbsenceNoGps')}</span>
+              </div>
+              <button type="button" disabled={!schemaReady} onClick={onStart}>{t('startWorkAbsence')}</button>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-title">
+          <h2>{t('workAbsenceReport')}</h2>
+          <div className="button-pair">
+            <button type="button" className="secondary" onClick={() => onExport('month')}>{t('exportCsvMonth')}</button>
+            <button type="button" className="secondary" onClick={() => onExport('year')}>{t('exportCsvYear')}</button>
+          </div>
+        </div>
+        <div className="metric-grid compact">
+          <Metric t={t} label="workDaysRegisteredMonth" value={monthlyStats.registeredDays} />
+          <Metric t={t} label="workDaysOver8Month" value={monthlyStats.eligibleDays} />
+          <Metric t={t} label="workAllowanceMonth" value={formatMoney(monthlyStats.allowance, currency, locale)} />
+          <Metric t={t} label="workHoursMonth" value={formatDuration(monthlyStats.durationMinutes)} />
+          <Metric t={t} label="workDaysOver8Year" value={yearlyStats.eligibleDays} />
+          <Metric t={t} label="workAllowanceYear" value={formatMoney(yearlyStats.allowance, currency, locale)} />
+        </div>
+        <div className="notice">{language === 'de' ? t('workTaxDisclaimerDe') : t('workTaxDisclaimer')}</div>
+      </section>
+
+      {formOpen && (
+        <WorkAbsenceForm
+          t={t}
+          initialItem={editing}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+        />
+      )}
+
+      <EntityList
+        title={t('workAbsenceRecent')}
+        items={recentAbsences}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => [
+          item.object_name || item.location || '-',
+          `${item.start_time?.slice(0, 5)} - ${item.end_time ? item.end_time.slice(0, 5) : t('active')}`,
+          formatDuration(toNumber(item.duration_minutes)),
+          item.eligible_over_8h ? t('estimatedAllowance14') : t('under8h'),
+          item.confirmed ? t('confirmed') : t('notConfirmed'),
+        ].filter(Boolean).join(' - ')}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        renderActions={(item) => (
+          <div className="badge-row">
+            <span className={`badge ${item.eligible_over_8h ? '' : 'danger'}`}>{item.eligible_over_8h ? t('over8h') : t('under8h')}</span>
+            <span className="badge">{t(item.entry_source || 'manual')}</span>
+          </div>
+        )}
+      />
+    </>
+  )
+}
+
+function Metric({ t, label, value }) {
+  return (
+    <article className="metric-card neutral">
+      <span>{t(label)}</span>
+      <strong>{value}</strong>
+    </article>
+  )
+}
+
 function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdit, onQuickBalance }) {
   return (
     <EntityList
@@ -927,6 +1133,119 @@ function cleanAccountPayload(payload) {
     overdraft_interest: payload.overdraft_interest,
     notes: payload.notes,
   }
+}
+
+function normalizeWorkAbsencePayload(payload) {
+  const duration = payload.end_time ? calculateWorkDuration(payload.start_time, payload.end_time, payload.break_minutes) : null
+  const eligible = duration !== null && duration > 8 * 60
+  return {
+    work_date: payload.work_date || isoDate(new Date()),
+    start_time: payload.start_time,
+    end_time: payload.end_time || null,
+    duration_minutes: duration,
+    location: payload.location || null,
+    object_name: payload.object_name || null,
+    work_reason: payload.work_reason || null,
+    kilometers: payload.kilometers === '' || payload.kilometers === null || payload.kilometers === undefined ? null : Number(payload.kilometers),
+    break_minutes: Number(payload.break_minutes || 0),
+    entry_source: payload.entry_source || 'manual',
+    is_active: Boolean(payload.is_active && !payload.end_time),
+    eligible_over_8h: eligible,
+    estimated_allowance: eligible ? 14 : 0,
+    notes: payload.notes || null,
+    confirmed: Boolean(payload.confirmed),
+  }
+}
+
+function calculateWorkDuration(startTime, endTime, breakMinutes = 0) {
+  const start = timeToMinutes(startTime)
+  const end = timeToMinutes(endTime)
+  if (start === null || end === null) return null
+  const raw = end >= start ? end - start : end + 24 * 60 - start
+  return Math.max(0, raw - Number(breakMinutes || 0))
+}
+
+function timeToMinutes(value) {
+  if (!value) return null
+  const [hours, minutes] = String(value).split(':').map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+  return hours * 60 + minutes
+}
+
+function timeValue(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function minutesSinceStart(startTime) {
+  const start = timeToMinutes(startTime)
+  const now = timeToMinutes(timeValue(new Date()))
+  if (start === null || now === null) return 0
+  return now >= start ? now - start : now + 24 * 60 - start
+}
+
+function formatDuration(minutes = 0) {
+  const clean = Math.max(0, Math.round(toNumber(minutes)))
+  const hours = Math.floor(clean / 60)
+  const rest = clean % 60
+  return `${hours}h ${String(rest).padStart(2, '0')}m`
+}
+
+function workAbsenceStats(absences, scope) {
+  const now = new Date()
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const year = String(now.getFullYear())
+  const rows = absences.filter((item) => {
+    if (scope === 'month') return String(item.work_date || '').startsWith(month)
+    return String(item.work_date || '').startsWith(year)
+  })
+  const eligibleRows = rows.filter((item) => item.eligible_over_8h)
+  return {
+    registeredDays: rows.length,
+    eligibleDays: eligibleRows.length,
+    allowance: eligibleRows.reduce((sum, item) => sum + toNumber(item.estimated_allowance), 0),
+    durationMinutes: rows.reduce((sum, item) => sum + toNumber(item.duration_minutes), 0),
+    rows,
+  }
+}
+
+function exportWorkAbsenceCsv(absences, scope, t) {
+  const stats = workAbsenceStats(absences, scope)
+  const rows = [
+    ['Datum', 'Abfahrt Wohnung', 'Rueckkehr Wohnung', 'Abwesenheitsdauer', 'Einsatzort / Objekt', 'Anlass', 'Kilometer', '> 8 Stunden', 'Verpflegungspauschale geschaetzt', 'Erfassung', 'Bemerkung'],
+    ...stats.rows.map((item) => [
+      item.work_date,
+      item.start_time?.slice(0, 5) || '',
+      item.end_time?.slice(0, 5) || '',
+      formatDuration(item.duration_minutes),
+      [item.object_name, item.location].filter(Boolean).join(' / '),
+      item.work_reason || '',
+      item.kilometers ?? '',
+      item.eligible_over_8h ? 'Ja' : 'Nein',
+      toNumber(item.estimated_allowance).toFixed(2),
+      item.entry_source === 'automatic' ? 'automatisch' : 'manuell',
+      item.notes || '',
+    ]),
+    [],
+    ['Summe Tage > 8h', stats.eligibleDays],
+    ['Summe geschaetzte Pauschale', stats.allowance.toFixed(2)],
+    [],
+    [t('workTaxDisclaimerDe')],
+  ]
+  const csv = rows.map((row) => row.map(csvCell).join(';')).join('\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `klarbudget-arbeitsweg-${scope}-${isoDate(new Date())}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function csvCell(value) {
+  const text = String(value ?? '')
+  return `"${text.replaceAll('"', '""')}"`
 }
 
 export default App

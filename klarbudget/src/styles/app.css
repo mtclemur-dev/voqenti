@@ -212,6 +212,26 @@ h3 {
   justify-content: flex-end;
 }
 
+.work-start-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  padding: 1rem;
+}
+
+.work-start-card div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.work-start-card span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .tabbar {
   position: sticky;
   top: 0;
@@ -749,6 +769,11 @@ h3 {
 
   .quick-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .work-start-card {
+    grid-template-columns: 1fr auto;
+    align-items: center;
   }
 
   .filters {

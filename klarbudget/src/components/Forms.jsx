@@ -10,6 +10,7 @@ const expenseDefaults = { name: '', category: categories[0], amount: '', frequen
 const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
 const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
 const journalDefaults = { entry_date: isoDate(new Date()), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', notes: '' }
+const workAbsenceDefaults = { work_date: isoDate(new Date()), start_time: '07:00', end_time: '16:00', location: '', object_name: '', work_reason: '', kilometers: '', break_minutes: '0', entry_source: 'manual', notes: '', confirmed: false }
 
 export function IncomeForm({ t, initialItem, onSubmit, onCancel }) {
   return (
@@ -115,6 +116,27 @@ export function JournalEntryForm({ t, initialItem, onSubmit, onCancel }) {
           <TextInput name="quantity" label={t('quantity')} type="number" min="0" step="0.001" value={values.quantity} onChange={update} />
           <TextInput name="unit" label={t('unit')} value={values.unit} onChange={update} />
           <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+        </>
+      )}
+    </FormShell>
+  )
+}
+
+export function WorkAbsenceForm({ t, initialItem, onSubmit, onCancel }) {
+  return (
+    <FormShell title={t('workAbsenceManualAdd')} defaults={workAbsenceDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('workAbsenceManualAdd')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
+      {({ values, update }) => (
+        <>
+          <TextInput name="work_date" label={t('workDate')} type="date" value={values.work_date} onChange={update} required />
+          <TextInput name="start_time" label={t('workStartTime')} type="time" value={values.start_time} onChange={update} required />
+          <TextInput name="end_time" label={t('workEndTime')} type="time" value={values.end_time} onChange={update} required />
+          <TextInput name="break_minutes" label={t('breakMinutes')} type="number" min="0" step="1" value={values.break_minutes} onChange={update} />
+          <TextInput name="object_name" label={t('workObject')} value={values.object_name} onChange={update} />
+          <TextInput name="location" label={t('workLocation')} value={values.location} onChange={update} />
+          <TextInput name="work_reason" label={t('workReason')} value={values.work_reason} onChange={update} />
+          <TextInput name="kilometers" label={t('kilometersOptional')} type="number" min="0" step="0.01" value={values.kilometers} onChange={update} />
+          <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+          <CheckboxInput name="confirmed" label={t('workConfirmed')} checked={values.confirmed} onChange={update} />
         </>
       )}
     </FormShell>
