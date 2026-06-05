@@ -65,8 +65,6 @@ function App() {
   const [offerPreview, setOfferPreview] = useState([])
   const [priceNotifications, setPriceNotifications] = useState([])
   const [priceHistory, setPriceHistory] = useState([])
-  const [shoppingRoutes, setShoppingRoutes] = useState([])
-  const [recommendedDeals, setRecommendedDeals] = useState({})
 
   const t = useMemo(() => makeTranslator(language), [language])
 
@@ -169,15 +167,6 @@ function App() {
     loadData()
   }, [loadData])
 
-  useEffect(() => {
-    if (user && shoppingList.length && weeklyOffers.length) {
-      const timer = setTimeout(() => {
-        detectPriceReductions()
-      }, 2000)
-      return () => clearTimeout(timer)
-    }
-  }, [weeklyOffers, shoppingList, user, detectPriceReductions])
-
   // SMART SHOPPING FUNCTIONS
   const getProductRecommendations = useCallback((shoppingItem) => {
     if (!shoppingItem) return []
@@ -204,7 +193,7 @@ function App() {
     })
     
     const sortedStores = Object.entries(storeScores)
-      .filter(([_, score]) => score.items > 0)
+      .filter((entry) => entry[1].items > 0)
       .sort((a, b) => b[1].items - a[1].items)
       .map(([store]) => store)
     
@@ -244,7 +233,16 @@ function App() {
       }
     }
     loadData()
-  }, [shoppingList, getProductRecommendations, priceNotifications, user, priceHistory])
+  }, [shoppingList, getProductRecommendations, priceNotifications, user, priceHistory, loadData])
+
+  useEffect(() => {
+    if (user && shoppingList.length && weeklyOffers.length) {
+      const timer = setTimeout(() => {
+        detectPriceReductions()
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [weeklyOffers, shoppingList, user, detectPriceReductions])
 
   const getPriceAnalytics = useCallback(() => {
     if (!priceHistory.length) return {}
@@ -498,6 +496,18 @@ function App() {
     loadData()
   }
 
+  const importOffer = async (offer) => {
+    const prepared = normalizeOfferPayload({ ...offer, status: 'confirmed' })
+    const { error } = await supabase.from('kb_weekly_offers').insert({ ...prepared, user_id: user.id })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('kaufdaImportSuccess').replace('{product}', offer.product_name))
+    loadData()
+  }
+
   const startWorkAbsence = async () => {
     if (!workAbsenceSchemaReady) return
     const active = workAbsences.find((item) => item.is_active)
@@ -731,6 +741,12 @@ function App() {
             onSaveItem={saveShoppingItem}
             onSaveStore={saveStore}
             onTabChange={setShoppingTab}
+            getProductRecommendations={getProductRecommendations}
+            calculateOptimalRoute={calculateOptimalRoute}
+            priceNotifications={priceNotifications}
+            user={user}
+            getPriceAnalytics={getPriceAnalytics}
+            onImportOffer={importOffer}
           />
         )}
         {view === 'workAbsence' && (
@@ -1177,7 +1193,7 @@ function DailyJournal({ currency, dailyBudget, dailyClosures, editing, entries, 
   )
 }
 
-function SmartShopping({ currency, journalEntries, language, locale, offerPreview, offers, schemaReady, shoppingList, stores, sources, tab, t, onConfirmPreview, onDelete, onPreviewChange, onSaveItem, onSaveStore, onTabChange }) {
+function SmartShopping({ currency, journalEntries, language, locale, offerPreview, offers, schemaReady, shoppingList, stores, sources, tab, t, onConfirmPreview, onDelete, onPreviewChange, onSaveItem, onSaveStore, onTabChange, getProductRecommendations, calculateOptimalRoute, priceNotifications, user, getPriceAnalytics, onImportOffer }) {
   const activeOffers = offers.filter((offer) => !offer.valid_until || offer.valid_until >= isoDate(new Date()))
   const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
   const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
@@ -1194,13 +1210,14 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs">
-          {['list', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
+          {['list', 'kaufda', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
             <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
           ))}
         </div>
       </section>
 
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
+      {tab === 'kaufda' && <KaufdaFeedTab savedOffers={offers} t={t} onImportOffer={onImportOffer} />}
       {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
       {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
       {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
@@ -1211,7 +1228,7 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
   )
 }
 
-function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, user, onDelete, onSave }) {
+function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, onDelete, onSave }) {
   const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
   const route = getRoute && items.length ? getRoute(items.filter(i => !i.purchased)) : null
   
@@ -1689,6 +1706,636 @@ function OfferSourcesTab({ sources, t, onDelete, onSave }) {
         onEdit={() => {}}
         onDelete={onDelete}
       />
+    </>
+  )
+}
+
+const kaufdaMockOffers = [
+  // Milch (Lapte)
+  {
+    product_name: 'Milch proaspata 3.5% (Frische Milch)',
+    store_name: 'Norma',
+    brand: 'Landfein',
+    category: 'mâncare',
+    price: 0.89,
+    old_price: 1.19,
+    discount_percent: 25,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 0.89,
+    app_price: false,
+  },
+  {
+    product_name: 'H-Milch UHT 1.5% grasime',
+    store_name: 'Aldi',
+    brand: 'Milsani',
+    category: 'mâncare',
+    price: 0.99,
+    old_price: 1.15,
+    discount_percent: 14,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 0.99,
+    app_price: false,
+  },
+  {
+    product_name: 'Milch Bio organica 3.5%',
+    store_name: 'Lidl',
+    brand: 'Milbona',
+    category: 'mâncare',
+    price: 1.15,
+    old_price: 1.45,
+    discount_percent: 20,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 1.15,
+    app_price: false,
+  },
+  {
+    product_name: 'H-Milch 3.5% grasime',
+    store_name: 'Netto',
+    brand: 'Gutes Land',
+    category: 'mâncare',
+    price: 0.95,
+    old_price: 1.09,
+    discount_percent: 12,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 0.95,
+    app_price: true,
+  },
+  {
+    product_name: 'Milch proaspata 3.5% Landliebe',
+    store_name: 'Kaufland',
+    brand: 'Landliebe',
+    category: 'mâncare',
+    price: 1.29,
+    old_price: 1.69,
+    discount_percent: 23,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 1.29,
+    app_price: false,
+  },
+  {
+    product_name: 'Milch organica proaspata Demeter',
+    store_name: 'Rewe',
+    brand: 'Rewe Bio',
+    category: 'mâncare',
+    price: 1.49,
+    old_price: 1.89,
+    discount_percent: 21,
+    quantity: 1,
+    unit: 'L',
+    unit_price: 1.49,
+    app_price: false,
+  },
+  // Kaffee (Cafea)
+  {
+    product_name: 'Cafea boabe Jacobs Barista Edition',
+    store_name: 'Aldi',
+    brand: 'Jacobs',
+    category: 'mâncare',
+    price: 8.88,
+    old_price: 13.99,
+    discount_percent: 36,
+    quantity: 1000,
+    unit: 'g',
+    unit_price: 8.88,
+    app_price: false,
+  },
+  {
+    product_name: 'Cafea macinata Jacobs Kronung',
+    store_name: 'Kaufland',
+    brand: 'Jacobs',
+    category: 'mâncare',
+    price: 4.49,
+    old_price: 6.99,
+    discount_percent: 35,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 8.98,
+    app_price: false,
+  },
+  {
+    product_name: 'Cafea boabe Crema d\'Oro',
+    store_name: 'Rewe',
+    brand: 'Dallmayr',
+    category: 'mâncare',
+    price: 9.99,
+    old_price: 14.99,
+    discount_percent: 33,
+    quantity: 1000,
+    unit: 'g',
+    unit_price: 9.99,
+    app_price: false,
+  },
+  {
+    product_name: 'Cafea macinata Tchibo Feine Milde',
+    store_name: 'Lidl',
+    brand: 'Tchibo',
+    category: 'mâncare',
+    price: 4.99,
+    old_price: 6.99,
+    discount_percent: 28,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 9.98,
+    app_price: true,
+  },
+  {
+    product_name: 'Cafea macinata Lavazza Crema e Gusto',
+    store_name: 'Edeka',
+    brand: 'Lavazza',
+    category: 'mâncare',
+    price: 3.49,
+    old_price: 4.99,
+    discount_percent: 30,
+    quantity: 250,
+    unit: 'g',
+    unit_price: 13.96,
+    app_price: false,
+  },
+  {
+    product_name: 'Cafea macinata Dallmayr Prodomo',
+    store_name: 'Norma',
+    brand: 'Dallmayr',
+    category: 'mâncare',
+    price: 5.29,
+    old_price: 7.49,
+    discount_percent: 29,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 10.58,
+    app_price: false,
+  },
+  // Butter (Unt)
+  {
+    product_name: 'Unt de masa Meggle Butter',
+    store_name: 'Rewe',
+    brand: 'Meggle',
+    category: 'mâncare',
+    price: 1.49,
+    old_price: 2.59,
+    discount_percent: 42,
+    quantity: 250,
+    unit: 'g',
+    unit_price: 5.96,
+    app_price: false,
+  },
+  {
+    product_name: 'Unt ecologic Kerrygold',
+    store_name: 'Aldi',
+    brand: 'Kerrygold',
+    category: 'mâncare',
+    price: 1.69,
+    old_price: 2.79,
+    discount_percent: 39,
+    quantity: 250,
+    unit: 'g',
+    unit_price: 6.76,
+    app_price: false,
+  },
+  {
+    product_name: 'Unt premium Landliebe Butter',
+    store_name: 'Lidl',
+    brand: 'Landliebe',
+    category: 'mâncare',
+    price: 1.39,
+    old_price: 2.49,
+    discount_percent: 44,
+    quantity: 250,
+    unit: 'g',
+    unit_price: 5.56,
+    app_price: true,
+  },
+  {
+    product_name: 'Unt marca proprie Norma Butter',
+    store_name: 'Norma',
+    brand: 'Landfein',
+    category: 'mâncare',
+    price: 1.25,
+    old_price: 1.89,
+    discount_percent: 33,
+    quantity: 250,
+    unit: 'g',
+    unit_price: 5.00,
+    app_price: false,
+  },
+  // Eier & Brot (Ouă & Pâine)
+  {
+    product_name: 'Oua proaspete BIO Clasa A (10 buc)',
+    store_name: 'Lidl',
+    brand: 'Landjunker',
+    category: 'mâncare',
+    price: 2.49,
+    old_price: 2.99,
+    discount_percent: 16,
+    quantity: 10,
+    unit: 'buc',
+    unit_price: 0.25,
+    app_price: false,
+  },
+  {
+    product_name: 'Oua proaspete crescute la sol (10 buc)',
+    store_name: 'Norma',
+    brand: 'Landfein',
+    category: 'mâncare',
+    price: 1.69,
+    old_price: 1.99,
+    discount_percent: 15,
+    quantity: 10,
+    unit: 'buc',
+    unit_price: 0.17,
+    app_price: false,
+  },
+  {
+    product_name: 'Paine toast Butter Toastbrot',
+    store_name: 'Aldi',
+    brand: 'Goldähren',
+    category: 'mâncare',
+    price: 0.99,
+    old_price: 1.29,
+    discount_percent: 23,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 1.98,
+    app_price: false,
+  },
+  {
+    product_name: 'Paine traditionala germana Krustenbrot',
+    store_name: 'Netto',
+    brand: 'Bäcker Krone',
+    category: 'mâncare',
+    price: 1.49,
+    old_price: 1.99,
+    discount_percent: 25,
+    quantity: 1000,
+    unit: 'g',
+    unit_price: 1.49,
+    app_price: false,
+  }
+]
+
+function KaufdaFeedTab({ t, savedOffers, onImportOffer }) {
+  const [search, setSearch] = useState('')
+  const [storeFilter, setStoreFilter] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('all')
+
+  const offersWithDates = useMemo(() => {
+    const now = new Date()
+    const currentDay = now.getDay()
+    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay
+    
+    const monday = new Date(now)
+    monday.setDate(now.getDate() + distanceToMonday)
+    
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    
+    const formatDate = (d) => {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const validity = {
+      valid_from: formatDate(monday),
+      valid_until: formatDate(sunday)
+    }
+
+    return kaufdaMockOffers.map(offer => ({
+      ...offer,
+      valid_from: validity.valid_from,
+      valid_until: validity.valid_until
+    }))
+  }, [])
+
+  // Highlight calculations
+  const cheapestMilk = useMemo(() => {
+    const milks = offersWithDates.filter(o => o.product_name.toLowerCase().includes('milch') || o.product_name.toLowerCase().includes('lapte'))
+    if (!milks.length) return null
+    return milks.reduce((min, o) => o.price < min.price ? o : min, milks[0])
+  }, [offersWithDates])
+
+  const cheapestCoffee = useMemo(() => {
+    const coffees = offersWithDates.filter(o => o.product_name.toLowerCase().includes('kaffee') || o.product_name.toLowerCase().includes('cafea'))
+    if (!coffees.length) return null
+    return coffees.reduce((min, o) => {
+      const oUnitVal = o.unit_price || o.price
+      const minUnitVal = min.unit_price || min.price
+      return oUnitVal < minUnitVal ? o : min
+    }, coffees[0])
+  }, [offersWithDates])
+
+  // React filter
+  const filteredOffers = useMemo(() => {
+    return offersWithDates.filter(offer => {
+      const query = search.trim().toLowerCase()
+      const matchesSearch = !query ||
+        offer.product_name.toLowerCase().includes(query) ||
+        offer.brand.toLowerCase().includes(query) ||
+        offer.store_name.toLowerCase().includes(query)
+      
+      const matchesStore = !storeFilter || offer.store_name.toLowerCase() === storeFilter.toLowerCase()
+      
+      let matchesCat = true
+      if (selectedCategory === 'milk') {
+        matchesCat = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
+      } else if (selectedCategory === 'coffee') {
+        matchesCat = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
+      } else if (selectedCategory === 'butter') {
+        matchesCat = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
+      } else if (selectedCategory === 'other') {
+        const isMilk = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
+        const isCoffee = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
+        const isButter = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
+        matchesCat = !isMilk && !isCoffee && !isButter
+      }
+      
+      return matchesSearch && matchesStore && matchesCat
+    })
+  }, [offersWithDates, search, storeFilter, selectedCategory])
+
+  const categories = [
+    { key: 'all', label: t('kaufdaAllOffers') },
+    { key: 'milk', label: t('kaufdaMilkOnly') },
+    { key: 'coffee', label: t('kaufdaCoffeeOnly') },
+    { key: 'butter', label: t('kaufdaButterOnly') },
+    { key: 'other', label: t('kaufdaOthersOnly') }
+  ]
+
+  return (
+    <>
+      <section className="section">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+          <h2 style={{ fontSize: '1.25rem', color: '#17463c' }}>{t('kaufdaFeedTitle')}</h2>
+          <p className="muted" style={{ fontSize: '0.88rem' }}>{t('kaufdaFeedSubtitle')}</p>
+        </div>
+
+        {/* Dynamic highlights dashboard */}
+        <div className="metric-grid" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+          {cheapestMilk && (
+            <div className="metric-card positive" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid rgba(23, 70, 60, 0.15)', boxShadow: '0 4px 12px rgba(23, 70, 60, 0.05)', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '4.5rem', opacity: 0.08, pointerEvents: 'none' }}>🥛</div>
+              <div>
+                <span style={{ textTransform: 'uppercase', fontSize: '0.74rem', fontWeight: '900', letterSpacing: '0.04em', color: '#17463c' }}>
+                  {t('kaufdaCheapestMilkHighlight')}
+                </span>
+                <h3 style={{ margin: '0.3rem 0 0.1rem 0', color: '#17463c', fontWeight: '800', fontSize: '1.05rem', lineHeight: '1.25' }}>
+                  {cheapestMilk.product_name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#63746e' }}>
+                  {cheapestMilk.brand} · {cheapestMilk.quantity}{cheapestMilk.unit}
+                </span>
+              </div>
+              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <strong style={{ fontSize: '1.45rem', color: '#17463c', fontWeight: '900' }}>{cheapestMilk.price.toFixed(2)}€</strong>
+                {cheapestMilk.old_price && (
+                  <span style={{ textDecoration: 'line-through', fontSize: '0.82rem', color: '#a7352a', opacity: 0.8 }}>
+                    {cheapestMilk.old_price.toFixed(2)}€
+                  </span>
+                )}
+                <span className="badge" style={{ backgroundColor: '#17463c', color: '#fff', fontSize: '0.72rem', padding: '0.18rem 0.45rem', borderRadius: '4px' }}>
+                  {cheapestMilk.store_name}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {cheapestCoffee && (
+            <div className="metric-card positive" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid rgba(23, 70, 60, 0.15)', boxShadow: '0 4px 12px rgba(23, 70, 60, 0.05)', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '4.5rem', opacity: 0.08, pointerEvents: 'none' }}>☕</div>
+              <div>
+                <span style={{ textTransform: 'uppercase', fontSize: '0.74rem', fontWeight: '900', letterSpacing: '0.04em', color: '#17463c' }}>
+                  {t('kaufdaCheapestCoffeeHighlight')}
+                </span>
+                <h3 style={{ margin: '0.3rem 0 0.1rem 0', color: '#17463c', fontWeight: '800', fontSize: '1.05rem', lineHeight: '1.25' }}>
+                  {cheapestCoffee.product_name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#63746e' }}>
+                  {cheapestCoffee.brand} · {cheapestCoffee.quantity}{cheapestCoffee.unit} ({cheapestCoffee.unit_price.toFixed(2)}€/kg)
+                </span>
+              </div>
+              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <strong style={{ fontSize: '1.45rem', color: '#17463c', fontWeight: '900' }}>{cheapestCoffee.price.toFixed(2)}€</strong>
+                {cheapestCoffee.old_price && (
+                  <span style={{ textDecoration: 'line-through', fontSize: '0.82rem', color: '#a7352a', opacity: 0.8 }}>
+                    {cheapestCoffee.old_price.toFixed(2)}€
+                  </span>
+                )}
+                <span className="badge" style={{ backgroundColor: '#17463c', color: '#fff', fontSize: '0.72rem', padding: '0.18rem 0.45rem', borderRadius: '4px' }}>
+                  {cheapestCoffee.store_name}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Category Chips and Filters Grid */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+          {/* Brand Filter Chips */}
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            {categories.map(cat => (
+              <button
+                key={cat.key}
+                type="button"
+                className={selectedCategory === cat.key ? 'active' : 'secondary'}
+                onClick={() => setSelectedCategory(cat.key)}
+                style={{
+                  borderRadius: '20px',
+                  padding: '0.35rem 0.9rem',
+                  fontSize: '0.82rem',
+                  minHeight: 'auto',
+                  transition: 'all 0.2s ease',
+                  backgroundColor: selectedCategory === cat.key ? '#17463c' : '#e8eee4',
+                  color: selectedCategory === cat.key ? '#fff' : '#17463c',
+                  border: 'none',
+                  boxShadow: selectedCategory === cat.key ? '0 3px 8px rgba(23, 70, 60, 0.2)' : 'none'
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search bar and Supermarket filter dropdown */}
+          <div className="filters" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.65rem' }}>
+            <input 
+              type="text" 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)} 
+              placeholder={t('kaufdaSearchPlaceholder')}
+              style={{
+                borderRadius: '8px',
+                border: '1px solid #cdd8d2',
+                padding: '0.65rem 0.75rem',
+                fontSize: '0.9rem'
+              }}
+            />
+            <select 
+              value={storeFilter} 
+              onChange={(e) => setStoreFilter(e.target.value)}
+              aria-label={t('kaufdaFilterStore')}
+              style={{
+                borderRadius: '8px',
+                border: '1px solid #cdd8d2',
+                padding: '0.65rem 0.75rem',
+                fontSize: '0.9rem'
+              }}
+            >
+              <option value="">{t('all')}</option>
+              {['Aldi', 'Lidl', 'Netto', 'Norma', 'Rewe', 'Kaufland', 'Edeka'].map(store => (
+                <option key={store} value={store}>{store}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Offers Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '1.1rem',
+          marginTop: '0.5rem'
+        }}>
+          {filteredOffers.length === 0 ? (
+            <div className="empty" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2.5rem' }}>
+              {t('kaufdaNoOffersMatched')}
+            </div>
+          ) : (
+            filteredOffers.map((offer, idx) => {
+              const isAlreadyImported = savedOffers.some(saved => 
+                normalizeProduct(saved.product_name) === normalizeProduct(offer.product_name) &&
+                String(saved.store_name).toLowerCase() === String(offer.store_name).toLowerCase() &&
+                toNumber(saved.price) === toNumber(offer.price)
+              )
+
+              const storeColors = {
+                lidl: { bg: '#e5effb', border: '#2861a8', badgeBg: '#0050aa', text: '#fff' },
+                aldi: { bg: '#e8eff5', border: '#002f6c', badgeBg: '#002f6c', text: '#fff' },
+                netto: { bg: '#fffce8', border: '#ffcc00', badgeBg: '#d30000', text: '#fff' },
+                norma: { bg: '#fff3e8', border: '#e67e22', badgeBg: '#d35400', text: '#fff' },
+                rewe: { bg: '#fdebeb', border: '#cc0022', badgeBg: '#cc0022', text: '#fff' },
+                kaufland: { bg: '#fff2f2', border: '#e30613', badgeBg: '#e30613', text: '#fff' },
+                edeka: { bg: '#eef6ea', border: '#339933', badgeBg: '#00529f', text: '#fff' }
+              }
+
+              const defaultColors = { bg: '#fcfcfc', border: '#dde4da', badgeBg: '#63746e', text: '#fff' }
+              const colors = storeColors[offer.store_name.toLowerCase()] || defaultColors
+
+              return (
+                <article 
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    alignItems: 'stretch',
+                    backgroundColor: '#ffffff',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '12px',
+                    padding: '1.2rem',
+                    position: 'relative',
+                    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.02)',
+                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                    cursor: 'default'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-3px)'
+                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.05)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)'
+                    e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.02)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                    <span style={{ 
+                      backgroundColor: colors.badgeBg, 
+                      color: colors.text, 
+                      fontWeight: '900', 
+                      fontSize: '0.78rem', 
+                      padding: '0.25rem 0.6rem', 
+                      borderRadius: '5px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}>
+                      {offer.store_name}
+                    </span>
+                    {offer.discount_percent && (
+                      <span className="badge danger" style={{ fontSize: '0.82rem', fontWeight: '800' }}>
+                        -{offer.discount_percent}%
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#15231f', lineHeight: '1.3' }}>
+                      {offer.product_name}
+                    </h4>
+                    <span style={{ fontSize: '0.82rem', color: '#63746e' }}>
+                      Brand: <strong>{offer.brand || '-'}</strong>
+                    </span>
+                    <span style={{ fontSize: '0.82rem', color: '#63746e' }}>
+                      {t('kaufdaUnitLabel')}: <strong>{offer.quantity} {offer.unit}</strong> 
+                      {offer.unit_price && ` (${offer.unit_price.toFixed(2)}€/${normalizedUnitLabel(offer.unit)})`}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: '#93a49e', marginTop: '0.2rem' }}>
+                      {t('kaufdaValidUntil')}: {offer.valid_until}
+                    </span>
+                    
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.4rem', marginBottom: '0.6rem' }}>
+                      {offer.app_price && (
+                        <span className="badge" style={{ backgroundColor: '#fff0c8', color: '#735214', border: '1px solid #ffe299', fontSize: '0.72rem', padding: '0.15rem 0.4rem' }}>
+                          📱 {t('kaufdaAppPrice')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ 
+                    borderTop: '1px solid #f2f2f2', 
+                    paddingTop: '0.75rem', 
+                    marginTop: '0.4rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {offer.old_price && (
+                        <span style={{ textDecoration: 'line-through', fontSize: '0.74rem', color: '#a7352a', opacity: 0.85 }}>
+                          {offer.old_price.toFixed(2)}€
+                        </span>
+                      )}
+                      <strong style={{ fontSize: '1.35rem', color: '#17463c', fontWeight: '900' }}>{offer.price.toFixed(2)}€</strong>
+                    </div>
+                    
+                    <button 
+                      type="button" 
+                      disabled={isAlreadyImported}
+                      className={isAlreadyImported ? 'secondary' : ''}
+                      onClick={() => onImportOffer(offer)}
+                      style={{
+                        padding: '0.45rem 0.75rem',
+                        minHeight: 'auto',
+                        fontSize: '0.82rem',
+                        borderRadius: '6px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        backgroundColor: isAlreadyImported ? '#e3efe8' : '#17463c',
+                        color: isAlreadyImported ? '#17463c' : '#fff',
+                        cursor: isAlreadyImported ? 'default' : 'pointer'
+                      }}
+                    >
+                      {isAlreadyImported ? '✓ ' + t('kaufdaImportedStatus') : t('kaufdaAddToMyOffers')}
+                    </button>
+                  </div>
+                </article>
+              )
+            })
+          )}
+        </div>
+      </section>
     </>
   )
 }

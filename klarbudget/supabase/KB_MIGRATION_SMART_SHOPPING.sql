@@ -16,6 +16,23 @@ create table if not exists public.kb_shopping_list (
   updated_at timestamptz not null default now()
 );
 
+ALTER TABLE public.kb_shopping_list
+ALTER COLUMN priority SET DEFAULT 'normal';
+
+UPDATE public.kb_shopping_list
+SET priority = 'normal'
+WHERE priority IS NULL;
+
+ALTER TABLE public.kb_shopping_list
+ALTER COLUMN priority SET NOT NULL;
+
+ALTER TABLE public.kb_shopping_list
+DROP CONSTRAINT IF EXISTS kb_shopping_list_priority_check;
+
+ALTER TABLE public.kb_shopping_list
+ADD CONSTRAINT kb_shopping_list_priority_check
+CHECK (priority IN ('normal', 'important', 'offer_only'));
+
 create table if not exists public.kb_weekly_offers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
