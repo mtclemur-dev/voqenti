@@ -1085,7 +1085,7 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
       </section>
 
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
-      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} />}
+      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
       {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
       {tab === 'best' && <BestPricesTab bestPrices={bestPrices} currency={currency} locale={locale} t={t} />}
       {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
@@ -1133,7 +1133,7 @@ function ShoppingListTab({ currency, items, language, t, onDelete, onSave }) {
   )
 }
 
-function OfferImportTab({ preview, t, onPreviewChange, onSaveSource }) {
+function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange }) {
   const [text, setText] = useState('')
   const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
   return (
@@ -1152,7 +1152,11 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource }) {
       </div>
       <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
       <div className="form-actions">
-        <button type="button" onClick={() => onPreviewChange([...preview, ...parseOfferText(text, meta)])}>{t('extractPreview')}</button>
+        <button type="button" onClick={() => {
+          const rows = parseOfferText(text, meta)
+          onPreviewChange([...preview, ...rows])
+          onTabChange('offers')
+        }}>{t('extractPreview')}</button>
       </div>
     </section>
   )
@@ -1169,6 +1173,7 @@ function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, 
             <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
           </div>
         </div>
+        {!preview.length && <div className="notice">{t('noPreviewRows')}</div>}
         <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
       </section>
       <EntityList

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'klarbudget-v2026-06-05-smart-shopping'
+const CACHE_NAME = 'klarbudget-v2026-06-05-shopping-preview'
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
