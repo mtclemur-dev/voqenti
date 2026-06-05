@@ -21,7 +21,9 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'journal', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
+
+const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
@@ -42,6 +44,11 @@ function App() {
   const [journalSchemaReady, setJournalSchemaReady] = useState(true)
   const [workAbsences, setWorkAbsences] = useState([])
   const [workAbsenceSchemaReady, setWorkAbsenceSchemaReady] = useState(true)
+  const [shoppingList, setShoppingList] = useState([])
+  const [weeklyOffers, setWeeklyOffers] = useState([])
+  const [stores, setStores] = useState([])
+  const [offerSources, setOfferSources] = useState([])
+  const [shoppingSchemaReady, setShoppingSchemaReady] = useState(true)
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
@@ -50,6 +57,8 @@ function App() {
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
+  const [shoppingTab, setShoppingTab] = useState('list')
+  const [offerPreview, setOfferPreview] = useState([])
 
   const t = useMemo(() => makeTranslator(language), [language])
 
@@ -79,7 +88,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -91,6 +100,10 @@ function App() {
       supabase.from('kb_daily_entries').select('*').eq('user_id', user.id).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('kb_daily_closures').select('*').eq('user_id', user.id).order('closure_date', { ascending: false }),
       supabase.from('kb_work_absences').select('*').eq('user_id', user.id).order('work_date', { ascending: false }).order('start_time', { ascending: false }),
+      supabase.from('kb_shopping_list').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).order('valid_until', { ascending: false }),
+      supabase.from('kb_stores').select('*').eq('user_id', user.id).order('name', { ascending: true }),
+      supabase.from('kb_offer_sources').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
 
     if (!profileRes.data) {
@@ -132,6 +145,11 @@ function App() {
     setJournalSchemaReady(!journalRes.error && !closuresRes.error)
     setWorkAbsences(workAbsencesRes.data || [])
     setWorkAbsenceSchemaReady(!workAbsencesRes.error)
+    setShoppingList(shoppingListRes.data || [])
+    setWeeklyOffers(offersRes.data || [])
+    setStores(storesRes.data || [])
+    setOfferSources(sourcesRes.data || [])
+    setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -313,6 +331,54 @@ function App() {
     setEditing((current) => ({ ...current, workAbsence: null }))
     setFormOpen((current) => ({ ...current, workAbsence: false }))
     setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const saveShoppingItem = async (payload) => {
+    const prepared = preparePayload(payload)
+    const { error } = await supabase.from('kb_shopping_list').insert({ ...prepared, user_id: user.id })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const saveStore = async (payload) => {
+    const prepared = preparePayload(payload)
+    if (prepared.import_mode === 'auto_future') prepared.active = false
+    const table = 'source_url' in prepared || 'import_mode' in prepared ? 'kb_offer_sources' : 'kb_stores'
+    const { error } = await supabase.from(table).insert({ ...prepared, user_id: user.id })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const confirmOfferPreview = async (mode = 'safe') => {
+    const rows = offerPreview
+      .filter((item) => mode === 'all' ? item.status !== 'ignored' : item.status === 'ok' && toNumber(item.confidence) >= 0.75)
+      .map((item) => normalizeOfferPayload({ ...item, status: 'confirmed' }))
+      .filter((item) => !weeklyOffers.some((offer) =>
+        normalizeProduct(offer.product_name) === normalizeProduct(item.product_name) &&
+        String(offer.store_name).toLowerCase() === String(item.store_name).toLowerCase() &&
+        toNumber(offer.price) === toNumber(item.price) &&
+        String(offer.valid_until || '') === String(item.valid_until || ''),
+      ))
+    if (!rows.length) return
+    const { error } = await supabase.from('kb_weekly_offers').insert(rows.map((row) => ({ ...row, user_id: user.id })))
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setOfferPreview((current) => current.filter((item) => !rows.some((row) => row.product_name === item.product_name && row.store_name === item.store_name && toNumber(row.price) === toNumber(item.price))))
+    setNotice(t('offersImported'))
     loadData()
   }
 
@@ -527,6 +593,28 @@ function App() {
             onSubmit={(payload) => saveJournalEntry(payload, editing.journal?.id ? editing.journal : null)}
             onCancel={() => setEditing((current) => ({ ...current, journal: null }))}
             onToggleForm={() => setFormOpen((current) => ({ ...current, journal: !current.journal }))}
+          />
+        )}
+        {view === 'shopping' && (
+          <SmartShopping
+            currency={currency}
+            journalEntries={journalEntries}
+            language={language}
+            locale={locale}
+            offerPreview={offerPreview}
+            offers={weeklyOffers}
+            schemaReady={shoppingSchemaReady}
+            shoppingList={shoppingList}
+            stores={stores}
+            sources={offerSources}
+            tab={shoppingTab}
+            t={t}
+            onConfirmPreview={confirmOfferPreview}
+            onDelete={(table, item) => deleteRow(table, item)}
+            onPreviewChange={setOfferPreview}
+            onSaveItem={saveShoppingItem}
+            onSaveStore={saveStore}
+            onTabChange={setShoppingTab}
           />
         )}
         {view === 'workAbsence' && (
@@ -973,6 +1061,287 @@ function DailyJournal({ currency, dailyBudget, dailyClosures, editing, entries, 
   )
 }
 
+function SmartShopping({ currency, journalEntries, language, locale, offerPreview, offers, schemaReady, shoppingList, stores, sources, tab, t, onConfirmPreview, onDelete, onPreviewChange, onSaveItem, onSaveStore, onTabChange }) {
+  const activeOffers = offers.filter((offer) => !offer.valid_until || offer.valid_until >= isoDate(new Date()))
+  const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
+  const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
+  const priceHistory = buildShoppingHistory(journalEntries)
+
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <div>
+            <h2>{t('shopping')}</h2>
+            <p className="muted">{t('shoppingHint')}</p>
+          </div>
+        </div>
+        {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
+        <div className="tabbar inline-tabs">
+          {['list', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
+            <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
+          ))}
+        </div>
+      </section>
+
+      {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
+      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} />}
+      {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
+      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} currency={currency} locale={locale} t={t} />}
+      {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
+      {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} t={t} />}
+      {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
+    </>
+  )
+}
+
+function ShoppingListTab({ currency, items, language, t, onDelete, onSave }) {
+  const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
+  return (
+    <>
+      <section className="section">
+        <h2>{t('myShoppingList')}</h2>
+        <form className="form-grid" onSubmit={(event) => {
+          event.preventDefault()
+          onSave(form)
+          setForm({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
+        }}>
+          <Input label={t('productName')} value={form.product_name} onChange={(value) => setForm({ ...form, product_name: value })} required />
+          <Input label={t('category')} value={form.category} onChange={(value) => setForm({ ...form, category: value })} />
+          <Input label={t('quantity')} type="number" value={form.desired_quantity} onChange={(value) => setForm({ ...form, desired_quantity: value })} />
+          <Input label={t('unit')} value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} />
+          <label>{t('priority')}<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="normal">{t('normal')}</option><option value="important">{t('important')}</option><option value="offer_only">{t('offerOnly')}</option></select></label>
+          <label>{t('preferredStore')}<select value={form.preferred_store} onChange={(event) => setForm({ ...form, preferred_store: event.target.value })}><option value="">{t('all')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+          <div className="form-actions"><button type="submit">{t('add')}</button></div>
+        </form>
+      </section>
+      <EntityList
+        title={t('myShoppingList')}
+        items={items.map((item) => ({ ...item, name: item.product_name, amount: 0 }))}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority)}${item.preferred_store ? ` - ${item.preferred_store}` : ''}`}
+        onEdit={() => {}}
+        onDelete={onDelete}
+        renderActions={(item) => item.purchased ? <span className="badge">{t('paid')}</span> : null}
+      />
+    </>
+  )
+}
+
+function OfferImportTab({ preview, t, onPreviewChange, onSaveSource }) {
+  const [text, setText] = useState('')
+  const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
+  return (
+    <section className="section">
+      <h2>{t('importLeaflets')}</h2>
+      <div className="notice">{t('noAutoScraping')}</div>
+      <div className="form-grid">
+        <label>{t('pdfFiles')}<input type="file" accept="application/pdf" multiple onChange={(event) => {
+          const files = [...event.target.files]
+          const sourceRows = files.map((file) => ({ store_name: detectStore(file.name) || '', source_url: '', active: false, import_mode: 'manual_pdf', status: t('pdfUploadedNeedsText'), notes: file.name }))
+          sourceRows.forEach(onSaveSource)
+        }} /></label>
+        <label>{t('store')}<select value={meta.store_name} onChange={(event) => setMeta({ ...meta, store_name: event.target.value })}><option value="">{t('detectStore')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+        <Input label={t('validFrom')} type="date" value={meta.valid_from} onChange={(value) => setMeta({ ...meta, valid_from: value })} />
+        <Input label={t('validUntil')} type="date" value={meta.valid_until} onChange={(value) => setMeta({ ...meta, valid_until: value })} />
+      </div>
+      <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
+      <div className="form-actions">
+        <button type="button" onClick={() => onPreviewChange([...preview, ...parseOfferText(text, meta)])}>{t('extractPreview')}</button>
+      </div>
+    </section>
+  )
+}
+
+function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, onConfirmPreview, onDeleteOffer, onPreviewChange }) {
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <h2>{t('offerPreview')}</h2>
+          <div className="button-pair">
+            <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>
+            <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
+          </div>
+        </div>
+        <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
+      </section>
+      <EntityList
+        title={t('savedOffers')}
+        items={savedOffers.map((item) => ({ ...item, name: `${item.product_name} · ${item.store_name}`, amount: item.price }))}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${item.valid_until || '-'} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
+        onEdit={() => {}}
+        onDelete={onDeleteOffer}
+      />
+    </>
+  )
+}
+
+function OfferRows({ rows, currency, editable = false, locale, t, onChange }) {
+  if (!rows.length) return <div className="empty">{t('noData')}</div>
+  return (
+    <div className="offer-table">
+      {rows.map((row, index) => (
+        <article className="list-item" key={`${row.store_name}-${row.product_name}-${index}`}>
+          <div>
+            <strong>{row.store_name || t('detectStore')} · {row.product_name}</strong>
+            <span>{row.brand || '-'} · {row.quantity || ''}{row.unit || ''} · {formatMoney(row.price, currency, locale)} · {row.unit_price ? `${formatMoney(row.unit_price, currency, locale)}/${normalizedUnitLabel(row.unit)}` : '-'}</span>
+            <div className="badge-row">
+              <span className={`badge ${row.status === 'needs_review' ? 'danger' : ''}`}>{row.status === 'needs_review' ? t('needsReview') : t('ok')}</span>
+              {row.app_price && <span className="badge">{t('appPrice')}</span>}
+              {toNumber(row.confidence) < 0.75 && <span className="badge danger">{t('approxMatch')}</span>}
+            </div>
+          </div>
+          {editable && (
+            <div className="list-value">
+              <button type="button" className="ghost" onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))}>{t('delete')}</button>
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function BestPricesTab({ bestPrices, currency, locale, t }) {
+  return (
+    <section className="section">
+      <h2>{t('bestPrices')}</h2>
+      <div className="list">
+        {bestPrices.length === 0 ? <div className="empty">{t('noData')}</div> : bestPrices.map((item) => (
+          <article className="list-item" key={item.product_name}>
+            <div>
+              <strong>{item.product_name}</strong>
+              {item.best ? (
+                <>
+                  <span>{item.best.store_name}: {formatMoney(item.best.price, currency, locale)}{item.best.unit_price ? ` · ${formatMoney(item.best.unit_price, currency, locale)}/${normalizedUnitLabel(item.best.unit)}` : ''}</span>
+                  <span>{t('lastPaid')}: {item.history?.last ? `${item.history.last.store || '-'} · ${formatMoney(item.history.last.value, currency, locale)}` : t('noHistory')}</span>
+                  <div className="badge-row">
+                    <span className="badge">{item.saving > 0 ? t('goodOffer') : t('notGoodOffer')}</span>
+                    {item.isBestObserved && <span className="badge">{t('bestObservedPrice')}</span>}
+                    {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
+                  </div>
+                </>
+              ) : <span>{t('noOfferFound')}</span>}
+            </div>
+            <div className="list-value">
+              <b>{item.best ? formatMoney(Math.max(0, item.saving), currency, locale) : '-'}</b>
+              <span>{item.best ? t('estimatedSaving') : ''}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function StoreRecommendationsTab({ currency, locale, recommendations, stores, t, onSaveStore }) {
+  const [form, setForm] = useState({ name: '', address: '', distance_km: '', fuel_cost_estimate: '', on_regular_route: false, notes: '' })
+  return (
+    <>
+      <section className="section">
+        <h2>{t('storeRecommendations')}</h2>
+        <div className="list">
+          {recommendations.length === 0 ? <div className="empty">{t('noData')}</div> : recommendations.map((item) => (
+            <article className="list-item" key={item.store}>
+              <div>
+                <strong>{item.store}</strong>
+                <span>{item.matches} {t('matchedProducts')} · {item.bestCount} {t('bestPriceProducts')} · {t('estimatedSaving')}: {formatMoney(item.saving, currency, locale)}</span>
+                <span>{item.netSaving !== null ? `${t('netSaving')}: ${formatMoney(item.netSaving, currency, locale)}` : t('noDistanceSet')}</span>
+              </div>
+              <div className="list-value"><span className={`badge ${item.recommendation === 'no' ? 'danger' : ''}`}>{t(item.recommendation)}</span></div>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="section">
+        <h2>{t('storeSettings')}</h2>
+        <form className="form-grid" onSubmit={(event) => {
+          event.preventDefault()
+          onSaveStore(form)
+          setForm({ name: '', address: '', distance_km: '', fuel_cost_estimate: '', on_regular_route: false, notes: '' })
+        }}>
+          <label>{t('store')}<select value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}><option value="">{t('store')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+          <Input label={t('address')} value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+          <Input label={t('distanceKm')} type="number" value={form.distance_km} onChange={(value) => setForm({ ...form, distance_km: value })} />
+          <Input label={t('fuelCostPerKm')} type="number" value={form.fuel_cost_estimate} onChange={(value) => setForm({ ...form, fuel_cost_estimate: value })} />
+          <label className="checkbox"><input type="checkbox" checked={form.on_regular_route} onChange={(event) => setForm({ ...form, on_regular_route: event.target.checked })} />{t('onRegularRoute')}</label>
+          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+          <div className="form-actions"><button type="submit">{t('save')}</button></div>
+        </form>
+        <div className="mini-stats">
+          {stores.map((store) => <span key={store.id}>{store.name}: <strong>{store.distance_km || '-'} km</strong></span>)}
+        </div>
+      </section>
+    </>
+  )
+}
+
+function ShoppingHistoryTab({ currency, history, locale, t }) {
+  return (
+    <section className="section">
+      <h2>{t('priceHistory')}</h2>
+      <div className="list">
+        {history.length === 0 ? <div className="empty">{t('noData')}</div> : history.map((item) => (
+          <article className="list-item" key={item.product}>
+            <div>
+              <strong>{item.product}</strong>
+              <span>{t('lastObservedPrice')}: {formatMoney(item.last.value, currency, locale)} · {t('lowestObservedPrice')}: {formatMoney(item.min.value, currency, locale)} · {t('highestObservedPrice')}: {formatMoney(item.max.value, currency, locale)}</span>
+              <span>{item.last.store || t('noStore')} · {item.unit ? `${t('unitComparison')}: ${item.unit}` : t('totalPriceComparison')}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function OfferSourcesTab({ sources, t, onDelete, onSave }) {
+  const [form, setForm] = useState({ store_name: '', source_url: '', active: false, import_mode: 'manual_pdf', status: 'manual', notes: '' })
+  return (
+    <>
+      <section className="section">
+        <h2>{t('offerSources')}</h2>
+        <div className="notice">{t('onlineImportFuture')}</div>
+        <form className="form-grid" onSubmit={(event) => {
+          event.preventDefault()
+          onSave(form)
+          setForm({ store_name: '', source_url: '', active: false, import_mode: 'manual_pdf', status: 'manual', notes: '' })
+        }}>
+          <label>{t('store')}<select value={form.store_name} onChange={(event) => setForm({ ...form, store_name: event.target.value })}><option value="">{t('store')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+          <Input label="URL" value={form.source_url} onChange={(value) => setForm({ ...form, source_url: value })} />
+          <label>{t('importMode')}<select value={form.import_mode} onChange={(event) => setForm({ ...form, import_mode: event.target.value, active: event.target.value === 'auto_future' ? false : form.active })}><option value="manual_pdf">manual_pdf</option><option value="manual_text">manual_text</option><option value="link_experimental">link_experimental</option><option value="auto_future" disabled>auto_future</option></select></label>
+          <label className="checkbox"><input type="checkbox" checked={form.active} disabled={form.import_mode === 'auto_future'} onChange={(event) => setForm({ ...form, active: event.target.checked })} />{t('active')}</label>
+          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+          <div className="form-actions"><button type="submit">{t('save')}</button></div>
+        </form>
+      </section>
+      <EntityList
+        title={t('offerSources')}
+        items={sources.map((item) => ({ ...item, name: item.store_name, amount: 0 }))}
+        currency="EUR"
+        language="ro"
+        emptyText={t('noData')}
+        renderMeta={(item) => `${item.import_mode} - ${item.active ? t('active') : t('inactive')} - ${item.status || '-'}`}
+        onEdit={() => {}}
+        onDelete={onDelete}
+      />
+    </>
+  )
+}
+
+function Input({ label, value, onChange, type = 'text', ...props }) {
+  return <label>{label}<input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} /></label>
+}
+
 function WorkAbsence({ absences, currency, editing, formOpen, language, locale, schemaReady, t, onCancel, onDelete, onEdit, onExport, onStart, onStop, onSubmit, onToggleForm }) {
   const [, setTick] = useState(0)
   const active = absences.find((item) => item.is_active)
@@ -1124,8 +1493,8 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
 }
 
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price']
-  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date']
+  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price', 'desired_quantity', 'price', 'old_price', 'discount_percent', 'distance_km', 'fuel_cost_estimate']
+  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date', 'valid_from', 'valid_until']
   const result = { ...payload }
 
   numberFields.forEach((field) => {
@@ -1356,6 +1725,234 @@ function exportWorkAbsenceCsv(absences, scope, t) {
 function csvCell(value) {
   const text = String(value ?? '')
   return `"${text.replaceAll('"', '""')}"`
+}
+
+function parseOfferText(text, meta = {}) {
+  const detectedStore = meta.store_name || detectStore(text)
+  const validity = detectValidity(text)
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => parseOfferLine(line, {
+      store_name: detectedStore,
+      valid_from: meta.valid_from || validity.valid_from,
+      valid_until: meta.valid_until || validity.valid_until,
+      source: 'manual_text',
+      source_page: 1,
+      source_file_name: '',
+      index,
+    }))
+    .filter(Boolean)
+}
+
+function parseOfferLine(line, meta) {
+  if (storeNames.some((store) => line.toLowerCase() === store.toLowerCase())) return null
+  if (/valid|gültig|valabil/i.test(line)) return null
+  const priceMatch = line.match(/(\d+)\s*[,. ]\s*(\d{2})\s*(€|eur)?/i)
+  if (!priceMatch) return null
+  const price = Number(`${priceMatch[1]}.${priceMatch[2]}`)
+  const beforePrice = line.slice(0, priceMatch.index).trim()
+  const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|buc|stk|stück|role|rollen|pachet|pack|sticlă|sticla|fl|cutie)$/i)
+  const quantity = quantityMatch ? Number(quantityMatch[1].replace(',', '.')) : null
+  const unit = quantityMatch ? normalizeUnit(quantityMatch[2]) : ''
+  const product = (quantityMatch ? beforePrice.slice(0, quantityMatch.index) : beforePrice).trim() || line.replace(priceMatch[0], '').trim()
+  const unitInfo = quantity && unit ? offerUnitPrice(price, quantity, unit) : null
+  const appPrice = /app|card|karte|plus/i.test(line)
+  const confidence = product && price ? (quantity ? 0.86 : 0.72) : 0.45
+  return {
+    store_name: meta.store_name || '',
+    product_name: product,
+    brand: '',
+    category: inferOfferCategory(product),
+    price,
+    old_price: null,
+    discount_percent: null,
+    quantity,
+    unit,
+    unit_price: unitInfo?.price ?? null,
+    valid_from: meta.valid_from || null,
+    valid_until: meta.valid_until || null,
+    source: meta.source,
+    source_file_name: meta.source_file_name,
+    source_page: meta.source_page,
+    app_price: appPrice,
+    confidence,
+    status: confidence >= 0.75 ? 'ok' : 'needs_review',
+    notes: confidence >= 0.75 ? '' : 'Verifica manual',
+  }
+}
+
+function normalizeOfferPayload(item) {
+  return {
+    store_name: item.store_name || 'Unbekannt',
+    product_name: item.product_name,
+    brand: item.brand || null,
+    category: item.category || null,
+    price: toNumber(item.price),
+    old_price: item.old_price ? toNumber(item.old_price) : null,
+    discount_percent: item.discount_percent ? toNumber(item.discount_percent) : null,
+    quantity: item.quantity ? toNumber(item.quantity) : null,
+    unit: item.unit || null,
+    unit_price: item.unit_price ? toNumber(item.unit_price) : null,
+    valid_from: item.valid_from || null,
+    valid_until: item.valid_until || null,
+    source: item.source || 'manual_text',
+    source_file_name: item.source_file_name || null,
+    source_page: item.source_page ? Number(item.source_page) : null,
+    app_price: Boolean(item.app_price),
+    confidence: toNumber(item.confidence) || 0.7,
+    status: item.status || 'confirmed',
+    notes: item.notes || null,
+  }
+}
+
+function detectStore(text = '') {
+  const lower = String(text).toLowerCase()
+  return storeNames.find((store) => lower.includes(store.toLowerCase())) || ''
+}
+
+function detectValidity(text = '') {
+  const match = String(text).match(/(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\s*[-–]\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?/)
+  if (!match) return {}
+  const year = new Date().getFullYear()
+  const valid_from = `${year}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`
+  const valid_until = `${year}-${String(match[5]).padStart(2, '0')}-${String(match[4]).padStart(2, '0')}`
+  return { valid_from, valid_until }
+}
+
+function normalizeUnit(unit = '') {
+  const clean = String(unit).toLowerCase()
+  if (['l', 'liter'].includes(clean)) return 'L'
+  if (clean === 'ml') return 'ml'
+  if (clean === 'kg') return 'kg'
+  if (clean === 'g') return 'g'
+  if (/stk|stück/.test(clean)) return 'buc'
+  if (/rollen/.test(clean)) return 'role'
+  return unit
+}
+
+function normalizedUnitLabel(unit = '') {
+  if (unit === 'g') return 'kg'
+  if (unit === 'ml') return 'L'
+  return unit || 'unit'
+}
+
+function offerUnitPrice(price, quantity, unit) {
+  if (!price || !quantity || !unit) return null
+  if (unit === 'g') return { price: price / (quantity / 1000), unit: 'kg' }
+  if (unit === 'ml') return { price: price / (quantity / 1000), unit: 'L' }
+  return { price: price / quantity, unit }
+}
+
+function inferOfferCategory(product = '') {
+  const text = product.toLowerCase()
+  if (/milch|lapte|kaffee|cafea|butter|unt|brot|paine|pâine|ou|eier|carne|fleisch|fruct|obst|legume|gemüse/.test(text)) return 'mâncare'
+  if (/detergent|wasch|hartie|hârtie|papier|dm|rossmann/.test(text)) return 'casă / reparații'
+  return 'altele'
+}
+
+function productMatch(needle = '', haystack = '') {
+  const a = normalizeProduct(needle)
+  const b = normalizeProduct(haystack)
+  if (!a || !b) return { match: false, approx: false }
+  if (a === b || b.includes(a) || a.includes(b)) return { match: true, approx: false }
+  const tokensA = a.split(' ').filter((token) => token.length > 2)
+  const tokensB = b.split(' ')
+  const common = tokensA.filter((token) => tokensB.includes(token)).length
+  return { match: common > 0, approx: common > 0 }
+}
+
+function normalizeProduct(value = '') {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function buildShoppingHistory(journalEntries = []) {
+  const rows = journalEntries
+    .filter((item) => item.product_name && toNumber(item.amount) > 0)
+    .map((item) => {
+      const unitInfo = normalizedUnitPrice(item)
+      return {
+        product: item.product_name,
+        value: unitInfo?.price ?? toNumber(item.amount),
+        unit: unitInfo?.unit,
+        store: item.store,
+        date: item.entry_date,
+      }
+    })
+  const byProduct = new Map()
+  rows.forEach((row) => {
+    const key = normalizeProduct(row.product)
+    if (!byProduct.has(key)) byProduct.set(key, [])
+    byProduct.get(key).push(row)
+  })
+  return [...byProduct.entries()].map(([key, items]) => {
+    const sorted = [...items].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    return {
+      key,
+      product: sorted[sorted.length - 1].product,
+      unit: sorted[sorted.length - 1].unit,
+      last: sorted[sorted.length - 1],
+      min: sorted.reduce((min, item) => item.value < min.value ? item : min, sorted[0]),
+      max: sorted.reduce((max, item) => item.value > max.value ? item : max, sorted[0]),
+    }
+  })
+}
+
+function bestShoppingMatches(shoppingList = [], offers = [], journalEntries = []) {
+  const history = buildShoppingHistory(journalEntries)
+  return shoppingList.map((item) => {
+    const matches = offers
+      .map((offer) => ({ offer, ...productMatch(item.product_name, offer.product_name) }))
+      .filter((row) => row.match)
+      .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
+    const best = matches[0]?.offer || null
+    const hist = history.find((row) => productMatch(item.product_name, row.product).match)
+    const bestValue = best ? offerCompareValue(best) : 0
+    const lastValue = hist?.last?.value || 0
+    const minValue = hist?.min?.value || 0
+    return {
+      product_name: item.product_name,
+      best,
+      history: hist,
+      saving: best && lastValue ? lastValue - bestValue : 0,
+      isBestObserved: Boolean(best && minValue && bestValue < minValue),
+      approx: Boolean(matches[0]?.approx),
+    }
+  })
+}
+
+function offerCompareValue(offer) {
+  return toNumber(offer.unit_price) || toNumber(offer.price)
+}
+
+function buildStoreRecommendations(bestPrices = [], stores = []) {
+  const byStore = new Map()
+  bestPrices.filter((item) => item.best).forEach((item) => {
+    const store = item.best.store_name
+    if (!byStore.has(store)) byStore.set(store, { store, matches: 0, bestCount: 0, saving: 0, total: 0 })
+    const row = byStore.get(store)
+    row.matches += 1
+    row.bestCount += 1
+    row.saving += Math.max(0, item.saving)
+    row.total += toNumber(item.best.price)
+  })
+  return [...byStore.values()].map((row) => {
+    const storeSettings = stores.find((store) => store.name === row.store)
+    const travelCost = storeSettings?.distance_km && storeSettings?.fuel_cost_estimate
+      ? toNumber(storeSettings.distance_km) * 2 * toNumber(storeSettings.fuel_cost_estimate)
+      : null
+    const netSaving = travelCost === null ? null : row.saving - travelCost
+    const recommendation = netSaving !== null
+      ? (netSaving >= 2 ? 'worthIt' : storeSettings?.on_regular_route ? 'routeOnly' : 'noExtraTrip')
+      : row.saving >= 2 ? 'worthIt' : 'routeOnly'
+    return { ...row, netSaving, recommendation }
+  }).sort((a, b) => b.saving - a.saving)
 }
 
 export default App
