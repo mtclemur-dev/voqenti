@@ -1136,6 +1136,7 @@ function ShoppingListTab({ currency, items, language, t, onDelete, onSave }) {
 function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange }) {
   const [text, setText] = useState('')
   const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
+  const [pdfFiles, setPdfFiles] = useState([])
   return (
     <section className="section">
       <h2>{t('importLeaflets')}</h2>
@@ -1143,15 +1144,44 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
       <div className="form-grid">
         <label>{t('pdfFiles')}<input type="file" accept="application/pdf" multiple onChange={(event) => {
           const files = [...event.target.files]
-          const sourceRows = files.map((file) => ({ store_name: detectStore(file.name) || '', source_url: '', active: false, import_mode: 'manual_pdf', status: t('pdfUploadedNeedsText'), notes: file.name }))
-          sourceRows.forEach(onSaveSource)
+          setPdfFiles(files.map((file) => ({
+            file_name: file.name,
+            size: file.size,
+            store_name: detectStore(file.name) || meta.store_name || '',
+          })))
         }} /></label>
         <label>{t('store')}<select value={meta.store_name} onChange={(event) => setMeta({ ...meta, store_name: event.target.value })}><option value="">{t('detectStore')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
         <Input label={t('validFrom')} type="date" value={meta.valid_from} onChange={(value) => setMeta({ ...meta, valid_from: value })} />
         <Input label={t('validUntil')} type="date" value={meta.valid_until} onChange={(value) => setMeta({ ...meta, valid_until: value })} />
       </div>
+      {pdfFiles.length > 0 && (
+        <div className="list">
+          {pdfFiles.map((file) => (
+            <article className="list-item" key={file.file_name}>
+              <div>
+                <strong>{file.file_name}</strong>
+                <span>{t('store')}: {file.store_name || t('detectStore')} - {(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                <span>{t('pdfUploadedNeedsText')}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
       <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
       <div className="form-actions">
+        {pdfFiles.length > 0 && (
+          <button type="button" className="secondary" onClick={() => {
+            pdfFiles.forEach((file) => onSaveSource({
+              store_name: file.store_name || meta.store_name || 'Necunoscut',
+              source_url: '',
+              active: false,
+              import_mode: 'manual_pdf',
+              status: t('pdfSavedAsSource'),
+              notes: `${file.file_name}${meta.valid_from || meta.valid_until ? ` - ${meta.valid_from || '?'} / ${meta.valid_until || '?'}` : ''}`,
+            }))
+            setPdfFiles([])
+          }}>{t('savePdfSources')}</button>
+        )}
         <button type="button" onClick={() => {
           const rows = parseOfferText(text, meta)
           onPreviewChange([...preview, ...rows])
