@@ -740,19 +740,29 @@ function App() {
     loadLearningItem()
     verificaSesiuneActiva()
 
-    const channel = supabase
-      .channel(`pontaj-listener-${user?.id ?? 'anon'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pontaj' }, (payload) => {
-        // only react to changes for the current user
-        const record = payload?.new ?? payload?.old
-        if (user && record && record.user_id !== user.id) return
+    if (!user) return
+
+    let refreshTimer = null
+    const scheduleRefresh = () => {
+      window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => {
         incarcaIstoric()
         incarcaDashboardSummary()
         verificaSesiuneActiva()
-      })
+      }, 500)
+    }
+
+    const channel = supabase
+      .channel(`pontaj-listener-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pontaj', filter: `user_id=eq.${user.id}` },
+        scheduleRefresh,
+      )
       .subscribe()
 
     return () => {
+      window.clearTimeout(refreshTimer)
       try {
         supabase.removeChannel(channel)
       } catch {
@@ -786,28 +796,41 @@ function App() {
   useEffect(() => {
     if (!user) return
 
+    let dashboardTimer = null
+    let inventoryTimer = null
+    const scheduleDashboardSummary = () => {
+      window.clearTimeout(dashboardTimer)
+      dashboardTimer = window.setTimeout(incarcaDashboardSummary, 500)
+    }
+    const scheduleInventory = () => {
+      window.clearTimeout(inventoryTimer)
+      inventoryTimer = window.setTimeout(incarcaInventory, 500)
+    }
+
     const channel = supabase
       .channel(`dashboard-summary-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tagesbericht' }, (payload) => {
         const report = payload?.new
         if (report) notifyReviewNeeded(report)
-        incarcaDashboardSummary()
+        scheduleDashboardSummary()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'email_outbox' }, () => {
-        incarcaDashboardSummary()
+        scheduleDashboardSummary()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'material_requests' }, () => {
-        incarcaDashboardSummary()
+        scheduleDashboardSummary()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_checkouts' }, () => {
-        incarcaInventory()
+        scheduleInventory()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, () => {
-        incarcaInventory()
+        scheduleInventory()
       })
       .subscribe()
 
     return () => {
+      window.clearTimeout(dashboardTimer)
+      window.clearTimeout(inventoryTimer)
       try {
         supabase.removeChannel(channel)
       } catch {

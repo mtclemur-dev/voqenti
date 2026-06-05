@@ -11,6 +11,10 @@ import { categories, debtCategories, dictionary, languages, makeTranslator } fro
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const defaultSettings = {
   monthly_extra_debt_payment: 0,
@@ -59,6 +63,10 @@ function App() {
   const [debtSort, setDebtSort] = useState('priority')
   const [shoppingTab, setShoppingTab] = useState('list')
   const [offerPreview, setOfferPreview] = useState([])
+  const [priceNotifications, setPriceNotifications] = useState([])
+  const [priceHistory, setPriceHistory] = useState([])
+  const [shoppingRoutes, setShoppingRoutes] = useState([])
+  const [recommendedDeals, setRecommendedDeals] = useState({})
 
   const t = useMemo(() => makeTranslator(language), [language])
 
@@ -88,7 +96,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, notificationsRes, priceHistoryRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -101,9 +109,11 @@ function App() {
       supabase.from('kb_daily_closures').select('*').eq('user_id', user.id).order('closure_date', { ascending: false }),
       supabase.from('kb_work_absences').select('*').eq('user_id', user.id).order('work_date', { ascending: false }).order('start_time', { ascending: false }),
       supabase.from('kb_shopping_list').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).order('valid_until', { ascending: false }),
+      supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).eq('status', 'confirmed').order('valid_until', { ascending: false }),
       supabase.from('kb_stores').select('*').eq('user_id', user.id).order('name', { ascending: true }),
       supabase.from('kb_offer_sources').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('kb_price_notifications').select('*').eq('user_id', user.id).eq('is_read', false).order('created_at', { ascending: false }),
+      supabase.from('kb_price_history').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
     ])
 
     if (!profileRes.data) {
@@ -149,6 +159,8 @@ function App() {
     setWeeklyOffers(offersRes.data || [])
     setStores(storesRes.data || [])
     setOfferSources(sourcesRes.data || [])
+    setPriceNotifications(notificationsRes.data || [])
+    setPriceHistory(priceHistoryRes.data || [])
     setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error)
     setLoading(false)
   }, [language, user])
@@ -156,6 +168,105 @@ function App() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (user && shoppingList.length && weeklyOffers.length) {
+      const timer = setTimeout(() => {
+        detectPriceReductions()
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [weeklyOffers, shoppingList, user, detectPriceReductions])
+
+  // SMART SHOPPING FUNCTIONS
+  const getProductRecommendations = useCallback((shoppingItem) => {
+    if (!shoppingItem) return []
+    const matches = weeklyOffers.filter(offer => productMatch(shoppingItem.product_name, offer.product_name))
+    return matches.sort((a, b) => (a.unit_price || a.price) - (b.unit_price || b.price))
+  }, [weeklyOffers])
+
+  const calculateOptimalRoute = useCallback((itemsToShop) => {
+    if (!itemsToShop.length || !stores.length) return { stores: [], totalDistance: 0, totalCost: 0, savings: 0 }
+    
+    const storeScores = {}
+    storeNames.forEach(store => { storeScores[store] = { items: 0, cost: 0, distance: 0 } })
+    
+    itemsToShop.forEach(item => {
+      const recs = getProductRecommendations(item)
+      const cheapest = recs[0]
+      if (cheapest) {
+        if (!storeScores[cheapest.store_name]) storeScores[cheapest.store_name] = { items: 0, cost: 0, distance: 0 }
+        storeScores[cheapest.store_name].items += 1
+        storeScores[cheapest.store_name].cost += (cheapest.unit_price || cheapest.price) * (item.desired_quantity || 1)
+        const storeInfo = stores.find(s => s.name === cheapest.store_name)
+        storeScores[cheapest.store_name].distance += storeInfo?.distance_km || 0
+      }
+    })
+    
+    const sortedStores = Object.entries(storeScores)
+      .filter(([_, score]) => score.items > 0)
+      .sort((a, b) => b[1].items - a[1].items)
+      .map(([store]) => store)
+    
+    const totalDistance = sortedStores.reduce((sum, store) => sum + (storeScores[store].distance || 0), 0)
+    const totalCost = sortedStores.reduce((sum, store) => sum + storeScores[store].cost, 0)
+    
+    return {
+      stores: sortedStores,
+      totalDistance,
+      totalCost,
+      savings: Math.round((totalCost / itemsToShop.length) * sortedStores.length * 0.1),
+    }
+  }, [stores, getProductRecommendations])
+
+  const detectPriceReductions = useCallback(async () => {
+    const shoppingItems = shoppingList.filter(item => !item.purchased && (item.priority === 'important' || item.priority === 'offer_only'))
+    
+    for (const item of shoppingItems) {
+      const recs = getProductRecommendations(item)
+      if (recs.length > 0) {
+        const cheapest = recs[0]
+        const lastPrice = priceHistory.find(h => h.product_name === item.product_name && h.store_name === cheapest.store_name)
+        const reduction = lastPrice ? ((lastPrice.price - cheapest.price) / lastPrice.price * 100) : 0
+        
+        if (reduction > 15 && !priceNotifications.find(n => n.shopping_item_id === item.id && n.store_name === cheapest.store_name)) {
+          await supabase.from('kb_price_notifications').insert({
+            user_id: user.id,
+            shopping_item_id: item.id,
+            product_name: item.product_name,
+            store_name: cheapest.store_name,
+            price_reduction_percent: Math.round(reduction),
+            old_price: lastPrice?.price || null,
+            new_price: cheapest.price,
+            valid_until: cheapest.valid_until,
+          })
+        }
+      }
+    }
+    loadData()
+  }, [shoppingList, getProductRecommendations, priceNotifications, user, priceHistory])
+
+  const getPriceAnalytics = useCallback(() => {
+    if (!priceHistory.length) return {}
+    
+    const analytics = {}
+    priceHistory.forEach(record => {
+      const key = `${record.product_name}|${record.store_name}`
+      if (!analytics[key]) analytics[key] = []
+      analytics[key].push(record)
+    })
+    
+    const summary = {}
+    Object.entries(analytics).forEach(([key, records]) => {
+      const sorted = records.sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
+      const current = sorted[0]
+      const prev = sorted[1]
+      const trend = prev ? ((current.price - prev.price) / prev.price * 100) : 0
+      const avg = records.reduce((sum, r) => sum + r.price, 0) / records.length
+      summary[key] = { current: current.price, avg, trend: Math.round(trend), records: records.length }
+    })
+    return summary
+  }, [priceHistory])
 
   const summary = useMemo(
     () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots, journalEntries }),
@@ -336,7 +447,12 @@ function App() {
 
   const saveShoppingItem = async (payload) => {
     const prepared = preparePayload(payload)
-    const { error } = await supabase.from('kb_shopping_list').insert({ ...prepared, user_id: user.id })
+    const insertData = {
+      ...prepared,
+      priority: prepared.priority || 'normal',
+      user_id: user.id,
+    }
+    const { error } = await supabase.from('kb_shopping_list').insert(insertData)
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -1084,23 +1200,33 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
       </section>
 
-      {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
+      {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
       {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
       {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
-      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} currency={currency} locale={locale} t={t} />}
+      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
       {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
-      {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} t={t} />}
+      {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
       {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
     </>
   )
 }
 
-function ShoppingListTab({ currency, items, language, t, onDelete, onSave }) {
+function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, user, onDelete, onSave }) {
   const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
+  const route = getRoute && items.length ? getRoute(items.filter(i => !i.purchased)) : null
+  
   return (
     <>
       <section className="section">
         <h2>{t('myShoppingList')}</h2>
+        
+        {route && route.stores.length > 0 && (
+          <div className="card info">
+            <strong>🛣️ {t('recommendedRoute')}:</strong> {route.stores.join(' → ')} | 
+            Distanță: {route.totalDistance.toFixed(1)}km | Estimare economie: ~{route.savings}€
+          </div>
+        )}
+        
         <form className="form-grid" onSubmit={(event) => {
           event.preventDefault()
           onSave(form)
@@ -1116,15 +1242,36 @@ function ShoppingListTab({ currency, items, language, t, onDelete, onSave }) {
           <div className="form-actions"><button type="submit">{t('add')}</button></div>
         </form>
       </section>
+      
+      {notifications && notifications.length > 0 && (
+        <div className="card success">
+          <strong>🔔 {notifications.length} notificări cu prețuri reduse!</strong>
+          <ul>
+            {notifications.slice(0, 5).map(n => (
+              <li key={n.id}>{n.product_name} la {n.store_name}: <strong>{n.new_price}€</strong> (-{n.price_reduction_percent}%)</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
       <EntityList
         title={t('myShoppingList')}
-        items={items.map((item) => ({ ...item, name: item.product_name, amount: 0 }))}
+        items={items.map((item) => {
+          const recs = getRecommendations ? getRecommendations(item) : []
+          const cheapest = recs[0]
+          return {
+            ...item,
+            name: item.product_name,
+            amount: 0,
+            recommendation: cheapest ? `${cheapest.store_name}: ${cheapest.price}€` : null,
+          }
+        })}
         currency={currency}
         language={language}
         emptyText={t('noData')}
         editText={t('edit')}
         deleteText={t('delete')}
-        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority)}${item.preferred_store ? ` - ${item.preferred_store}` : ''}`}
+        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority || 'normal')}${item.preferred_store ? ` - ${item.preferred_store}` : ''} ${item.recommendation ? `| 💰 ${item.recommendation}` : ''}`}
         onEdit={() => {}}
         onDelete={onDelete}
         renderActions={(item) => item.purchased ? <span className="badge">{t('paid')}</span> : null}
@@ -1137,6 +1284,86 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
   const [text, setText] = useState('')
   const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
   const [pdfFiles, setPdfFiles] = useState([])
+  const [extracting, setExtracting] = useState(false)
+  const [localNotice, setLocalNotice] = useState('')
+  const [extractedText, setExtractedText] = useState('')
+
+  const updatePdfFile = (fileName, patch) => setPdfFiles((current) => current.map((item) => item.file_name === fileName ? { ...item, ...patch } : item))
+
+  const handleExtractPreview = async () => {
+    setLocalNotice('')
+    setExtractedText('')
+    let rows = []
+    if (pdfFiles.length) {
+      setExtracting(true)
+      for (const file of pdfFiles) {
+        updatePdfFile(file.file_name, { status: 'extracting', warning: '', pageCount: 0, rowCount: 0 })
+        const result = await extractTextFromPdf(file.file)
+        const detectedStoreName = meta.store_name || file.store_name || detectStore(result.text)
+        const fileMeta = {
+          ...meta,
+          store_name: detectedStoreName,
+          source: 'pdf_upload',
+          source_file_name: file.file_name,
+        }
+
+        if (!result.success) {
+          updatePdfFile(file.file_name, {
+            status: 'insufficientText',
+            warning: result.warning ? t(result.warning) : t('pdfTextInsufficient'),
+            pageCount: result.pageCount,
+            rowCount: 0,
+          })
+          if (result.text) setExtractedText(result.text.slice(0, 1000))
+          continue
+        }
+
+        let fileRows = result.pages.flatMap((page) =>
+          parseOfferText(page.text, { ...fileMeta, source_page: page.pageNumber }),
+        )
+        if (!fileRows.length) {
+          fileRows = parseOfferText(result.text, { ...fileMeta, source_page: 1 })
+        }
+        const uniqueRows = mergePreviewRows([], fileRows)
+        if (!uniqueRows.length) {
+          updatePdfFile(file.file_name, {
+            status: 'insufficientText',
+            warning: t('noPreviewRows'),
+            pageCount: result.pageCount,
+            rowCount: 0,
+          })
+          setExtractedText(result.text.slice(0, 1000))
+          continue
+        }
+
+        updatePdfFile(file.file_name, {
+          status: 'previewGenerated',
+          warning: '',
+          pageCount: result.pageCount,
+          rowCount: uniqueRows.length,
+        })
+        rows = rows.concat(uniqueRows)
+      }
+      setExtracting(false)
+    }
+
+    if (text.trim()) {
+      rows = rows.concat(parseOfferText(text, { ...meta, source: 'manual_text', source_file_name: '', source_page: 1 }))
+    }
+
+    if (!rows.length) {
+      if (pdfFiles.length) {
+        setLocalNotice(t('pdfExtractionNotSupported'))
+      } else {
+        setLocalNotice(t('noPreviewRows'))
+      }
+      return
+    }
+
+    onPreviewChange(mergePreviewRows(preview, rows))
+    onTabChange('offers')
+  }
+
   return (
     <section className="section">
       <h2>{t('importLeaflets')}</h2>
@@ -1145,9 +1372,14 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
         <label>{t('pdfFiles')}<input type="file" accept="application/pdf" multiple onChange={(event) => {
           const files = [...event.target.files]
           setPdfFiles(files.map((file) => ({
+            file,
             file_name: file.name,
             size: file.size,
             store_name: detectStore(file.name) || meta.store_name || '',
+            status: 'uploaded',
+            pageCount: 0,
+            rowCount: 0,
+            warning: '',
           })))
         }} /></label>
         <label>{t('store')}<select value={meta.store_name} onChange={(event) => setMeta({ ...meta, store_name: event.target.value })}><option value="">{t('detectStore')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
@@ -1161,11 +1393,21 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
               <div>
                 <strong>{file.file_name}</strong>
                 <span>{t('store')}: {file.store_name || t('detectStore')} - {(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                <span>{t('pdfUploadedNeedsText')}</span>
+                <span>{t(`pdfStatus_${file.status}`)}</span>
+                {file.pageCount > 0 && <span>{file.pageCount} {t('pages')}</span>}
+                {file.rowCount > 0 && <span>{file.rowCount} {t('previewRows')}</span>}
+                {file.warning && <span className="notice danger">{file.warning}</span>}
               </div>
             </article>
           ))}
         </div>
+      )}
+      {localNotice && <div className="notice danger">{localNotice}</div>}
+      {extractedText && (
+        <details className="notice">
+          <summary>{t('extractedText')}</summary>
+          <pre>{extractedText}</pre>
+        </details>
       )}
       <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
       <div className="form-actions">
@@ -1182,11 +1424,7 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
             setPdfFiles([])
           }}>{t('savePdfSources')}</button>
         )}
-        <button type="button" onClick={() => {
-          const rows = parseOfferText(text, meta)
-          onPreviewChange([...preview, ...rows])
-          onTabChange('offers')
-        }}>{t('extractPreview')}</button>
+        <button type="button" onClick={handleExtractPreview} disabled={extracting}>{extracting ? t('pdfExtracting') : t('extractPreview')}</button>
       </div>
     </section>
   )
@@ -1229,6 +1467,7 @@ function OfferRows({ rows, currency, editable = false, locale, t, onChange }) {
           <div>
             <strong>{row.store_name || t('detectStore')} · {row.product_name}</strong>
             <span>{row.brand || '-'} · {row.quantity || ''}{row.unit || ''} · {formatMoney(row.price, currency, locale)} · {row.unit_price ? `${formatMoney(row.unit_price, currency, locale)}/${normalizedUnitLabel(row.unit)}` : '-'}</span>
+            <span>{row.source_file_name ? `${row.source_file_name} · ` : ''}{row.source_page ? `${t('page')} ${row.source_page}` : ''}</span>
             <div className="badge-row">
               <span className={`badge ${row.status === 'needs_review' ? 'danger' : ''}`}>{row.status === 'needs_review' ? t('needsReview') : t('ok')}</span>
               {row.app_price && <span className="badge">{t('appPrice')}</span>}
@@ -1246,34 +1485,83 @@ function OfferRows({ rows, currency, editable = false, locale, t, onChange }) {
   )
 }
 
-function BestPricesTab({ bestPrices, currency, locale, t }) {
+function BestPricesTab({ bestPrices, offers, currency, locale, t }) {
+  const [query, setQuery] = useState('')
+
+  const searchResults = query.trim()
+    ? offers
+      .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
+      .filter((item) => item.match)
+      .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
+    : []
+
+  const bestMatch = searchResults[0]?.offer || null
+
   return (
     <section className="section">
       <h2>{t('bestPrices')}</h2>
-      <div className="list">
-        {bestPrices.length === 0 ? <div className="empty">{t('noData')}</div> : bestPrices.map((item) => (
-          <article className="list-item" key={item.product_name}>
-            <div>
-              <strong>{item.product_name}</strong>
-              {item.best ? (
-                <>
-                  <span>{item.best.store_name}: {formatMoney(item.best.price, currency, locale)}{item.best.unit_price ? ` · ${formatMoney(item.best.unit_price, currency, locale)}/${normalizedUnitLabel(item.best.unit)}` : ''}</span>
-                  <span>{t('lastPaid')}: {item.history?.last ? `${item.history.last.store || '-'} · ${formatMoney(item.history.last.value, currency, locale)}` : t('noHistory')}</span>
-                  <div className="badge-row">
-                    <span className="badge">{item.saving > 0 ? t('goodOffer') : t('notGoodOffer')}</span>
-                    {item.isBestObserved && <span className="badge">{t('bestObservedPrice')}</span>}
-                    {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
-                  </div>
-                </>
-              ) : <span>{t('noOfferFound')}</span>}
-            </div>
-            <div className="list-value">
-              <b>{item.best ? formatMoney(Math.max(0, item.saving), currency, locale) : '-'}</b>
-              <span>{item.best ? t('estimatedSaving') : ''}</span>
-            </div>
-          </article>
-        ))}
+      <div className="form-grid">
+        <label>{t('searchOffersLabel')}<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchOffersPlaceholder')} /></label>
       </div>
+
+      {query.trim() ? (
+        <>
+          {searchResults.length === 0 ? (
+            <div className="notice">{t('noSearchResults')}</div>
+          ) : (
+            <>
+              <article className="list-item highlighted">
+                <div>
+                  <strong>{t('bestMatch')}</strong>
+                  <span>{bestMatch.store_name}: {formatMoney(bestMatch.price, currency, locale)}{bestMatch.unit_price ? ` · ${formatMoney(bestMatch.unit_price, currency, locale)}/${normalizedUnitLabel(bestMatch.unit)}` : ''}</span>
+                  <span>{bestMatch.valid_until ? `${t('validUntil')}: ${bestMatch.valid_until}` : ''}</span>
+                  {bestMatch.app_price && <span className="badge">{t('appPrice')}</span>}
+                </div>
+              </article>
+              <div className="list">
+                {searchResults.slice(1).map((item, index) => (
+                  <article className="list-item" key={`${item.offer.id || index}-${item.offer.product_name}-${item.offer.store_name}`}>
+                    <div>
+                      <strong>{item.offer.store_name}: {item.offer.product_name}</strong>
+                      <span>{formatMoney(item.offer.price, currency, locale)}{item.offer.unit_price ? ` · ${formatMoney(item.offer.unit_price, currency, locale)}/${normalizedUnitLabel(item.offer.unit)}` : ''}</span>
+                      <span>{item.offer.valid_until ? `${t('validUntil')}: ${item.offer.valid_until}` : ''}</span>
+                      <div className="badge-row">
+                        {item.offer.app_price && <span className="badge">{t('appPrice')}</span>}
+                        {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div className="list">
+          {bestPrices.length === 0 ? <div className="empty">{t('noData')}</div> : bestPrices.map((item) => (
+            <article className="list-item" key={item.product_name}>
+              <div>
+                <strong>{item.product_name}</strong>
+                {item.best ? (
+                  <>
+                    <span>{item.best.store_name}: {formatMoney(item.best.price, currency, locale)}{item.best.unit_price ? ` · ${formatMoney(item.best.unit_price, currency, locale)}/${normalizedUnitLabel(item.best.unit)}` : ''}</span>
+                    <span>{t('lastPaid')}: {item.history?.last ? `${item.history.last.store || '-'} · ${formatMoney(item.history.last.value, currency, locale)}` : t('noHistory')}</span>
+                    <div className="badge-row">
+                      <span className="badge">{item.saving > 0 ? t('goodOffer') : t('notGoodOffer')}</span>
+                      {item.isBestObserved && <span className="badge">{t('bestObservedPrice')}</span>}
+                      {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
+                    </div>
+                  </>
+                ) : <span>{t('noOfferFound')}</span>}
+              </div>
+              <div className="list-value">
+                <b>{item.best ? formatMoney(Math.max(0, item.saving), currency, locale) : '-'}</b>
+                <span>{item.best ? t('estimatedSaving') : ''}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -1320,20 +1608,52 @@ function StoreRecommendationsTab({ currency, locale, recommendations, stores, t,
   )
 }
 
-function ShoppingHistoryTab({ currency, history, locale, t }) {
+function ShoppingHistoryTab({ currency, history, locale, analytics, t }) {
+  const analyticsArray = Object.entries(analytics || {}).map(([key, value]) => {
+    const [product, store] = key.split('|')
+    return { product, store, ...value }
+  })
+
   return (
     <section className="section">
       <h2>{t('priceHistory')}</h2>
-      <div className="list">
-        {history.length === 0 ? <div className="empty">{t('noData')}</div> : history.map((item) => (
-          <article className="list-item" key={item.product}>
-            <div>
-              <strong>{item.product}</strong>
-              <span>{t('lastObservedPrice')}: {formatMoney(item.last.value, currency, locale)} · {t('lowestObservedPrice')}: {formatMoney(item.min.value, currency, locale)} · {t('highestObservedPrice')}: {formatMoney(item.max.value, currency, locale)}</span>
-              <span>{item.last.store || t('noStore')} · {item.unit ? `${t('unitComparison')}: ${item.unit}` : t('totalPriceComparison')}</span>
+      
+      {analyticsArray.length > 0 && (
+        <>
+          <div className="section">
+            <h3>📊 {t('priceAnalytics')}</h3>
+            <div className="list">
+              {analyticsArray.map((item, idx) => (
+                <article className="list-item" key={`${item.product}-${item.store}-${idx}`}>
+                  <div>
+                    <strong>{item.product} @ {item.store}</strong>
+                    <span>
+                      {t('current')}: {formatMoney(item.current, currency, locale)} | 
+                      {t('average')}: {formatMoney(item.avg, currency, locale)} |
+                      {t('trend')}: <span style={{color: item.trend > 0 ? '#d9534f' : '#5cb85c'}}>{item.trend > 0 ? '📈' : '📉'} {item.trend}%</span>
+                    </span>
+                    <span>{t('observations')}: {item.records}</span>
+                  </div>
+                </article>
+              ))}
             </div>
-          </article>
-        ))}
+          </div>
+        </>
+      )}
+      
+      <div className="section">
+        <h3>📝 {t('priceHistory')}</h3>
+        <div className="list">
+          {history.length === 0 ? <div className="empty">{t('noData')}</div> : history.map((item) => (
+            <article className="list-item" key={item.product}>
+              <div>
+                <strong>{item.product}</strong>
+                <span>{t('lastObservedPrice')}: {formatMoney(item.last.value, currency, locale)} · {t('lowestObservedPrice')}: {formatMoney(item.min.value, currency, locale)} · {t('highestObservedPrice')}: {formatMoney(item.max.value, currency, locale)}</span>
+                <span>{item.last.store || t('noStore')} · {item.unit ? `${t('unitComparison')}: ${item.unit}` : t('totalPriceComparison')}</span>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -1528,9 +1848,18 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
 }
 
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'priority', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price', 'desired_quantity', 'price', 'old_price', 'discount_percent', 'distance_km', 'fuel_cost_estimate']
+  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price', 'desired_quantity', 'price', 'old_price', 'discount_percent', 'distance_km', 'fuel_cost_estimate']
   const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date', 'valid_from', 'valid_until']
   const result = { ...payload }
+
+  if ('priority' in result) {
+    const validPriorities = ['normal', 'important', 'offer_only']
+    if (!result.priority || result.priority === '' || result.priority === null || !validPriorities.includes(result.priority)) {
+      result.priority = 'normal'
+    }
+  } else if (payload.product_name !== undefined) {
+    result.priority = 'normal'
+  }
 
   numberFields.forEach((field) => {
     if (field in result) result[field] = result[field] === '' ? 0 : Number(result[field])
@@ -1762,39 +2091,158 @@ function csvCell(value) {
   return `"${text.replaceAll('"', '""')}"`
 }
 
+const offerSearchSynonyms = {
+  lapte: ['milch', 'h-milch', 'frische milch', 'h milch'],
+  cafea: ['kaffee', 'kaffeebohnen', 'instantkaffee'],
+  unt: ['butter', 'weidebutter', 'weide butter'],
+  carne: ['fleisch', 'hackfleisch', 'hähnchen', 'hahnchen', 'pute', 'schwein'],
+  detergent: ['waschmittel', 'spülmittel', 'reiniger'],
+}
+
+function normalizeSearchTerm(value = '') {
+  return normalizeProduct(value)
+}
+
+function findProductSynonym(value = '') {
+  const normalized = normalizeSearchTerm(value)
+  return Object.entries(offerSearchSynonyms).find(([key, variants]) =>
+    normalizeSearchTerm(key).includes(normalized) || normalized.includes(normalizeSearchTerm(key)) ||
+    variants.some((term) => normalizeSearchTerm(term).includes(normalized) || normalized.includes(normalizeSearchTerm(term)))
+  )?.[0] || ''
+}
+
+function productMatch(needle = '', haystack = '') {
+  const a = findProductSynonym(needle) || normalizeSearchTerm(needle)
+  const b = findProductSynonym(haystack) || normalizeSearchTerm(haystack)
+  if (!a || !b) return { match: false, approx: false }
+  if (a === b || b.includes(a) || a.includes(b)) return { match: true, approx: false }
+  const tokensA = a.split(' ').filter((token) => token.length > 2)
+  const tokensB = b.split(' ')
+  const common = tokensA.filter((token) => tokensB.includes(token)).length
+  return { match: common > 0, approx: common > 0 }
+}
+
 function parseOfferText(text, meta = {}) {
   const detectedStore = meta.store_name || detectStore(text)
   const validity = detectValidity(text)
-  return String(text)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+  return splitOfferLines(normalizePdfText(text))
     .map((line, index) => parseOfferLine(line, {
       store_name: detectedStore,
       valid_from: meta.valid_from || validity.valid_from,
       valid_until: meta.valid_until || validity.valid_until,
-      source: 'manual_text',
-      source_page: 1,
-      source_file_name: '',
+      source: meta.source || 'manual_text',
+      source_page: meta.source_page || 1,
+      source_file_name: meta.source_file_name || '',
       index,
     }))
     .filter(Boolean)
 }
 
+function splitOfferLines(text = '') {
+  const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  return lines.reduce((result, line) => {
+    if (!result.length) return [line]
+    const previous = result[result.length - 1]
+    if (/^[\d.,\s€eEur\-–]+$/i.test(line) || /^[\d.,]+$/i.test(line)) {
+      result[result.length - 1] = `${previous} ${line}`
+    } else if (/^(kg|g|l|liter|ml|buc|stk|stück|role|rollen|pachet|pack|sticlă|sticla|fl|cutie)/i.test(line)) {
+      result[result.length - 1] = `${previous} ${line}`
+    } else if (/\d$/.test(previous) && /^[\d.,]/.test(line)) {
+      result[result.length - 1] = `${previous} ${line}`
+    } else {
+      result.push(line)
+    }
+    return result
+  }, [])
+}
+
+async function extractTextFromPdf(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    const pages = []
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber)
+      const content = await page.getTextContent()
+      let lines = []
+      let lastY = null
+      content.items.forEach((item) => {
+        const text = String(item.str || '')
+        const y = item.transform?.[5] ? Math.round(item.transform[5]) : null
+        if (lastY === null || y === null || Math.abs(y - lastY) > 5) {
+          lines.push(text)
+          lastY = y
+        } else {
+          lines[lines.length - 1] += ` ${text}`
+        }
+      })
+      const pageText = normalizePdfText(lines.join('\n'))
+      pages.push({ pageNumber, text: pageText })
+    }
+
+    const text = pages.map((page) => page.text).join('\n\n')
+    const success = Boolean(text && text.length >= 500)
+    const warning = success ? undefined : 'pdfTextInsufficient'
+    return { success, pageCount: pdf.numPages, text, pages, warning }
+  } catch {
+    return {
+      success: false,
+      pageCount: 0,
+      text: '',
+      pages: [],
+      warning: 'pdfExtractionFailed',
+    }
+  }
+}
+
+function normalizePdfText(text = '') {
+  return String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/\n(?=\s*[0-9]+[.,]?\d*\s*(€|eur)?)/gi, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function offerPreviewKey(item) {
+  return `${normalizeProduct(item.store_name)}||${normalizeProduct(item.product_name)}||${toNumber(item.price)}||${item.valid_from || ''}||${item.valid_until || ''}`
+}
+
+function mergePreviewRows(existing = [], incoming = []) {
+  const seen = new Map()
+  ;[...existing, ...incoming].forEach((item) => {
+    const key = offerPreviewKey(item)
+    if (!seen.has(key)) seen.set(key, item)
+  })
+  return [...seen.values()]
+}
+
 function parseOfferLine(line, meta) {
   if (storeNames.some((store) => line.toLowerCase() === store.toLowerCase())) return null
-  if (/valid|gültig|valabil/i.test(line)) return null
-  const priceMatch = line.match(/(\d+)\s*[,. ]\s*(\d{2})\s*(€|eur)?/i)
+  if (/\b(valid|gültig|valabil|gültig vom|von|vom|bis|pana|până)\b/i.test(line)) return null
+  const priceMatch = line.match(/(\d+[,.]?\d*)\s*(€|eur)?$/i) || line.match(/(\d+)\s*[,. ]\s*(\d{2})\s*(€|eur)?/i)
   if (!priceMatch) return null
-  const price = Number(`${priceMatch[1]}.${priceMatch[2]}`)
+
+  const price = priceMatch[2]
+    ? Number(`${priceMatch[1].replace(',', '.')}.${priceMatch[2]}`)
+    : Number(String(priceMatch[1]).replace(',', '.'))
+
   const beforePrice = line.slice(0, priceMatch.index).trim()
   const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|buc|stk|stück|role|rollen|pachet|pack|sticlă|sticla|fl|cutie)$/i)
   const quantity = quantityMatch ? Number(quantityMatch[1].replace(',', '.')) : null
   const unit = quantityMatch ? normalizeUnit(quantityMatch[2]) : ''
-  const product = (quantityMatch ? beforePrice.slice(0, quantityMatch.index) : beforePrice).trim() || line.replace(priceMatch[0], '').trim()
+
+  let product = (quantityMatch ? beforePrice.slice(0, quantityMatch.index) : beforePrice).trim()
+  if (!product) {
+    product = line.replace(priceMatch[0], '').trim()
+  }
+
   const unitInfo = quantity && unit ? offerUnitPrice(price, quantity, unit) : null
   const appPrice = /app|card|karte|plus/i.test(line)
   const confidence = product && price ? (quantity ? 0.86 : 0.72) : 0.45
+
   return {
     store_name: meta.store_name || '',
     product_name: product,
@@ -1848,11 +2296,20 @@ function detectStore(text = '') {
 }
 
 function detectValidity(text = '') {
-  const match = String(text).match(/(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\s*[-–]\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?/)
+  const normalized = String(text).replace(/\s+/g, ' ')
+  const match = normalized.match(/(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\s*(?:-|–|bis|to|pana la|până la|pana)\s*(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/i)
   if (!match) return {}
-  const year = new Date().getFullYear()
-  const valid_from = `${year}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`
-  const valid_until = `${year}-${String(match[5]).padStart(2, '0')}-${String(match[4]).padStart(2, '0')}`
+
+  const parseYear = (value) => {
+    if (!value) return new Date().getFullYear()
+    const year = Number(value)
+    return year < 100 ? 2000 + year : year
+  }
+
+  const fromYear = parseYear(match[3])
+  const untilYear = parseYear(match[6])
+  const valid_from = `${fromYear}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`
+  const valid_until = `${untilYear}-${String(match[5]).padStart(2, '0')}-${String(match[4]).padStart(2, '0')}`
   return { valid_from, valid_until }
 }
 
@@ -1885,17 +2342,6 @@ function inferOfferCategory(product = '') {
   if (/milch|lapte|kaffee|cafea|butter|unt|brot|paine|pâine|ou|eier|carne|fleisch|fruct|obst|legume|gemüse/.test(text)) return 'mâncare'
   if (/detergent|wasch|hartie|hârtie|papier|dm|rossmann/.test(text)) return 'casă / reparații'
   return 'altele'
-}
-
-function productMatch(needle = '', haystack = '') {
-  const a = normalizeProduct(needle)
-  const b = normalizeProduct(haystack)
-  if (!a || !b) return { match: false, approx: false }
-  if (a === b || b.includes(a) || a.includes(b)) return { match: true, approx: false }
-  const tokensA = a.split(' ').filter((token) => token.length > 2)
-  const tokensB = b.split(' ')
-  const common = tokensA.filter((token) => tokensB.includes(token)).length
-  return { match: common > 0, approx: common > 0 }
 }
 
 function normalizeProduct(value = '') {
