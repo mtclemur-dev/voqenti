@@ -173,9 +173,38 @@ create table if not exists public.kb_shopping_routes (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_receipts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  store_name text not null,
+  purchase_date date not null default current_date,
+  total_amount numeric(12,2) not null default 0 check (total_amount >= 0),
+  source text not null default 'manual_text' check (source in ('manual_text', 'ocr_preview', 'pdf_upload')),
+  raw_text text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.kb_receipt_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  receipt_id uuid not null references public.kb_receipts(id) on delete cascade,
+  product_name text not null,
+  category text,
+  quantity numeric(12,3),
+  unit text,
+  unit_price numeric(12,4),
+  total_price numeric(12,2) not null check (total_price >= 0),
+  notes text,
+  created_at timestamptz not null default now()
+);
+
 alter table public.kb_price_notifications enable row level security;
 alter table public.kb_price_history enable row level security;
 alter table public.kb_shopping_routes enable row level security;
+alter table public.kb_receipts enable row level security;
+alter table public.kb_receipt_items enable row level security;
 
 drop policy if exists "kb_price_notifications_all_own" on public.kb_price_notifications;
 create policy "kb_price_notifications_all_own" on public.kb_price_notifications
@@ -189,9 +218,21 @@ drop policy if exists "kb_shopping_routes_all_own" on public.kb_shopping_routes;
 create policy "kb_shopping_routes_all_own" on public.kb_shopping_routes
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "kb_receipts_all_own" on public.kb_receipts;
+create policy "kb_receipts_all_own" on public.kb_receipts
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "kb_receipt_items_all_own" on public.kb_receipt_items;
+create policy "kb_receipt_items_all_own" on public.kb_receipt_items
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 drop trigger if exists kb_price_notifications_touch_updated_at on public.kb_price_notifications;
 drop trigger if exists kb_price_history_touch_updated_at on public.kb_price_history;
 drop trigger if exists kb_shopping_routes_touch_updated_at on public.kb_shopping_routes;
+drop trigger if exists kb_receipts_touch_updated_at on public.kb_receipts;
+
+create trigger kb_receipts_touch_updated_at before update on public.kb_receipts
+for each row execute function public.kb_touch_updated_at();
 
 create index if not exists kb_weekly_offers_user_valid_idx on public.kb_weekly_offers(user_id, valid_until desc);
 create index if not exists kb_weekly_offers_product_idx on public.kb_weekly_offers(user_id, lower(product_name));
@@ -199,3 +240,6 @@ create index if not exists kb_shopping_list_user_product_idx on public.kb_shoppi
 create index if not exists kb_price_notifications_user_unread_idx on public.kb_price_notifications(user_id, is_read);
 create index if not exists kb_price_history_user_product_idx on public.kb_price_history(user_id, lower(product_name), recorded_at desc);
 create index if not exists kb_shopping_routes_user_created_idx on public.kb_shopping_routes(user_id, created_at desc);
+create index if not exists kb_receipts_user_date_idx on public.kb_receipts(user_id, purchase_date desc);
+create index if not exists kb_receipt_items_receipt_idx on public.kb_receipt_items(receipt_id);
+create index if not exists kb_receipt_items_product_idx on public.kb_receipt_items(user_id, lower(product_name));
