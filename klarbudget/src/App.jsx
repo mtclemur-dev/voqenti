@@ -698,12 +698,52 @@ function App() {
         </div>
       </header>
 
-      <nav className="tabbar" aria-label="KlarBudget navigation">
-        {navItems.map((item) => (
-          <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
-            {t(item)}
-          </button>
-        ))}
+      <nav className="tabbar" aria-label="KlarBudget navigation" style={{ position: 'static', borderBottom: 0 }}>
+        <button
+          type="button"
+          className={['dashboard', 'insights', 'aiActions'].includes(view) ? 'active' : ''}
+          onClick={() => setView('dashboard')}
+        >
+          📂 {t('navGroup_general')}
+        </button>
+        <button
+          type="button"
+          className={['incomes', 'expenses', 'debts', 'accounts'].includes(view) ? 'active' : ''}
+          onClick={() => setView('incomes')}
+        >
+          💰 {t('navGroup_budget')}
+        </button>
+        <button
+          type="button"
+          className={['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) ? 'active' : ''}
+          onClick={() => setView('journal')}
+        >
+          📋 {t('navGroup_activity')}
+        </button>
+      </nav>
+
+      <nav className="tabbar sub-tabbar" aria-label="KlarBudget sub-navigation">
+        {['dashboard', 'insights', 'aiActions'].includes(view) &&
+          ['dashboard', 'insights', 'aiActions'].map((item) => (
+            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+              {t(item)}
+            </button>
+          ))
+        }
+        {['incomes', 'expenses', 'debts', 'accounts'].includes(view) &&
+          ['incomes', 'expenses', 'debts', 'accounts'].map((item) => (
+            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+              {t(item)}
+            </button>
+          ))
+        }
+        {['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) &&
+          ['journal', 'shopping', 'workAbsence', 'calendar'].map((item) => (
+            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+              {t(item)}
+            </button>
+          ))
+        }
       </nav>
 
       <main className="content">
@@ -1233,7 +1273,7 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs">
-          {['list', 'kaufda'].map((item) => (
+          {['list', 'kaufda', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
             <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
           ))}
         </div>
@@ -2091,6 +2131,59 @@ const kaufdaMockOffers = [
     quantity: 1,
     unit: 'L',
     unit_price: 1.39,
+    app_price: false,
+  },
+  // Eier & Brot (Ouă & Pâine)
+  {
+    product_name: 'Oua proaspete BIO Clasa A (10 buc)',
+    store_name: 'Lidl',
+    brand: 'Landjunker',
+    category: 'mâncare',
+    price: 2.49,
+    old_price: 2.99,
+    discount_percent: 16,
+    quantity: 10,
+    unit: 'buc',
+    unit_price: 0.25,
+    app_price: false,
+  },
+  {
+    product_name: 'Oua proaspete crescute la sol (10 buc)',
+    store_name: 'Norma',
+    brand: 'Landfein',
+    category: 'mâncare',
+    price: 1.69,
+    old_price: 1.99,
+    discount_percent: 15,
+    quantity: 10,
+    unit: 'buc',
+    unit_price: 0.17,
+    app_price: false,
+  },
+  {
+    product_name: 'Paine toast Butter Toastbrot',
+    store_name: 'Aldi',
+    brand: 'Goldähren',
+    category: 'mâncare',
+    price: 0.99,
+    old_price: 1.29,
+    discount_percent: 23,
+    quantity: 500,
+    unit: 'g',
+    unit_price: 1.98,
+    app_price: false,
+  },
+  {
+    product_name: 'Paine traditionala germana Krustenbrot',
+    store_name: 'Netto',
+    brand: 'Bäcker Krone',
+    category: 'mâncare',
+    price: 1.49,
+    old_price: 1.99,
+    discount_percent: 25,
+    quantity: 1000,
+    unit: 'g',
+    unit_price: 1.49,
     app_price: false,
   }
 ]
