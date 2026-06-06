@@ -7,6 +7,7 @@ import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
+import { FamilyTokenEconomy } from './components/FamilyTokenEconomy'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
@@ -25,15 +26,19 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
 const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
+const BUILD_LABEL = 'KlarBudget build 2026-06-06 20:40 stable-inputs'
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [accountRole, setAccountRole] = useState('parent')
+  const [childName, setChildName] = useState('')
+  const [profileAccountRole, setProfileAccountRole] = useState('parent')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('dashboard')
@@ -61,10 +66,11 @@ function App() {
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
-  const [shoppingTab, setShoppingTab] = useState('list')
+  const [shoppingTab, setShoppingTab] = useState('import')
   const [offerPreview, setOfferPreview] = useState([])
-  const [priceNotifications, setPriceNotifications] = useState([])
   const [priceHistory, setPriceHistory] = useState([])
+  const [receipts, setReceipts] = useState([])
+  const [receiptItems, setReceiptItems] = useState([])
 
   const t = useMemo(() => makeTranslator(language), [language])
 
@@ -94,7 +100,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, notificationsRes, priceHistoryRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -110,15 +116,23 @@ function App() {
       supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).eq('status', 'confirmed').order('valid_until', { ascending: false }),
       supabase.from('kb_stores').select('*').eq('user_id', user.id).order('name', { ascending: true }),
       supabase.from('kb_offer_sources').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_price_notifications').select('*').eq('user_id', user.id).eq('is_read', false).order('created_at', { ascending: false }),
       supabase.from('kb_price_history').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
+      supabase.from('kb_receipts').select('*').eq('user_id', user.id).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('kb_receipt_items').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
 
+    const metadataRole = user.user_metadata?.account_role === 'child' ? 'child' : 'parent'
     if (!profileRes.data) {
-      await supabase.from('kb_profiles').insert({ id: user.id, preferred_language: language, currency: 'EUR' })
+      const baseProfile = { id: user.id, preferred_language: language, currency: 'EUR' }
+      const { error } = await supabase.from('kb_profiles').insert({ ...baseProfile, account_role: metadataRole })
+      if (error && /account_role/i.test(error.message || '')) {
+        await supabase.from('kb_profiles').insert(baseProfile)
+      }
+      setProfileAccountRole(metadataRole)
     } else {
       setCurrency(profileRes.data.currency || 'EUR')
       setLanguage(profileRes.data.preferred_language || language)
+      setProfileAccountRole(profileRes.data.account_role || metadataRole)
     }
 
     if (!settingsRes.data) {
@@ -157,9 +171,10 @@ function App() {
     setWeeklyOffers(offersRes.data || [])
     setStores(storesRes.data || [])
     setOfferSources(sourcesRes.data || [])
-    setPriceNotifications(notificationsRes.data || [])
     setPriceHistory(priceHistoryRes.data || [])
-    setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error)
+    setReceipts(receiptsRes.data || [])
+    setReceiptItems(receiptItemsRes.data || [])
+    setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error && !receiptsRes.error && !receiptItemsRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -167,104 +182,7 @@ function App() {
     loadData()
   }, [loadData])
 
-  // SMART SHOPPING FUNCTIONS
-  const getProductRecommendations = useCallback((shoppingItem) => {
-    if (!shoppingItem) return []
-    const matches = weeklyOffers.filter(offer => productMatch(shoppingItem.product_name, offer.product_name))
-    return matches.sort((a, b) => (a.unit_price || a.price) - (b.unit_price || b.price))
-  }, [weeklyOffers])
-
-  const calculateOptimalRoute = useCallback((itemsToShop) => {
-    if (!itemsToShop.length || !stores.length) return { stores: [], totalDistance: 0, totalCost: 0, savings: 0 }
-    
-    const storeScores = {}
-    storeNames.forEach(store => { storeScores[store] = { items: 0, cost: 0, distance: 0 } })
-    
-    itemsToShop.forEach(item => {
-      const recs = getProductRecommendations(item)
-      const cheapest = recs[0]
-      if (cheapest) {
-        if (!storeScores[cheapest.store_name]) storeScores[cheapest.store_name] = { items: 0, cost: 0, distance: 0 }
-        storeScores[cheapest.store_name].items += 1
-        storeScores[cheapest.store_name].cost += (cheapest.unit_price || cheapest.price) * (item.desired_quantity || 1)
-        const storeInfo = stores.find(s => s.name === cheapest.store_name)
-        storeScores[cheapest.store_name].distance += storeInfo?.distance_km || 0
-      }
-    })
-    
-    const sortedStores = Object.entries(storeScores)
-      .filter((entry) => entry[1].items > 0)
-      .sort((a, b) => b[1].items - a[1].items)
-      .map(([store]) => store)
-    
-    const totalDistance = sortedStores.reduce((sum, store) => sum + (storeScores[store].distance || 0), 0)
-    const totalCost = sortedStores.reduce((sum, store) => sum + storeScores[store].cost, 0)
-    
-    return {
-      stores: sortedStores,
-      totalDistance,
-      totalCost,
-      savings: Math.round((totalCost / itemsToShop.length) * sortedStores.length * 0.1),
-    }
-  }, [stores, getProductRecommendations])
-
-  const detectPriceReductions = useCallback(async () => {
-    const shoppingItems = shoppingList.filter(item => !item.purchased && (item.priority === 'important' || item.priority === 'offer_only'))
-    
-    for (const item of shoppingItems) {
-      const recs = getProductRecommendations(item)
-      if (recs.length > 0) {
-        const cheapest = recs[0]
-        const lastPrice = priceHistory.find(h => h.product_name === item.product_name && h.store_name === cheapest.store_name)
-        const reduction = lastPrice ? ((lastPrice.price - cheapest.price) / lastPrice.price * 100) : 0
-        
-        if (reduction > 15 && !priceNotifications.find(n => n.shopping_item_id === item.id && n.store_name === cheapest.store_name)) {
-          await supabase.from('kb_price_notifications').insert({
-            user_id: user.id,
-            shopping_item_id: item.id,
-            product_name: item.product_name,
-            store_name: cheapest.store_name,
-            price_reduction_percent: Math.round(reduction),
-            old_price: lastPrice?.price || null,
-            new_price: cheapest.price,
-            valid_until: cheapest.valid_until,
-          })
-        }
-      }
-    }
-    loadData()
-  }, [shoppingList, getProductRecommendations, priceNotifications, user, priceHistory, loadData])
-
-  useEffect(() => {
-    if (user && shoppingList.length && weeklyOffers.length) {
-      const timer = setTimeout(() => {
-        detectPriceReductions()
-      }, 2000)
-      return () => clearTimeout(timer)
-    }
-  }, [weeklyOffers, shoppingList, user, detectPriceReductions])
-
-  const getPriceAnalytics = useCallback(() => {
-    if (!priceHistory.length) return {}
-    
-    const analytics = {}
-    priceHistory.forEach(record => {
-      const key = `${record.product_name}|${record.store_name}`
-      if (!analytics[key]) analytics[key] = []
-      analytics[key].push(record)
-    })
-    
-    const summary = {}
-    Object.entries(analytics).forEach(([key, records]) => {
-      const sorted = records.sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
-      const current = sorted[0]
-      const prev = sorted[1]
-      const trend = prev ? ((current.price - prev.price) / prev.price * 100) : 0
-      const avg = records.reduce((sum, r) => sum + r.price, 0) / records.length
-      summary[key] = { current: current.price, avg, trend: Math.round(trend), records: records.length }
-    })
-    return summary
-  }, [priceHistory])
+  // Automatic shopping refresh is disabled. It was reloading the app while typing in forms.
 
   const summary = useMemo(
     () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots, journalEntries }),
@@ -284,7 +202,21 @@ function App() {
 
   const signUp = async () => {
     setAuthError('')
-    const { error } = await supabase.auth.signUp({ email, password })
+    const cleanChildName = childName.trim()
+    if (accountRole === 'child' && !cleanChildName) {
+      setAuthError('Scrie numele copilului pentru contul de copil.')
+      return
+    }
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          account_role: accountRole,
+          child_name: accountRole === 'child' ? cleanChildName : null,
+        },
+      },
+    })
     if (error) setAuthError(error.message)
   }
 
@@ -460,6 +392,80 @@ function App() {
     loadData()
   }
 
+  const saveReceipt = async ({ receipt, items, createJournalEntry }) => {
+    if (!items.length) {
+      setNotice('Nu am gasit produse de salvat.')
+      return
+    }
+
+    const total = items.reduce((sum, item) => sum + toNumber(item.total_price), 0)
+    const { data: savedReceipt, error: receiptError } = await supabase
+      .from('kb_receipts')
+      .insert({
+        user_id: user.id,
+        store_name: receipt.store_name || 'Magazin',
+        purchase_date: receipt.purchase_date || isoDate(new Date()),
+        total_amount: total,
+        source: receipt.source || 'manual_text',
+        raw_text: receipt.raw_text || null,
+        notes: receipt.notes || null,
+      })
+      .select('*')
+      .single()
+
+    if (receiptError) {
+      setNotice(t('saveError'))
+      window.alert(receiptError.message)
+      return
+    }
+
+    const rows = items.map((item) => ({
+      user_id: user.id,
+      receipt_id: savedReceipt.id,
+      product_name: item.product_name,
+      category: item.category || inferOfferCategory(item.product_name),
+      quantity: item.quantity || null,
+      unit: item.unit || null,
+      unit_price: item.unit_price || null,
+      total_price: toNumber(item.total_price),
+      notes: item.notes || null,
+    }))
+
+    const { error: itemError } = await supabase.from('kb_receipt_items').insert(rows)
+    if (itemError) {
+      setNotice(t('saveError'))
+      window.alert(itemError.message)
+      return
+    }
+
+    await supabase.from('kb_price_history').insert(rows.map((item) => ({
+      user_id: user.id,
+      product_name: item.product_name,
+      store_name: savedReceipt.store_name,
+      price: item.total_price,
+      unit_price: item.unit_price,
+      quantity: item.quantity,
+      unit: item.unit,
+      recorded_at: savedReceipt.purchase_date,
+    })))
+
+    if (createJournalEntry) {
+      await saveJournalEntry({
+        entry_date: savedReceipt.purchase_date,
+        description: `Bon ${savedReceipt.store_name}`,
+        amount: total,
+        category: 'mancare',
+        store: savedReceipt.store_name,
+        product_name: 'Bon cumparaturi',
+        entry_mode: 'detailed',
+      })
+    } else {
+      loadData()
+    }
+
+    setNotice(`Bon salvat: ${total.toFixed(2)} ${currency}.`)
+  }
+
   const saveStore = async (payload) => {
     const prepared = preparePayload(payload)
     if (prepared.import_mode === 'auto_future') prepared.active = false
@@ -474,8 +480,9 @@ function App() {
     loadData()
   }
 
-  const confirmOfferPreview = async (mode = 'safe') => {
-    const rows = offerPreview
+  const confirmOfferPreview = async (mode = 'safe', previewRows = null) => {
+    const sourceRows = previewRows || offerPreview
+    const rows = sourceRows
       .filter((item) => mode === 'all' ? item.status !== 'ignored' : item.status === 'ok' && toNumber(item.confidence) >= 0.75)
       .map((item) => normalizeOfferPayload({ ...item, status: 'confirmed' }))
       .filter((item) => !weeklyOffers.some((offer) =>
@@ -491,43 +498,7 @@ function App() {
       window.alert(error.message)
       return
     }
-    setOfferPreview((current) => current.filter((item) => !rows.some((row) => row.product_name === item.product_name && row.store_name === item.store_name && toNumber(row.price) === toNumber(item.price))))
     setNotice(t('offersImported'))
-    loadData()
-  }
-
-  const importOffer = async (offer) => {
-    const noteLines = []
-    if (offer.price !== undefined) {
-      noteLines.push(`Preț ofertă: ${offer.price}€` + (offer.old_price ? ` (redus de la ${offer.old_price}€)` : ''))
-    }
-    if (offer.brand) {
-      noteLines.push(`Brand: ${offer.brand}`)
-    }
-    if (offer.valid_until) {
-      noteLines.push(`${t('kaufdaValidUntil')}: ${offer.valid_until}`)
-    }
-    const notesStr = noteLines.join('\n')
-
-    const insertData = preparePayload({
-      product_name: offer.product_name,
-      category: offer.category || 'mâncare',
-      desired_quantity: offer.quantity || 1,
-      unit: offer.unit || 'buc',
-      priority: 'normal',
-      preferred_store: offer.store_name,
-      purchased: false,
-      notes: notesStr
-    })
-    insertData.user_id = user.id
-
-    const { error } = await supabase.from('kb_shopping_list').insert(insertData)
-    if (error) {
-      setNotice(t('saveError'))
-      window.alert(error.message)
-      return
-    }
-    setNotice(t('kaufdaImportSuccess').replace('{product}', offer.product_name))
     loadData()
   }
 
@@ -661,6 +632,7 @@ function App() {
       <main className="auth-screen">
         <section className="auth-card">
           <p className="eyebrow">KlarBudget</p>
+          <p className="build-label">{BUILD_LABEL}</p>
           <h1>{dictionary[language].tagline}</h1>
           <div className="notice danger">{dictionary[language].missingEnv}</div>
         </section>
@@ -672,14 +644,49 @@ function App() {
     return (
       <Auth
         t={t}
+        buildLabel={BUILD_LABEL}
         email={email}
         password={password}
         setEmail={setEmail}
         setPassword={setPassword}
+        accountRole={accountRole}
+        setAccountRole={setAccountRole}
+        childName={childName}
+        setChildName={setChildName}
         onSignIn={signIn}
         onSignUp={signUp}
         error={authError}
       />
+    )
+  }
+
+  const isChildAccount = profileAccountRole === 'child' || user.user_metadata?.account_role === 'child'
+
+  if (isChildAccount) {
+    return (
+      <div className="app-shell">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">{t('appName')}</p>
+            <p className="build-label">{BUILD_LABEL}</p>
+            <h1>{t('kids')}</h1>
+            <p className="muted">Cont copil: acces doar la recompense.</p>
+          </div>
+          <div className="top-actions">
+            <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language">
+              {languages.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            </select>
+            <button type="button" className="secondary" onClick={() => supabase.auth.signOut()}>{t('signOut')}</button>
+          </div>
+        </header>
+        <nav className="tabbar" aria-label="KlarBudget child navigation">
+          <button type="button" className="active">{t('kids')}</button>
+        </nav>
+        <main className="content">
+          {notice && <div className="toast">{notice}</div>}
+          <FamilyTokenEconomy user={user} childOnly />
+        </main>
+      </div>
     )
   }
 
@@ -688,6 +695,7 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">{t('appName')}</p>
+          <p className="build-label">{BUILD_LABEL}</p>
           <h1>{t('tagline')}</h1>
         </div>
         <div className="top-actions">
@@ -792,6 +800,8 @@ function App() {
             locale={locale}
             offerPreview={offerPreview}
             offers={weeklyOffers}
+            receiptItems={receiptItems}
+            receipts={receipts}
             schemaReady={shoppingSchemaReady}
             shoppingList={shoppingList}
             stores={stores}
@@ -802,14 +812,9 @@ function App() {
             onDelete={(table, item) => deleteRow(table, item)}
             onPreviewChange={setOfferPreview}
             onSaveItem={saveShoppingItem}
+            onSaveReceipt={saveReceipt}
             onSaveStore={saveStore}
             onTabChange={setShoppingTab}
-            getProductRecommendations={getProductRecommendations}
-            calculateOptimalRoute={calculateOptimalRoute}
-            priceNotifications={priceNotifications}
-            user={user}
-            getPriceAnalytics={getPriceAnalytics}
-            onImportOffer={importOffer}
           />
         )}
         {view === 'workAbsence' && (
@@ -1093,6 +1098,7 @@ function App() {
             journalEntries={journalEntries}
           />
         )}
+        {view === 'kids' && <FamilyTokenEconomy user={user} />}
       </main>
     </div>
   )
@@ -1256,11 +1262,49 @@ function DailyJournal({ currency, dailyBudget, dailyClosures, editing, entries, 
   )
 }
 
-function SmartShopping({ currency, journalEntries, language, locale, offerPreview, offers, schemaReady, shoppingList, stores, sources, tab, t, onConfirmPreview, onDelete, onPreviewChange, onSaveItem, onSaveStore, onTabChange, getProductRecommendations, calculateOptimalRoute, priceNotifications, user, getPriceAnalytics, onImportOffer }) {
+function SmartShopping({
+  currency,
+  journalEntries,
+  language,
+  locale,
+  offerPreview,
+  offers,
+  receiptItems = [],
+  receipts = [],
+  schemaReady,
+  shoppingList,
+  stores,
+  sources,
+  tab,
+  t,
+  onConfirmPreview,
+  onDelete,
+  onPreviewChange,
+  onSaveItem,
+  onSaveReceipt,
+  onSaveStore,
+  onTabChange,
+  getProductRecommendations,
+  calculateOptimalRoute,
+  priceNotifications,
+  user,
+  getPriceAnalytics,
+  onImportOffer
+}) {
   const activeOffers = offers.filter((offer) => !offer.valid_until || offer.valid_until >= isoDate(new Date()))
   const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
   const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
   const priceHistory = buildShoppingHistory(journalEntries)
+
+  const searchableOffers = useMemo(() => {
+    const combined = [...offerPreview, ...activeOffers]
+    const seen = new Map()
+    combined.forEach((item) => {
+      const key = offerPreviewKey(item)
+      if (!seen.has(key)) seen.set(key, item)
+    })
+    return [...seen.values()]
+  }, [offerPreview, activeOffers])
 
   return (
     <>
@@ -1273,7 +1317,7 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs">
-          {['list', 'kaufda', 'import', 'offers', 'best', 'stores', 'history', 'sources'].map((item) => (
+          {['list', 'kaufda', 'receipts', 'import', 'offers', 'best', 'stores', 'history', 'sources', 'search'].map((item) => (
             <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
           ))}
         </div>
@@ -1281,92 +1325,133 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
 
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
       {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
-      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
+      {tab === 'receipts' && <ReceiptsTab currency={currency} locale={locale} receiptItems={receiptItems} receipts={receipts} onSaveReceipt={onSaveReceipt} />}
+      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
       {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
       {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
       {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
       {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
       {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
+      {tab === 'search' && <SearchOffersTab offers={searchableOffers} currency={currency} locale={locale} t={t} />}
+    </>
+  )
+}
     </>
   )
 }
 
-function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, onDelete, onSave }) {
-  const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
-  const route = getRoute && items.length ? getRoute(items.filter(i => !i.purchased)) : null
-  
+function ReceiptsTab({ currency, locale, receiptItems, receipts, onSaveReceipt }) {
+  const [text, setText] = useState('')
+  const [storeName, setStoreName] = useState('')
+  const [purchaseDate, setPurchaseDate] = useState(isoDate(new Date()))
+  const [preview, setPreview] = useState([])
+  const [createJournalEntry, setCreateJournalEntry] = useState(true)
+  const total = preview.reduce((sum, item) => sum + toNumber(item.total_price), 0)
+
+  const buildPreview = () => {
+    const rows = parseReceiptText(text)
+    setPreview(rows)
+  }
+
+  const save = async () => {
+    await onSaveReceipt({
+      receipt: {
+        store_name: storeName || detectStore(text) || 'Magazin',
+        purchase_date: purchaseDate,
+        source: 'manual_text',
+        raw_text: text,
+      },
+      items: preview,
+      createJournalEntry,
+    })
+    setText('')
+    setPreview([])
+  }
+
+  const itemsByReceipt = useMemo(() => {
+    const map = new Map()
+    receiptItems.forEach((item) => {
+      if (!map.has(item.receipt_id)) map.set(item.receipt_id, [])
+      map.get(item.receipt_id).push(item)
+    })
+    return map
+  }, [receiptItems])
+
   return (
-    <>
-      <section className="section">
-        <h2>{t('myShoppingList')}</h2>
-        
-        {route && route.stores.length > 0 && (
-          <div className="card info">
-            <strong>🛣️ {t('recommendedRoute')}:</strong> {route.stores.join(' → ')} | 
-            Distanță: {route.totalDistance.toFixed(1)}km | Estimare economie: ~{route.savings}€
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>Bonuri / CEC-uri</h2>
+          <p className="muted">Lipeste textul bonului, verifica produsele si salveaza. OCR din poza poate fi adaugat ulterior.</p>
+        </div>
+      </div>
+      <div className="form-grid">
+        <label>Magazin<input value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Netto, Lidl, Rewe..." /></label>
+        <label>Data<input type="date" value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} /></label>
+      </div>
+      <label>
+        Text bon
+        <textarea rows={8} value={text} onChange={(event) => setText(event.target.value)} placeholder={'Lapte 1L 0,99\nPaine 1,49\nUlei masline 5L 38,99'} />
+      </label>
+      <div className="button-row">
+        <button type="button" onClick={buildPreview}>Extrage produse</button>
+        <label className="checkbox">
+          <input type="checkbox" checked={createJournalEntry} onChange={(event) => setCreateJournalEntry(event.target.checked)} />
+          Adauga totalul si in Jurnal
+        </label>
+      </div>
+
+      {preview.length > 0 && (
+        <div className="section compact-section">
+          <div className="section-title">
+            <h3>Preview produse</h3>
+            <button type="button" onClick={save}>Confirma si salveaza ({formatMoney(total, currency, locale)})</button>
           </div>
-        )}
-        
-        <form className="form-grid" onSubmit={(event) => {
-          event.preventDefault()
-          onSave(form)
-          setForm({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
-        }}>
-          <Input label={t('productName')} value={form.product_name} onChange={(value) => setForm({ ...form, product_name: value })} required />
-          <Input label={t('category')} value={form.category} onChange={(value) => setForm({ ...form, category: value })} />
-          <Input label={t('quantity')} type="number" value={form.desired_quantity} onChange={(value) => setForm({ ...form, desired_quantity: value })} />
-          <Input label={t('unit')} value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} />
-          <label>{t('priority')}<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="normal">{t('normal')}</option><option value="important">{t('important')}</option><option value="offer_only">{t('offerOnly')}</option></select></label>
-          <label>{t('preferredStore')}<select value={form.preferred_store} onChange={(event) => setForm({ ...form, preferred_store: event.target.value })}><option value="">{t('all')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
-          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-          <div className="form-actions"><button type="submit">{t('add')}</button></div>
-        </form>
-      </section>
-      
-      {notifications && notifications.length > 0 && (
-        <div className="card success">
-          <strong>🔔 {notifications.length} notificări cu prețuri reduse!</strong>
-          <ul>
-            {notifications.slice(0, 5).map(n => (
-              <li key={n.id}>{n.product_name} la {n.store_name}: <strong>{n.new_price}€</strong> (-{n.price_reduction_percent}%)</li>
+          <div className="list">
+            {preview.map((item, index) => (
+              <article className="list-item" key={`${item.product_name}-${index}`}>
+                <div>
+                  <strong>{item.product_name}</strong>
+                  <span>{item.quantity ? `${item.quantity} ${item.unit || ''}` : item.category}</span>
+                </div>
+                <div className="list-value">
+                  <b>{formatMoney(item.total_price, currency, locale)}</b>
+                  {item.unit_price ? <span>{formatMoney(item.unit_price, currency, locale)}/{item.unit}</span> : null}
+                </div>
+              </article>
             ))}
-          </ul>
+          </div>
         </div>
       )}
-      
-      <EntityList
-        title={t('myShoppingList')}
-        items={items.map((item) => {
-          const recs = getRecommendations ? getRecommendations(item) : []
-          const cheapest = recs[0]
-          return {
-            ...item,
-            name: item.product_name,
-            amount: 0,
-            recommendation: cheapest ? `${cheapest.store_name}: ${cheapest.price}€` : null,
-          }
-        })}
-        currency={currency}
-        language={language}
-        emptyText={t('noData')}
-        editText={t('edit')}
-        deleteText={t('delete')}
-        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority || 'normal')}${item.preferred_store ? ` - ${item.preferred_store}` : ''} ${item.recommendation ? `| 💰 ${item.recommendation}` : ''}`}
-        onEdit={() => {}}
-        onDelete={onDelete}
-        renderActions={(item) => item.purchased ? <span className="badge">{t('paid')}</span> : null}
-      />
-    </>
+
+      <div className="section compact-section">
+        <h3>Bonuri salvate</h3>
+        <div className="list">
+          {receipts.length === 0 ? <div className="empty">Nu exista bonuri salvate.</div> : receipts.map((receipt) => (
+            <article className="list-item" key={receipt.id}>
+              <div>
+                <strong>{receipt.store_name}</strong>
+                <span>{receipt.purchase_date} - {(itemsByReceipt.get(receipt.id) || []).length} produse</span>
+              </div>
+              <div className="list-value">
+                <b>{formatMoney(receipt.total_amount, currency, locale)}</b>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
-function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange }) {
+function OfferImportTab({ preview, t, onPreviewChange, onConfirmPreview, onTabChange }) {
   const [text, setText] = useState('')
   const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
   const [pdfFiles, setPdfFiles] = useState([])
   const [extracting, setExtracting] = useState(false)
   const [localNotice, setLocalNotice] = useState('')
   const [extractedText, setExtractedText] = useState('')
+  const [autoImport, setAutoImport] = useState(true)
 
   const updatePdfFile = (fileName, patch) => setPdfFiles((current) => current.map((item) => item.file_name === fileName ? { ...item, ...patch } : item))
 
@@ -1440,7 +1525,13 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
       return
     }
 
-    onPreviewChange(mergePreviewRows(preview, rows))
+    const merged = mergePreviewRows(preview, rows)
+    onPreviewChange(merged)
+    if (autoImport) {
+      await onConfirmPreview('safe', merged)
+      onTabChange('offers')
+      return
+    }
     onTabChange('offers')
   }
 
@@ -1490,51 +1581,103 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
         </details>
       )}
       <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
+      <label className="checkbox"><input type="checkbox" checked={autoImport} onChange={(event) => setAutoImport(event.target.checked)} />{t('autoImportSafeRows')}</label>
       <div className="form-actions">
-        {pdfFiles.length > 0 && (
-          <button type="button" className="secondary" onClick={() => {
-            pdfFiles.forEach((file) => onSaveSource({
-              store_name: file.store_name || meta.store_name || 'Necunoscut',
-              source_url: '',
-              active: false,
-              import_mode: 'manual_pdf',
-              status: t('pdfSavedAsSource'),
-              notes: `${file.file_name}${meta.valid_from || meta.valid_until ? ` - ${meta.valid_from || '?'} / ${meta.valid_until || '?'}` : ''}`,
-            }))
-            setPdfFiles([])
-          }}>{t('savePdfSources')}</button>
-        )}
-        <button type="button" onClick={handleExtractPreview} disabled={extracting}>{extracting ? t('pdfExtracting') : t('extractPreview')}</button>
+        <button type="button" onClick={handleExtractPreview} disabled={extracting}>{extracting ? t('pdfExtracting') : t('processPdfFiles')}</button>
       </div>
     </section>
   )
 }
 
-function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, onConfirmPreview, onDeleteOffer, onPreviewChange }) {
+function ExtractedProductsTab({ currency, locale, preview, savedOffers, t, onConfirmPreview, onPreviewChange }) {
+  const safeCount = preview.filter((item) => item.status === 'ok' && toNumber(item.confidence) >= 0.75).length
+
   return (
-    <>
-      <section className="section">
-        <div className="section-title">
-          <h2>{t('offerPreview')}</h2>
-          <div className="button-pair">
-            <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>
-            <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
-          </div>
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>{t('extractedProducts')}</h2>
+          <p className="muted">{t('offerPreview')}</p>
         </div>
-        {!preview.length && <div className="notice">{t('noPreviewRows')}</div>}
-        <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
-      </section>
-      <EntityList
-        title={t('savedOffers')}
-        items={savedOffers.map((item) => ({ ...item, name: `${item.product_name} · ${item.store_name}`, amount: item.price }))}
-        currency={currency}
-        language={language}
-        emptyText={t('noData')}
-        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${item.valid_until || '-'} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
-        onEdit={() => {}}
-        onDelete={onDeleteOffer}
-      />
-    </>
+        <div className="button-pair">
+          {safeCount > 0 && <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>}
+          <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
+        </div>
+      </div>
+      {!preview.length ? (
+        <div className="notice">{t('noExtractedProducts')}</div>
+      ) : (
+        <>
+          <div className="notice">{preview.length} {t('previewRows')} · {safeCount} {t('ok')}</div>
+          <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
+        </>
+      )}
+      {savedOffers && savedOffers.length > 0 && (
+        <div className="notice success">{t('savedOffers')}: {savedOffers.length}</div>
+      )}
+    </section>
+  )
+}
+
+function SearchOffersTab({ offers, currency, locale, t }) {
+  const [query, setQuery] = useState('')
+  const trimmed = query.trim()
+  const results = trimmed
+    ? offers
+      .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
+      .filter((item) => item.match)
+      .sort((a, b) => {
+        const diff = offerCompareValue(a.offer) - offerCompareValue(b.offer)
+        if (diff !== 0) return diff
+        return toNumber(b.offer.confidence) - toNumber(a.offer.confidence)
+      })
+    : []
+
+  const best = results[0]?.offer || null
+  const recommendation = best
+    ? t('bestPriceRecommendation')
+        .replace('{query}', trimmed)
+        .replace('{store}', best.store_name)
+        .replace('{price}', `${formatMoney(best.unit_price || best.price, currency, locale)}${best.unit_price ? `/${normalizedUnitLabel(best.unit)}` : ''}`)
+    : ''
+
+  return (
+    <section className="section">
+      <div className="section-title">
+        <h2>{t('shopping_search')}</h2>
+      </div>
+      <div className="form-grid">
+        <label>{t('searchOffersLabel')}<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchOffersPlaceholder')} /></label>
+      </div>
+      {!trimmed && <div className="notice">{t('searchOffersPlaceholder')}</div>}
+      {trimmed && results.length === 0 && <div className="notice">{t('noSearchResults')}</div>}
+      {best && (
+        <article className="list-item highlighted">
+          <div>
+            <strong>{t('bestMatch')}</strong>
+            <span>{best.store_name} — {best.product_name}</span>
+            <span>{formatMoney(best.price, currency, locale)}{best.unit_price ? ` · ${formatMoney(best.unit_price, currency, locale)}/${normalizedUnitLabel(best.unit)}` : ''}</span>
+            <span>{recommendation}</span>
+          </div>
+        </article>
+      )}
+      {results.length > 1 && (
+        <div className="list">
+          {results.slice(1).map((item, index) => (
+            <article className="list-item" key={`${item.offer.store_name}-${item.offer.product_name}-${index}`}>
+              <div>
+                <strong>{item.offer.store_name} — {item.offer.product_name}</strong>
+                <span>{formatMoney(item.offer.price, currency, locale)}{item.offer.unit_price ? ` · ${formatMoney(item.offer.unit_price, currency, locale)}/${normalizedUnitLabel(item.offer.unit)}` : ''}</span>
+                <span>{item.offer.valid_until ? `${t('validUntil')}: ${item.offer.valid_until}` : ''}</span>
+                <div className="badge-row">
+                  {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -3006,6 +3149,38 @@ function parseOfferText(text, meta = {}) {
     .filter(Boolean)
 }
 
+function parseReceiptText(text = '') {
+  return normalizePdfText(text)
+    .split(/\r?\n/)
+    .map((line) => parseReceiptLine(line.trim()))
+    .filter(Boolean)
+}
+
+function parseReceiptLine(line = '') {
+  if (!line || /summe|total|gesamt|bar|karte|mwst|ust|datum|beleg|bon/i.test(line)) return null
+  const priceMatch = line.match(/(\d+(?:[,.]\d{1,2})?)\s*(?:eur|€)?\s*$/i)
+  if (!priceMatch) return null
+  const totalPrice = Number(String(priceMatch[1]).replace(',', '.'))
+  if (!totalPrice || Number.isNaN(totalPrice)) return null
+  const beforePrice = line.slice(0, priceMatch.index).trim()
+  if (!beforePrice || beforePrice.length < 2) return null
+  const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|stk|stück|buc|x)\s*$/i)
+  const quantity = quantityMatch ? Number(String(quantityMatch[1]).replace(',', '.')) : null
+  const unit = quantityMatch ? normalizeUnit(quantityMatch[2]) : null
+  const productName = (quantityMatch ? beforePrice.slice(0, quantityMatch.index) : beforePrice)
+    .replace(/^\d+\s*x\s*/i, '')
+    .trim()
+  const unitInfo = quantity && unit ? offerUnitPrice(totalPrice, quantity, unit) : null
+  return {
+    product_name: productName,
+    category: inferOfferCategory(productName),
+    quantity,
+    unit,
+    unit_price: unitInfo?.price ?? null,
+    total_price: totalPrice,
+  }
+}
+
 function splitOfferLines(text = '') {
   const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   return lines.reduce((result, line) => {
@@ -3090,12 +3265,14 @@ function mergePreviewRows(existing = [], incoming = []) {
 function parseOfferLine(line, meta) {
   if (storeNames.some((store) => line.toLowerCase() === store.toLowerCase())) return null
   if (/\b(valid|gültig|valabil|gültig vom|von|vom|bis|pana|până)\b/i.test(line)) return null
-  const priceMatch = line.match(/(\d+[,.]?\d*)\s*(€|eur)?$/i) || line.match(/(\d+)\s*[,. ]\s*(\d{2})\s*(€|eur)?/i)
+  const priceMatch = line.match(/(\d+(?:[.,]\d{1,2})?)(?:\s*[-.–])?\s*(€|eur)?$/i) || line.match(/(\d+)\s*[., ]\s*(\d{2})\s*(€|eur)?/i)
   if (!priceMatch) return null
 
-  const price = priceMatch[2]
-    ? Number(`${priceMatch[1].replace(',', '.')}.${priceMatch[2]}`)
-    : Number(String(priceMatch[1]).replace(',', '.'))
+  let rawPrice = String(priceMatch[1]).replace(',', '.')
+  if (/^\d+\.$/.test(rawPrice)) rawPrice = `${rawPrice}00`
+  if (/^\d+\.\d$/.test(rawPrice)) rawPrice = `${rawPrice}0`
+  const price = Number(rawPrice)
+  if (Number.isNaN(price)) return null
 
   const beforePrice = line.slice(0, priceMatch.index).trim()
   const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|buc|stk|stück|role|rollen|pachet|pack|sticlă|sticla|fl|cutie)$/i)
@@ -3221,87 +3398,8 @@ function normalizeProduct(value = '') {
     .trim()
 }
 
-function buildShoppingHistory(journalEntries = []) {
-  const rows = journalEntries
-    .filter((item) => item.product_name && toNumber(item.amount) > 0)
-    .map((item) => {
-      const unitInfo = normalizedUnitPrice(item)
-      return {
-        product: item.product_name,
-        value: unitInfo?.price ?? toNumber(item.amount),
-        unit: unitInfo?.unit,
-        store: item.store,
-        date: item.entry_date,
-      }
-    })
-  const byProduct = new Map()
-  rows.forEach((row) => {
-    const key = normalizeProduct(row.product)
-    if (!byProduct.has(key)) byProduct.set(key, [])
-    byProduct.get(key).push(row)
-  })
-  return [...byProduct.entries()].map(([key, items]) => {
-    const sorted = [...items].sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    return {
-      key,
-      product: sorted[sorted.length - 1].product,
-      unit: sorted[sorted.length - 1].unit,
-      last: sorted[sorted.length - 1],
-      min: sorted.reduce((min, item) => item.value < min.value ? item : min, sorted[0]),
-      max: sorted.reduce((max, item) => item.value > max.value ? item : max, sorted[0]),
-    }
-  })
-}
-
-function bestShoppingMatches(shoppingList = [], offers = [], journalEntries = []) {
-  const history = buildShoppingHistory(journalEntries)
-  return shoppingList.map((item) => {
-    const matches = offers
-      .map((offer) => ({ offer, ...productMatch(item.product_name, offer.product_name) }))
-      .filter((row) => row.match)
-      .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
-    const best = matches[0]?.offer || null
-    const hist = history.find((row) => productMatch(item.product_name, row.product).match)
-    const bestValue = best ? offerCompareValue(best) : 0
-    const lastValue = hist?.last?.value || 0
-    const minValue = hist?.min?.value || 0
-    return {
-      product_name: item.product_name,
-      best,
-      history: hist,
-      saving: best && lastValue ? lastValue - bestValue : 0,
-      isBestObserved: Boolean(best && minValue && bestValue < minValue),
-      approx: Boolean(matches[0]?.approx),
-    }
-  })
-}
-
 function offerCompareValue(offer) {
   return toNumber(offer.unit_price) || toNumber(offer.price)
-}
-
-function buildStoreRecommendations(bestPrices = [], stores = []) {
-  const byStore = new Map()
-  bestPrices.filter((item) => item.best).forEach((item) => {
-    const store = item.best.store_name
-    if (!byStore.has(store)) byStore.set(store, { store, matches: 0, bestCount: 0, saving: 0, total: 0 })
-    const row = byStore.get(store)
-    row.matches += 1
-    row.bestCount += 1
-    row.saving += Math.max(0, item.saving)
-    row.total += toNumber(item.best.price)
-  })
-  return [...byStore.values()].map((row) => {
-    const storeSettings = stores.find((store) => store.name === row.store)
-    const travelCost = storeSettings?.distance_km && storeSettings?.fuel_cost_estimate
-      ? toNumber(storeSettings.distance_km) * 2 * toNumber(storeSettings.fuel_cost_estimate)
-      : null
-    const netSaving = travelCost === null ? null : row.saving - travelCost
-    const recommendation = netSaving !== null
-      ? (netSaving >= 2 ? 'worthIt' : storeSettings?.on_regular_route ? 'routeOnly' : 'noExtraTrip')
-      : row.saving >= 2 ? 'worthIt' : 'routeOnly'
-    return { ...row, netSaving, recommendation }
-  }).sort((a, b) => b.saving - a.saving)
 }
 
 export default App

@@ -930,3 +930,19 @@ h3 {
   font-size: 0.72rem;
   font-weight: 800;
 }
+
+.tabbar.sub-tabbar {
+  position: static;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 1.15rem;
+  gap: 0.35rem;
+}
+
+.tabbar.sub-tabbar button {
+  min-height: 34px;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+  background: #e1e7dc;
+}
+
