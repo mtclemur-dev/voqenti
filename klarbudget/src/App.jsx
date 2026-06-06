@@ -26,7 +26,7 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
+// const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
 const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
 const BUILD_LABEL = 'KlarBudget build 2026-06-06 20:40 stable-inputs'
@@ -68,6 +68,7 @@ function App() {
   const [debtSort, setDebtSort] = useState('priority')
   const [shoppingTab, setShoppingTab] = useState('import')
   const [offerPreview, setOfferPreview] = useState([])
+  // eslint-disable-next-line no-unused-vars
   const [priceHistory, setPriceHistory] = useState([])
   const [receipts, setReceipts] = useState([])
   const [receiptItems, setReceiptItems] = useState([])
@@ -1333,9 +1334,6 @@ function SmartShopping({
       {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
       {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
       {tab === 'search' && <SearchOffersTab offers={searchableOffers} currency={currency} locale={locale} t={t} />}
-    </>
-  )
-}
     </>
   )
 }
@@ -3400,6 +3398,184 @@ function normalizeProduct(value = '') {
 
 function offerCompareValue(offer) {
   return toNumber(offer.unit_price) || toNumber(offer.price)
+}
+
+// === RESTORED FUNCTIONS ===
+
+function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, onDelete, onSave }) {
+  const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
+  const route = getRoute && items.length ? getRoute(items.filter(i => !i.purchased)) : null
+  
+  return (
+    <>
+      <section className="section">
+        <h2>{t('myShoppingList')}</h2>
+        
+        {route && route.stores.length > 0 && (
+          <div className="card info">
+            <strong>🛍️ {t('recommendedRoute')}:</strong> {route.stores.join(' → ')} | 
+            Distanță: {route.totalDistance.toFixed(1)}km | Estimare economie: ~{route.savings}€
+          </div>
+        )}
+        
+        <form className="form-grid" onSubmit={(event) => {
+          event.preventDefault()
+          onSave(form)
+          setForm({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
+        }}>
+          <Input label={t('productName')} value={form.product_name} onChange={(value) => setForm({ ...form, product_name: value })} required />
+          <Input label={t('category')} value={form.category} onChange={(value) => setForm({ ...form, category: value })} />
+          <Input label={t('quantity')} type="number" value={form.desired_quantity} onChange={(value) => setForm({ ...form, desired_quantity: value })} />
+          <Input label={t('unit')} value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} />
+          <label>{t('priority')}<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="normal">{t('normal')}</option><option value="important">{t('important')}</option><option value="offer_only">{t('offerOnly')}</option></select></label>
+          <label>{t('preferredStore')}<select value={form.preferred_store} onChange={(event) => setForm({ ...form, preferred_store: event.target.value })}><option value="">{t('all')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+          <div className="form-actions"><button type="submit">{t('add')}</button></div>
+        </form>
+      </section>
+      
+      {notifications && notifications.length > 0 && (
+        <div className="card success">
+          <strong>🔔 {notifications.length} notificări cu prețuri reduse!</strong>
+          <ul>
+            {notifications.slice(0, 5).map(n => (
+              <li key={n.id}>{n.product_name} la {n.store_name}: <strong>{n.new_price}€</strong> (-{n.price_reduction_percent}%)</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
+      <EntityList
+        title={t('myShoppingList')}
+        items={items.map((item) => {
+          const recs = getRecommendations ? getRecommendations(item) : []
+          const cheapest = recs[0]
+          return {
+            ...item,
+            name: item.product_name,
+            amount: 0,
+            recommendation: cheapest ? `${cheapest.store_name}: ${cheapest.price}€` : null,
+          }
+        })}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority || 'normal')}${item.preferred_store ? ` - ${item.preferred_store}` : ''} ${item.recommendation ? `| 💰 ${item.recommendation}` : ''}`}
+        onEdit={() => {}}
+        onDelete={onDelete}
+        renderActions={(item) => item.purchased ? <span className="badge">{t('paid')}</span> : null}
+      />
+    </>
+  )
+}
+
+function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, onConfirmPreview, onDeleteOffer, onPreviewChange }) {
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <h2>{t('offerPreview')}</h2>
+          <div className="button-pair">
+            <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>
+            <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
+          </div>
+        </div>
+        {!preview.length && <div className="notice">{t('noPreviewRows')}</div>}
+        <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
+      </section>
+      <EntityList
+        title={t('savedOffers')}
+        items={savedOffers.map((item) => ({ ...item, name: `${item.product_name} · ${item.store_name}`, amount: item.price }))}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${item.valid_until || '-'} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
+        onEdit={() => {}}
+        onDelete={onDeleteOffer}
+      />
+    </>
+  )
+}
+
+function buildShoppingHistory(journalEntries = []) {
+  const rows = journalEntries
+    .filter((item) => item.product_name && toNumber(item.amount) > 0)
+    .map((item) => {
+      const unitInfo = normalizedUnitPrice(item)
+      return {
+        product: item.product_name,
+        value: unitInfo?.price ?? toNumber(item.amount),
+        unit: unitInfo?.unit,
+        store: item.store,
+        date: item.entry_date,
+      }
+    })
+  const byProduct = new Map()
+  rows.forEach((row) => {
+    const key = normalizeProduct(row.product)
+    if (!byProduct.has(key)) byProduct.set(key, [])
+    byProduct.get(key).push(row)
+  })
+  return [...byProduct.entries()].map(([key, items]) => {
+    const sorted = [...items].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    return {
+      key,
+      product: sorted[sorted.length - 1].product,
+      unit: sorted[sorted.length - 1].unit,
+      last: sorted[sorted.length - 1],
+      min: sorted.reduce((min, item) => item.value < min.value ? item : min, sorted[0]),
+      max: sorted.reduce((max, item) => item.value > max.value ? item : max, sorted[0]),
+    }
+  })
+}
+
+function bestShoppingMatches(shoppingList = [], offers = [], journalEntries = []) {
+  const history = buildShoppingHistory(journalEntries)
+  return shoppingList.map((item) => {
+    const matches = offers
+      .map((offer) => ({ offer, ...productMatch(item.product_name, offer.product_name) }))
+      .filter((row) => row.match)
+      .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
+    const best = matches[0]?.offer || null
+    const hist = history.find((row) => productMatch(item.product_name, row.product).match)
+    const bestValue = best ? offerCompareValue(best) : 0
+    const lastValue = hist?.last?.value || 0
+    const minValue = hist?.min?.value || 0
+    return {
+      product_name: item.product_name,
+      best,
+      history: hist,
+      saving: best && lastValue ? lastValue - bestValue : 0,
+      isBestObserved: Boolean(best && minValue && bestValue < minValue),
+      approx: Boolean(matches[0]?.approx),
+    }
+  })
+}
+
+function buildStoreRecommendations(bestPrices = [], stores = []) {
+  const byStore = new Map()
+  bestPrices.filter((item) => item.best).forEach((item) => {
+    const store = item.best.store_name
+    if (!byStore.has(store)) byStore.set(store, { store, matches: 0, bestCount: 0, saving: 0, total: 0 })
+    const row = byStore.get(store)
+    row.matches += 1
+    row.bestCount += 1
+    row.saving += Math.max(0, item.saving)
+    row.total += toNumber(item.best.price)
+  })
+  return [...byStore.values()].map((row) => {
+    const storeSettings = stores.find((store) => store.name === row.store)
+    const travelCost = storeSettings?.distance_km && storeSettings?.fuel_cost_estimate
+      ? toNumber(storeSettings.distance_km) * 2 * toNumber(storeSettings.fuel_cost_estimate)
+      : null
+    const netSaving = travelCost === null ? null : row.saving - travelCost
+    const recommendation = netSaving !== null
+      ? (netSaving >= 2 ? 'worthIt' : storeSettings?.on_regular_route ? 'routeOnly' : 'noExtraTrip')
+      : row.saving >= 2 ? 'worthIt' : 'routeOnly'
+    return { ...row, netSaving, recommendation }
+  }).sort((a, b) => b.saving - a.saving)
 }
 
 export default App

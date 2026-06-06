@@ -231,6 +231,7 @@ function formatUtilityReadings(readings = [], settings = {}, currency, locale) {
       `  - tarif folosit: ${unitPrice.toFixed(4)} EUR/${units[meterType]}`,
       `  - avans lunar platit: ${formatMoney(monthlyPayment, currency, locale)}`,
       `  - platit pana acum in ${currentYear}: ${formatMoney(paidToDate, currency, locale)}`,
+      `  - consum real estimat in ${currentYear}: ${currentYearConsumption.toFixed(2)} ${units[meterType]}`,
       `  - cost real estimat in ${currentYear}: ${formatMoney(currentYearCost, currency, locale)}`,
       `  - diferenta estimata: ${difference >= 0 ? 'posibil bani inapoi' : 'posibil de plata'} ${formatMoney(Math.abs(difference), currency, locale)}`,
       recommendedMonthlyPayment > 0 ? `  - avans lunar recomandat estimativ: ${formatMoney(recommendedMonthlyPayment, currency, locale)}` : '',
