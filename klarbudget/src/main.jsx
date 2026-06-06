@@ -3,18 +3,18 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './styles/app.css'
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        registration.update()
-      })
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
       .catch(() => {})
+
+    if ('caches' in window) {
+      caches.keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .catch(() => {})
+    }
   })
-} else if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations()
-    .then((registrations) => registrations.forEach((registration) => registration.unregister()))
-    .catch(() => {})
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

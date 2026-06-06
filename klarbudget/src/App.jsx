@@ -7,6 +7,7 @@ import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
+import { FamilyTokenEconomy } from './components/FamilyTokenEconomy'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
@@ -25,15 +26,19 @@ const defaultSettings = {
   include_overdraft_in_debt_plan: false,
 }
 
-const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions']
+const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
 const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
+const BUILD_LABEL = 'KlarBudget build 2026-06-06 20:40 stable-inputs'
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [accountRole, setAccountRole] = useState('parent')
+  const [childName, setChildName] = useState('')
+  const [profileAccountRole, setProfileAccountRole] = useState('parent')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('dashboard')
@@ -61,10 +66,11 @@ function App() {
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
-  const [shoppingTab, setShoppingTab] = useState('list')
+  const [shoppingTab, setShoppingTab] = useState('import')
   const [offerPreview, setOfferPreview] = useState([])
-  const [priceNotifications, setPriceNotifications] = useState([])
   const [priceHistory, setPriceHistory] = useState([])
+  const [receipts, setReceipts] = useState([])
+  const [receiptItems, setReceiptItems] = useState([])
 
   const t = useMemo(() => makeTranslator(language), [language])
 
@@ -94,7 +100,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, notificationsRes, priceHistoryRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -110,15 +116,23 @@ function App() {
       supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).eq('status', 'confirmed').order('valid_until', { ascending: false }),
       supabase.from('kb_stores').select('*').eq('user_id', user.id).order('name', { ascending: true }),
       supabase.from('kb_offer_sources').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_price_notifications').select('*').eq('user_id', user.id).eq('is_read', false).order('created_at', { ascending: false }),
       supabase.from('kb_price_history').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
+      supabase.from('kb_receipts').select('*').eq('user_id', user.id).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('kb_receipt_items').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
 
+    const metadataRole = user.user_metadata?.account_role === 'child' ? 'child' : 'parent'
     if (!profileRes.data) {
-      await supabase.from('kb_profiles').insert({ id: user.id, preferred_language: language, currency: 'EUR' })
+      const baseProfile = { id: user.id, preferred_language: language, currency: 'EUR' }
+      const { error } = await supabase.from('kb_profiles').insert({ ...baseProfile, account_role: metadataRole })
+      if (error && /account_role/i.test(error.message || '')) {
+        await supabase.from('kb_profiles').insert(baseProfile)
+      }
+      setProfileAccountRole(metadataRole)
     } else {
       setCurrency(profileRes.data.currency || 'EUR')
       setLanguage(profileRes.data.preferred_language || language)
+      setProfileAccountRole(profileRes.data.account_role || metadataRole)
     }
 
     if (!settingsRes.data) {
@@ -157,9 +171,10 @@ function App() {
     setWeeklyOffers(offersRes.data || [])
     setStores(storesRes.data || [])
     setOfferSources(sourcesRes.data || [])
-    setPriceNotifications(notificationsRes.data || [])
     setPriceHistory(priceHistoryRes.data || [])
-    setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error)
+    setReceipts(receiptsRes.data || [])
+    setReceiptItems(receiptItemsRes.data || [])
+    setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error && !receiptsRes.error && !receiptItemsRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -167,104 +182,7 @@ function App() {
     loadData()
   }, [loadData])
 
-  // SMART SHOPPING FUNCTIONS
-  const getProductRecommendations = useCallback((shoppingItem) => {
-    if (!shoppingItem) return []
-    const matches = weeklyOffers.filter(offer => productMatch(shoppingItem.product_name, offer.product_name))
-    return matches.sort((a, b) => (a.unit_price || a.price) - (b.unit_price || b.price))
-  }, [weeklyOffers])
-
-  const calculateOptimalRoute = useCallback((itemsToShop) => {
-    if (!itemsToShop.length || !stores.length) return { stores: [], totalDistance: 0, totalCost: 0, savings: 0 }
-    
-    const storeScores = {}
-    storeNames.forEach(store => { storeScores[store] = { items: 0, cost: 0, distance: 0 } })
-    
-    itemsToShop.forEach(item => {
-      const recs = getProductRecommendations(item)
-      const cheapest = recs[0]
-      if (cheapest) {
-        if (!storeScores[cheapest.store_name]) storeScores[cheapest.store_name] = { items: 0, cost: 0, distance: 0 }
-        storeScores[cheapest.store_name].items += 1
-        storeScores[cheapest.store_name].cost += (cheapest.unit_price || cheapest.price) * (item.desired_quantity || 1)
-        const storeInfo = stores.find(s => s.name === cheapest.store_name)
-        storeScores[cheapest.store_name].distance += storeInfo?.distance_km || 0
-      }
-    })
-    
-    const sortedStores = Object.entries(storeScores)
-      .filter((entry) => entry[1].items > 0)
-      .sort((a, b) => b[1].items - a[1].items)
-      .map(([store]) => store)
-    
-    const totalDistance = sortedStores.reduce((sum, store) => sum + (storeScores[store].distance || 0), 0)
-    const totalCost = sortedStores.reduce((sum, store) => sum + storeScores[store].cost, 0)
-    
-    return {
-      stores: sortedStores,
-      totalDistance,
-      totalCost,
-      savings: Math.round((totalCost / itemsToShop.length) * sortedStores.length * 0.1),
-    }
-  }, [stores, getProductRecommendations])
-
-  const detectPriceReductions = useCallback(async () => {
-    const shoppingItems = shoppingList.filter(item => !item.purchased && (item.priority === 'important' || item.priority === 'offer_only'))
-    
-    for (const item of shoppingItems) {
-      const recs = getProductRecommendations(item)
-      if (recs.length > 0) {
-        const cheapest = recs[0]
-        const lastPrice = priceHistory.find(h => h.product_name === item.product_name && h.store_name === cheapest.store_name)
-        const reduction = lastPrice ? ((lastPrice.price - cheapest.price) / lastPrice.price * 100) : 0
-        
-        if (reduction > 15 && !priceNotifications.find(n => n.shopping_item_id === item.id && n.store_name === cheapest.store_name)) {
-          await supabase.from('kb_price_notifications').insert({
-            user_id: user.id,
-            shopping_item_id: item.id,
-            product_name: item.product_name,
-            store_name: cheapest.store_name,
-            price_reduction_percent: Math.round(reduction),
-            old_price: lastPrice?.price || null,
-            new_price: cheapest.price,
-            valid_until: cheapest.valid_until,
-          })
-        }
-      }
-    }
-    loadData()
-  }, [shoppingList, getProductRecommendations, priceNotifications, user, priceHistory, loadData])
-
-  useEffect(() => {
-    if (user && shoppingList.length && weeklyOffers.length) {
-      const timer = setTimeout(() => {
-        detectPriceReductions()
-      }, 2000)
-      return () => clearTimeout(timer)
-    }
-  }, [weeklyOffers, shoppingList, user, detectPriceReductions])
-
-  const getPriceAnalytics = useCallback(() => {
-    if (!priceHistory.length) return {}
-    
-    const analytics = {}
-    priceHistory.forEach(record => {
-      const key = `${record.product_name}|${record.store_name}`
-      if (!analytics[key]) analytics[key] = []
-      analytics[key].push(record)
-    })
-    
-    const summary = {}
-    Object.entries(analytics).forEach(([key, records]) => {
-      const sorted = records.sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
-      const current = sorted[0]
-      const prev = sorted[1]
-      const trend = prev ? ((current.price - prev.price) / prev.price * 100) : 0
-      const avg = records.reduce((sum, r) => sum + r.price, 0) / records.length
-      summary[key] = { current: current.price, avg, trend: Math.round(trend), records: records.length }
-    })
-    return summary
-  }, [priceHistory])
+  // Automatic shopping refresh is disabled. It was reloading the app while typing in forms.
 
   const summary = useMemo(
     () => calculateSummary({ incomes, expenses, debts, settings, paymentStatuses, accounts, accountSnapshots, journalEntries }),
@@ -284,7 +202,21 @@ function App() {
 
   const signUp = async () => {
     setAuthError('')
-    const { error } = await supabase.auth.signUp({ email, password })
+    const cleanChildName = childName.trim()
+    if (accountRole === 'child' && !cleanChildName) {
+      setAuthError('Scrie numele copilului pentru contul de copil.')
+      return
+    }
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          account_role: accountRole,
+          child_name: accountRole === 'child' ? cleanChildName : null,
+        },
+      },
+    })
     if (error) setAuthError(error.message)
   }
 
@@ -460,6 +392,80 @@ function App() {
     loadData()
   }
 
+  const saveReceipt = async ({ receipt, items, createJournalEntry }) => {
+    if (!items.length) {
+      setNotice('Nu am gasit produse de salvat.')
+      return
+    }
+
+    const total = items.reduce((sum, item) => sum + toNumber(item.total_price), 0)
+    const { data: savedReceipt, error: receiptError } = await supabase
+      .from('kb_receipts')
+      .insert({
+        user_id: user.id,
+        store_name: receipt.store_name || 'Magazin',
+        purchase_date: receipt.purchase_date || isoDate(new Date()),
+        total_amount: total,
+        source: receipt.source || 'manual_text',
+        raw_text: receipt.raw_text || null,
+        notes: receipt.notes || null,
+      })
+      .select('*')
+      .single()
+
+    if (receiptError) {
+      setNotice(t('saveError'))
+      window.alert(receiptError.message)
+      return
+    }
+
+    const rows = items.map((item) => ({
+      user_id: user.id,
+      receipt_id: savedReceipt.id,
+      product_name: item.product_name,
+      category: item.category || inferOfferCategory(item.product_name),
+      quantity: item.quantity || null,
+      unit: item.unit || null,
+      unit_price: item.unit_price || null,
+      total_price: toNumber(item.total_price),
+      notes: item.notes || null,
+    }))
+
+    const { error: itemError } = await supabase.from('kb_receipt_items').insert(rows)
+    if (itemError) {
+      setNotice(t('saveError'))
+      window.alert(itemError.message)
+      return
+    }
+
+    await supabase.from('kb_price_history').insert(rows.map((item) => ({
+      user_id: user.id,
+      product_name: item.product_name,
+      store_name: savedReceipt.store_name,
+      price: item.total_price,
+      unit_price: item.unit_price,
+      quantity: item.quantity,
+      unit: item.unit,
+      recorded_at: savedReceipt.purchase_date,
+    })))
+
+    if (createJournalEntry) {
+      await saveJournalEntry({
+        entry_date: savedReceipt.purchase_date,
+        description: `Bon ${savedReceipt.store_name}`,
+        amount: total,
+        category: 'mancare',
+        store: savedReceipt.store_name,
+        product_name: 'Bon cumparaturi',
+        entry_mode: 'detailed',
+      })
+    } else {
+      loadData()
+    }
+
+    setNotice(`Bon salvat: ${total.toFixed(2)} ${currency}.`)
+  }
+
   const saveStore = async (payload) => {
     const prepared = preparePayload(payload)
     if (prepared.import_mode === 'auto_future') prepared.active = false
@@ -474,8 +480,9 @@ function App() {
     loadData()
   }
 
-  const confirmOfferPreview = async (mode = 'safe') => {
-    const rows = offerPreview
+  const confirmOfferPreview = async (mode = 'safe', previewRows = null) => {
+    const sourceRows = previewRows || offerPreview
+    const rows = sourceRows
       .filter((item) => mode === 'all' ? item.status !== 'ignored' : item.status === 'ok' && toNumber(item.confidence) >= 0.75)
       .map((item) => normalizeOfferPayload({ ...item, status: 'confirmed' }))
       .filter((item) => !weeklyOffers.some((offer) =>
@@ -491,43 +498,7 @@ function App() {
       window.alert(error.message)
       return
     }
-    setOfferPreview((current) => current.filter((item) => !rows.some((row) => row.product_name === item.product_name && row.store_name === item.store_name && toNumber(row.price) === toNumber(item.price))))
     setNotice(t('offersImported'))
-    loadData()
-  }
-
-  const importOffer = async (offer) => {
-    const noteLines = []
-    if (offer.price !== undefined) {
-      noteLines.push(`Preț ofertă: ${offer.price}€` + (offer.old_price ? ` (redus de la ${offer.old_price}€)` : ''))
-    }
-    if (offer.brand) {
-      noteLines.push(`Brand: ${offer.brand}`)
-    }
-    if (offer.valid_until) {
-      noteLines.push(`${t('kaufdaValidUntil')}: ${offer.valid_until}`)
-    }
-    const notesStr = noteLines.join('\n')
-
-    const insertData = preparePayload({
-      product_name: offer.product_name,
-      category: offer.category || 'mâncare',
-      desired_quantity: offer.quantity || 1,
-      unit: offer.unit || 'buc',
-      priority: 'normal',
-      preferred_store: offer.store_name,
-      purchased: false,
-      notes: notesStr
-    })
-    insertData.user_id = user.id
-
-    const { error } = await supabase.from('kb_shopping_list').insert(insertData)
-    if (error) {
-      setNotice(t('saveError'))
-      window.alert(error.message)
-      return
-    }
-    setNotice(t('kaufdaImportSuccess').replace('{product}', offer.product_name))
     loadData()
   }
 
@@ -661,6 +632,7 @@ function App() {
       <main className="auth-screen">
         <section className="auth-card">
           <p className="eyebrow">KlarBudget</p>
+          <p className="build-label">{BUILD_LABEL}</p>
           <h1>{dictionary[language].tagline}</h1>
           <div className="notice danger">{dictionary[language].missingEnv}</div>
         </section>
@@ -672,14 +644,49 @@ function App() {
     return (
       <Auth
         t={t}
+        buildLabel={BUILD_LABEL}
         email={email}
         password={password}
         setEmail={setEmail}
         setPassword={setPassword}
+        accountRole={accountRole}
+        setAccountRole={setAccountRole}
+        childName={childName}
+        setChildName={setChildName}
         onSignIn={signIn}
         onSignUp={signUp}
         error={authError}
       />
+    )
+  }
+
+  const isChildAccount = profileAccountRole === 'child' || user.user_metadata?.account_role === 'child'
+
+  if (isChildAccount) {
+    return (
+      <div className="app-shell">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">{t('appName')}</p>
+            <p className="build-label">{BUILD_LABEL}</p>
+            <h1>{t('kids')}</h1>
+            <p className="muted">Cont copil: acces doar la recompense.</p>
+          </div>
+          <div className="top-actions">
+            <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language">
+              {languages.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            </select>
+            <button type="button" className="secondary" onClick={() => supabase.auth.signOut()}>{t('signOut')}</button>
+          </div>
+        </header>
+        <nav className="tabbar" aria-label="KlarBudget child navigation">
+          <button type="button" className="active">{t('kids')}</button>
+        </nav>
+        <main className="content">
+          {notice && <div className="toast">{notice}</div>}
+          <FamilyTokenEconomy user={user} childOnly />
+        </main>
+      </div>
     )
   }
 
@@ -688,6 +695,7 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">{t('appName')}</p>
+          <p className="build-label">{BUILD_LABEL}</p>
           <h1>{t('tagline')}</h1>
         </div>
         <div className="top-actions">
@@ -752,6 +760,8 @@ function App() {
             locale={locale}
             offerPreview={offerPreview}
             offers={weeklyOffers}
+            receiptItems={receiptItems}
+            receipts={receipts}
             schemaReady={shoppingSchemaReady}
             shoppingList={shoppingList}
             stores={stores}
@@ -762,14 +772,9 @@ function App() {
             onDelete={(table, item) => deleteRow(table, item)}
             onPreviewChange={setOfferPreview}
             onSaveItem={saveShoppingItem}
+            onSaveReceipt={saveReceipt}
             onSaveStore={saveStore}
             onTabChange={setShoppingTab}
-            getProductRecommendations={getProductRecommendations}
-            calculateOptimalRoute={calculateOptimalRoute}
-            priceNotifications={priceNotifications}
-            user={user}
-            getPriceAnalytics={getPriceAnalytics}
-            onImportOffer={importOffer}
           />
         )}
         {view === 'workAbsence' && (
@@ -1053,6 +1058,7 @@ function App() {
             journalEntries={journalEntries}
           />
         )}
+        {view === 'kids' && <FamilyTokenEconomy user={user} />}
       </main>
     </div>
   )
@@ -1216,11 +1222,17 @@ function DailyJournal({ currency, dailyBudget, dailyClosures, editing, entries, 
   )
 }
 
-function SmartShopping({ currency, journalEntries, language, locale, offerPreview, offers, schemaReady, shoppingList, stores, sources, tab, t, onConfirmPreview, onDelete, onPreviewChange, onSaveItem, onSaveStore, onTabChange, getProductRecommendations, calculateOptimalRoute, priceNotifications, user, getPriceAnalytics, onImportOffer }) {
+function SmartShopping({ currency, locale, offerPreview, offers, receiptItems = [], receipts = [], schemaReady, tab, t, onConfirmPreview, onPreviewChange, onSaveReceipt, onTabChange }) {
   const activeOffers = offers.filter((offer) => !offer.valid_until || offer.valid_until >= isoDate(new Date()))
-  const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
-  const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
-  const priceHistory = buildShoppingHistory(journalEntries)
+  const searchableOffers = useMemo(() => {
+    const combined = [...offerPreview, ...activeOffers]
+    const seen = new Map()
+    combined.forEach((item) => {
+      const key = offerPreviewKey(item)
+      if (!seen.has(key)) seen.set(key, item)
+    })
+    return [...seen.values()]
+  }, [offerPreview, activeOffers])
 
   return (
     <>
@@ -1233,100 +1245,137 @@ function SmartShopping({ currency, journalEntries, language, locale, offerPrevie
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs">
-          {['list', 'kaufda'].map((item) => (
-            <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
+          {[
+            ['receipts', 'Bonuri'],
+            ['import', t('shopping_import')],
+            ['offers', t('shopping_offers')],
+            ['search', t('shopping_search')],
+          ].map(([item, label]) => (
+            <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{label}</button>
           ))}
         </div>
       </section>
 
-      {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
-      {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
-      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onTabChange={onTabChange} />}
-      {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
-      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
-      {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
-      {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
-      {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
+      {tab === 'receipts' && <ReceiptsTab currency={currency} locale={locale} receiptItems={receiptItems} receipts={receipts} onSaveReceipt={onSaveReceipt} />}
+      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
+      {tab === 'offers' && <ExtractedProductsTab currency={currency} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onPreviewChange={onPreviewChange} />}
+      {tab === 'search' && <SearchOffersTab offers={searchableOffers} currency={currency} locale={locale} t={t} />}
     </>
   )
 }
 
-function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, onDelete, onSave }) {
-  const [form, setForm] = useState({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
-  const route = getRoute && items.length ? getRoute(items.filter(i => !i.purchased)) : null
-  
+function ReceiptsTab({ currency, locale, receiptItems, receipts, onSaveReceipt }) {
+  const [text, setText] = useState('')
+  const [storeName, setStoreName] = useState('')
+  const [purchaseDate, setPurchaseDate] = useState(isoDate(new Date()))
+  const [preview, setPreview] = useState([])
+  const [createJournalEntry, setCreateJournalEntry] = useState(true)
+  const total = preview.reduce((sum, item) => sum + toNumber(item.total_price), 0)
+
+  const buildPreview = () => {
+    const rows = parseReceiptText(text)
+    setPreview(rows)
+  }
+
+  const save = async () => {
+    await onSaveReceipt({
+      receipt: {
+        store_name: storeName || detectStore(text) || 'Magazin',
+        purchase_date: purchaseDate,
+        source: 'manual_text',
+        raw_text: text,
+      },
+      items: preview,
+      createJournalEntry,
+    })
+    setText('')
+    setPreview([])
+  }
+
+  const itemsByReceipt = useMemo(() => {
+    const map = new Map()
+    receiptItems.forEach((item) => {
+      if (!map.has(item.receipt_id)) map.set(item.receipt_id, [])
+      map.get(item.receipt_id).push(item)
+    })
+    return map
+  }, [receiptItems])
+
   return (
-    <>
-      <section className="section">
-        <h2>{t('myShoppingList')}</h2>
-        
-        {route && route.stores.length > 0 && (
-          <div className="card info">
-            <strong>🛣️ {t('recommendedRoute')}:</strong> {route.stores.join(' → ')} | 
-            Distanță: {route.totalDistance.toFixed(1)}km | Estimare economie: ~{route.savings}€
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>Bonuri / CEC-uri</h2>
+          <p className="muted">Lipeste textul bonului, verifica produsele si salveaza. OCR din poza poate fi adaugat ulterior.</p>
+        </div>
+      </div>
+      <div className="form-grid">
+        <label>Magazin<input value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Netto, Lidl, Rewe..." /></label>
+        <label>Data<input type="date" value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} /></label>
+      </div>
+      <label>
+        Text bon
+        <textarea rows={8} value={text} onChange={(event) => setText(event.target.value)} placeholder={'Lapte 1L 0,99\nPaine 1,49\nUlei masline 5L 38,99'} />
+      </label>
+      <div className="button-row">
+        <button type="button" onClick={buildPreview}>Extrage produse</button>
+        <label className="checkbox">
+          <input type="checkbox" checked={createJournalEntry} onChange={(event) => setCreateJournalEntry(event.target.checked)} />
+          Adauga totalul si in Jurnal
+        </label>
+      </div>
+
+      {preview.length > 0 && (
+        <div className="section compact-section">
+          <div className="section-title">
+            <h3>Preview produse</h3>
+            <button type="button" onClick={save}>Confirma si salveaza ({formatMoney(total, currency, locale)})</button>
           </div>
-        )}
-        
-        <form className="form-grid" onSubmit={(event) => {
-          event.preventDefault()
-          onSave(form)
-          setForm({ product_name: '', category: 'mâncare', desired_quantity: '', unit: '', priority: 'normal', preferred_store: '', notes: '' })
-        }}>
-          <Input label={t('productName')} value={form.product_name} onChange={(value) => setForm({ ...form, product_name: value })} required />
-          <Input label={t('category')} value={form.category} onChange={(value) => setForm({ ...form, category: value })} />
-          <Input label={t('quantity')} type="number" value={form.desired_quantity} onChange={(value) => setForm({ ...form, desired_quantity: value })} />
-          <Input label={t('unit')} value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} />
-          <label>{t('priority')}<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option value="normal">{t('normal')}</option><option value="important">{t('important')}</option><option value="offer_only">{t('offerOnly')}</option></select></label>
-          <label>{t('preferredStore')}<select value={form.preferred_store} onChange={(event) => setForm({ ...form, preferred_store: event.target.value })}><option value="">{t('all')}</option>{storeNames.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
-          <Input label={t('notes')} value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-          <div className="form-actions"><button type="submit">{t('add')}</button></div>
-        </form>
-      </section>
-      
-      {notifications && notifications.length > 0 && (
-        <div className="card success">
-          <strong>🔔 {notifications.length} notificări cu prețuri reduse!</strong>
-          <ul>
-            {notifications.slice(0, 5).map(n => (
-              <li key={n.id}>{n.product_name} la {n.store_name}: <strong>{n.new_price}€</strong> (-{n.price_reduction_percent}%)</li>
+          <div className="list">
+            {preview.map((item, index) => (
+              <article className="list-item" key={`${item.product_name}-${index}`}>
+                <div>
+                  <strong>{item.product_name}</strong>
+                  <span>{item.quantity ? `${item.quantity} ${item.unit || ''}` : item.category}</span>
+                </div>
+                <div className="list-value">
+                  <b>{formatMoney(item.total_price, currency, locale)}</b>
+                  {item.unit_price ? <span>{formatMoney(item.unit_price, currency, locale)}/{item.unit}</span> : null}
+                </div>
+              </article>
             ))}
-          </ul>
+          </div>
         </div>
       )}
-      
-      <EntityList
-        title={t('myShoppingList')}
-        items={items.map((item) => {
-          const recs = getRecommendations ? getRecommendations(item) : []
-          const cheapest = recs[0]
-          return {
-            ...item,
-            name: item.product_name,
-            amount: 0,
-            recommendation: cheapest ? `${cheapest.store_name}: ${cheapest.price}€` : null,
-          }
-        })}
-        currency={currency}
-        language={language}
-        emptyText={t('noData')}
-        editText={t('edit')}
-        deleteText={t('delete')}
-        renderMeta={(item) => `${item.category || '-'} - ${t(item.priority || 'normal')}${item.preferred_store ? ` - ${item.preferred_store}` : ''} ${item.recommendation ? `| 💰 ${item.recommendation}` : ''}`}
-        onEdit={() => {}}
-        onDelete={onDelete}
-        renderActions={(item) => item.purchased ? <span className="badge">{t('paid')}</span> : null}
-      />
-    </>
+
+      <div className="section compact-section">
+        <h3>Bonuri salvate</h3>
+        <div className="list">
+          {receipts.length === 0 ? <div className="empty">Nu exista bonuri salvate.</div> : receipts.map((receipt) => (
+            <article className="list-item" key={receipt.id}>
+              <div>
+                <strong>{receipt.store_name}</strong>
+                <span>{receipt.purchase_date} - {(itemsByReceipt.get(receipt.id) || []).length} produse</span>
+              </div>
+              <div className="list-value">
+                <b>{formatMoney(receipt.total_amount, currency, locale)}</b>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
-function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange }) {
+function OfferImportTab({ preview, t, onPreviewChange, onConfirmPreview, onTabChange }) {
   const [text, setText] = useState('')
   const [meta, setMeta] = useState({ store_name: '', valid_from: '', valid_until: '', region: '' })
   const [pdfFiles, setPdfFiles] = useState([])
   const [extracting, setExtracting] = useState(false)
   const [localNotice, setLocalNotice] = useState('')
   const [extractedText, setExtractedText] = useState('')
+  const [autoImport, setAutoImport] = useState(true)
 
   const updatePdfFile = (fileName, patch) => setPdfFiles((current) => current.map((item) => item.file_name === fileName ? { ...item, ...patch } : item))
 
@@ -1400,7 +1449,13 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
       return
     }
 
-    onPreviewChange(mergePreviewRows(preview, rows))
+    const merged = mergePreviewRows(preview, rows)
+    onPreviewChange(merged)
+    if (autoImport) {
+      await onConfirmPreview('safe', merged)
+      onTabChange('offers')
+      return
+    }
     onTabChange('offers')
   }
 
@@ -1450,51 +1505,103 @@ function OfferImportTab({ preview, t, onPreviewChange, onSaveSource, onTabChange
         </details>
       )}
       <label>{t('manualTextImport')}<textarea rows="8" value={text} onChange={(event) => setText(event.target.value)} placeholder="Netto&#10;Lapte 1L 0,99 €&#10;Cafea 500g 4,99 €" /></label>
+      <label className="checkbox"><input type="checkbox" checked={autoImport} onChange={(event) => setAutoImport(event.target.checked)} />{t('autoImportSafeRows')}</label>
       <div className="form-actions">
-        {pdfFiles.length > 0 && (
-          <button type="button" className="secondary" onClick={() => {
-            pdfFiles.forEach((file) => onSaveSource({
-              store_name: file.store_name || meta.store_name || 'Necunoscut',
-              source_url: '',
-              active: false,
-              import_mode: 'manual_pdf',
-              status: t('pdfSavedAsSource'),
-              notes: `${file.file_name}${meta.valid_from || meta.valid_until ? ` - ${meta.valid_from || '?'} / ${meta.valid_until || '?'}` : ''}`,
-            }))
-            setPdfFiles([])
-          }}>{t('savePdfSources')}</button>
-        )}
-        <button type="button" onClick={handleExtractPreview} disabled={extracting}>{extracting ? t('pdfExtracting') : t('extractPreview')}</button>
+        <button type="button" onClick={handleExtractPreview} disabled={extracting}>{extracting ? t('pdfExtracting') : t('processPdfFiles')}</button>
       </div>
     </section>
   )
 }
 
-function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, onConfirmPreview, onDeleteOffer, onPreviewChange }) {
+function ExtractedProductsTab({ currency, locale, preview, savedOffers, t, onConfirmPreview, onPreviewChange }) {
+  const safeCount = preview.filter((item) => item.status === 'ok' && toNumber(item.confidence) >= 0.75).length
+
   return (
-    <>
-      <section className="section">
-        <div className="section-title">
-          <h2>{t('offerPreview')}</h2>
-          <div className="button-pair">
-            <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>
-            <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
-          </div>
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>{t('extractedProducts')}</h2>
+          <p className="muted">{t('offerPreview')}</p>
         </div>
-        {!preview.length && <div className="notice">{t('noPreviewRows')}</div>}
-        <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
-      </section>
-      <EntityList
-        title={t('savedOffers')}
-        items={savedOffers.map((item) => ({ ...item, name: `${item.product_name} · ${item.store_name}`, amount: item.price }))}
-        currency={currency}
-        language={language}
-        emptyText={t('noData')}
-        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${item.valid_until || '-'} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
-        onEdit={() => {}}
-        onDelete={onDeleteOffer}
-      />
-    </>
+        <div className="button-pair">
+          {safeCount > 0 && <button type="button" onClick={() => onConfirmPreview('safe')}>{t('confirmSafeRows')}</button>}
+          <button type="button" className="secondary" onClick={() => onPreviewChange(preview.filter((item) => item.status !== 'needs_review'))}>{t('ignoreUnsafeRows')}</button>
+        </div>
+      </div>
+      {!preview.length ? (
+        <div className="notice">{t('noExtractedProducts')}</div>
+      ) : (
+        <>
+          <div className="notice">{preview.length} {t('previewRows')} · {safeCount} {t('ok')}</div>
+          <OfferRows rows={preview} currency={currency} locale={locale} t={t} editable onChange={onPreviewChange} />
+        </>
+      )}
+      {savedOffers && savedOffers.length > 0 && (
+        <div className="notice success">{t('savedOffers')}: {savedOffers.length}</div>
+      )}
+    </section>
+  )
+}
+
+function SearchOffersTab({ offers, currency, locale, t }) {
+  const [query, setQuery] = useState('')
+  const trimmed = query.trim()
+  const results = trimmed
+    ? offers
+      .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
+      .filter((item) => item.match)
+      .sort((a, b) => {
+        const diff = offerCompareValue(a.offer) - offerCompareValue(b.offer)
+        if (diff !== 0) return diff
+        return toNumber(b.offer.confidence) - toNumber(a.offer.confidence)
+      })
+    : []
+
+  const best = results[0]?.offer || null
+  const recommendation = best
+    ? t('bestPriceRecommendation')
+        .replace('{query}', trimmed)
+        .replace('{store}', best.store_name)
+        .replace('{price}', `${formatMoney(best.unit_price || best.price, currency, locale)}${best.unit_price ? `/${normalizedUnitLabel(best.unit)}` : ''}`)
+    : ''
+
+  return (
+    <section className="section">
+      <div className="section-title">
+        <h2>{t('shopping_search')}</h2>
+      </div>
+      <div className="form-grid">
+        <label>{t('searchOffersLabel')}<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchOffersPlaceholder')} /></label>
+      </div>
+      {!trimmed && <div className="notice">{t('searchOffersPlaceholder')}</div>}
+      {trimmed && results.length === 0 && <div className="notice">{t('noSearchResults')}</div>}
+      {best && (
+        <article className="list-item highlighted">
+          <div>
+            <strong>{t('bestMatch')}</strong>
+            <span>{best.store_name} — {best.product_name}</span>
+            <span>{formatMoney(best.price, currency, locale)}{best.unit_price ? ` · ${formatMoney(best.unit_price, currency, locale)}/${normalizedUnitLabel(best.unit)}` : ''}</span>
+            <span>{recommendation}</span>
+          </div>
+        </article>
+      )}
+      {results.length > 1 && (
+        <div className="list">
+          {results.slice(1).map((item, index) => (
+            <article className="list-item" key={`${item.offer.store_name}-${item.offer.product_name}-${index}`}>
+              <div>
+                <strong>{item.offer.store_name} — {item.offer.product_name}</strong>
+                <span>{formatMoney(item.offer.price, currency, locale)}{item.offer.unit_price ? ` · ${formatMoney(item.offer.unit_price, currency, locale)}/${normalizedUnitLabel(item.offer.unit)}` : ''}</span>
+                <span>{item.offer.valid_until ? `${t('validUntil')}: ${item.offer.valid_until}` : ''}</span>
+                <div className="badge-row">
+                  {item.approx && <span className="badge danger">{t('approxMatch')}</span>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1729,741 +1836,6 @@ function OfferSourcesTab({ sources, t, onDelete, onSave }) {
         onEdit={() => {}}
         onDelete={onDelete}
       />
-    </>
-  )
-}
-
-const kaufdaMockOffers = [
-  // Milch (Lapte)
-  {
-    product_name: 'Milch proaspata 3.5% (Frische Milch)',
-    store_name: 'Norma',
-    brand: 'Landfein',
-    category: 'mâncare',
-    price: 0.89,
-    old_price: 1.19,
-    discount_percent: 25,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 0.89,
-    app_price: false,
-  },
-  {
-    product_name: 'H-Milch UHT 1.5% grasime',
-    store_name: 'Aldi',
-    brand: 'Milsani',
-    category: 'mâncare',
-    price: 0.99,
-    old_price: 1.15,
-    discount_percent: 14,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 0.99,
-    app_price: false,
-  },
-  {
-    product_name: 'Milch Bio organica 3.5%',
-    store_name: 'Lidl',
-    brand: 'Milbona',
-    category: 'mâncare',
-    price: 1.15,
-    old_price: 1.45,
-    discount_percent: 20,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 1.15,
-    app_price: false,
-  },
-  {
-    product_name: 'H-Milch 3.5% grasime',
-    store_name: 'Netto',
-    brand: 'Gutes Land',
-    category: 'mâncare',
-    price: 0.95,
-    old_price: 1.09,
-    discount_percent: 12,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 0.95,
-    app_price: true,
-  },
-  {
-    product_name: 'Milch proaspata 3.5% Landliebe',
-    store_name: 'Kaufland',
-    brand: 'Landliebe',
-    category: 'mâncare',
-    price: 1.29,
-    old_price: 1.69,
-    discount_percent: 23,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 1.29,
-    app_price: false,
-  },
-  {
-    product_name: 'Milch organica proaspata Demeter',
-    store_name: 'Rewe',
-    brand: 'Rewe Bio',
-    category: 'mâncare',
-    price: 1.49,
-    old_price: 1.89,
-    discount_percent: 21,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 1.49,
-    app_price: false,
-  },
-  // Kaffee (Cafea)
-  {
-    product_name: 'Cafea boabe Jacobs Barista Edition',
-    store_name: 'Aldi',
-    brand: 'Jacobs',
-    category: 'mâncare',
-    price: 8.88,
-    old_price: 13.99,
-    discount_percent: 36,
-    quantity: 1000,
-    unit: 'g',
-    unit_price: 8.88,
-    app_price: false,
-  },
-  {
-    product_name: 'Cafea macinata Jacobs Kronung',
-    store_name: 'Kaufland',
-    brand: 'Jacobs',
-    category: 'mâncare',
-    price: 4.49,
-    old_price: 6.99,
-    discount_percent: 35,
-    quantity: 500,
-    unit: 'g',
-    unit_price: 8.98,
-    app_price: false,
-  },
-  {
-    product_name: 'Cafea boabe Crema d\'Oro',
-    store_name: 'Rewe',
-    brand: 'Dallmayr',
-    category: 'mâncare',
-    price: 9.99,
-    old_price: 14.99,
-    discount_percent: 33,
-    quantity: 1000,
-    unit: 'g',
-    unit_price: 9.99,
-    app_price: false,
-  },
-  {
-    product_name: 'Cafea macinata Tchibo Feine Milde',
-    store_name: 'Lidl',
-    brand: 'Tchibo',
-    category: 'mâncare',
-    price: 4.99,
-    old_price: 6.99,
-    discount_percent: 28,
-    quantity: 500,
-    unit: 'g',
-    unit_price: 9.98,
-    app_price: true,
-  },
-  {
-    product_name: 'Cafea macinata Lavazza Crema e Gusto',
-    store_name: 'Edeka',
-    brand: 'Lavazza',
-    category: 'mâncare',
-    price: 3.49,
-    old_price: 4.99,
-    discount_percent: 30,
-    quantity: 250,
-    unit: 'g',
-    unit_price: 13.96,
-    app_price: false,
-  },
-  {
-    product_name: 'Cafea macinata Dallmayr Prodomo',
-    store_name: 'Norma',
-    brand: 'Dallmayr',
-    category: 'mâncare',
-    price: 5.29,
-    old_price: 7.49,
-    discount_percent: 29,
-    quantity: 500,
-    unit: 'g',
-    unit_price: 10.58,
-    app_price: false,
-  },
-  // Butter (Unt)
-  {
-    product_name: 'Unt de masa Meggle Butter',
-    store_name: 'Rewe',
-    brand: 'Meggle',
-    category: 'mâncare',
-    price: 1.49,
-    old_price: 2.59,
-    discount_percent: 42,
-    quantity: 250,
-    unit: 'g',
-    unit_price: 5.96,
-    app_price: false,
-  },
-  {
-    product_name: 'Unt ecologic Kerrygold',
-    store_name: 'Aldi',
-    brand: 'Kerrygold',
-    category: 'mâncare',
-    price: 1.69,
-    old_price: 2.79,
-    discount_percent: 39,
-    quantity: 250,
-    unit: 'g',
-    unit_price: 6.76,
-    app_price: false,
-  },
-  {
-    product_name: 'Unt premium Landliebe Butter',
-    store_name: 'Lidl',
-    brand: 'Landliebe',
-    category: 'mâncare',
-    price: 1.39,
-    old_price: 2.49,
-    discount_percent: 44,
-    quantity: 250,
-    unit: 'g',
-    unit_price: 5.56,
-    app_price: true,
-  },
-  {
-    product_name: 'Unt marca proprie Norma Butter',
-    store_name: 'Norma',
-    brand: 'Landfein',
-    category: 'mâncare',
-    price: 1.25,
-    old_price: 1.89,
-    discount_percent: 33,
-    quantity: 250,
-    unit: 'g',
-    unit_price: 5.00,
-    app_price: false,
-  },
-  // Kartoffeln (Cartofi)
-  {
-    product_name: 'Cartofi BIO (Speisekartoffeln)',
-    store_name: 'Norma',
-    brand: 'Bio Sonne',
-    category: 'mâncare',
-    price: 1.99,
-    old_price: 2.79,
-    discount_percent: 28,
-    quantity: 2.5,
-    unit: 'kg',
-    unit_price: 0.80,
-    app_price: false,
-  },
-  {
-    product_name: 'Cartofi timpurii (Frühkartoffeln)',
-    store_name: 'Aldi',
-    brand: 'Gartenkrone',
-    category: 'mâncare',
-    price: 2.49,
-    old_price: 3.49,
-    discount_percent: 28,
-    quantity: 2.5,
-    unit: 'kg',
-    unit_price: 1.00,
-    app_price: false,
-  },
-  {
-    product_name: 'Cartofi rosii (Rote Kartoffeln)',
-    store_name: 'Lidl',
-    brand: 'Landjunker',
-    category: 'mâncare',
-    price: 2.99,
-    old_price: 3.99,
-    discount_percent: 25,
-    quantity: 5,
-    unit: 'kg',
-    unit_price: 0.60,
-    app_price: false,
-  },
-  // Zwiebeln (Ceapă)
-  {
-    product_name: 'Ceapa galbena (Speisezwiebeln)',
-    store_name: 'Netto',
-    brand: 'Gartenfrisch',
-    category: 'mâncare',
-    price: 1.19,
-    old_price: 1.59,
-    discount_percent: 25,
-    quantity: 2,
-    unit: 'kg',
-    unit_price: 0.60,
-    app_price: false,
-  },
-  {
-    product_name: 'Ceapa rosie BIO (Rote Zwiebeln)',
-    store_name: 'Edeka',
-    brand: 'Edeka Bio',
-    category: 'mâncare',
-    price: 0.99,
-    old_price: 1.39,
-    discount_percent: 28,
-    quantity: 500,
-    unit: 'g',
-    unit_price: 1.98,
-    app_price: false,
-  },
-  {
-    product_name: 'Ceapa verde (Frühlingszwiebeln)',
-    store_name: 'Lidl',
-    brand: 'Lidl Fresh',
-    category: 'mâncare',
-    price: 0.49,
-    old_price: 0.79,
-    discount_percent: 37,
-    quantity: 1,
-    unit: 'leg',
-    unit_price: 0.49,
-    app_price: true,
-  },
-  // Tomaten (Roșii)
-  {
-    product_name: 'Rosii Cherry (Cherrytomaten)',
-    store_name: 'Rewe',
-    brand: 'Rewe Beste Wahl',
-    category: 'mâncare',
-    price: 1.29,
-    old_price: 1.89,
-    discount_percent: 31,
-    quantity: 500,
-    unit: 'g',
-    unit_price: 2.58,
-    app_price: false,
-  },
-  {
-    product_name: 'Rosii pe ciorchine (Strauchtomaten)',
-    store_name: 'Kaufland',
-    brand: 'K-Classic',
-    category: 'mâncare',
-    price: 1.79,
-    old_price: 2.49,
-    discount_percent: 28,
-    quantity: 1000,
-    unit: 'g',
-    unit_price: 1.79,
-    app_price: false,
-  },
-  // Obst (Banane & Äpfel)
-  {
-    product_name: 'Banane ecologice BIO',
-    store_name: 'Aldi',
-    brand: 'Fairtrade Bio',
-    category: 'mâncare',
-    price: 1.69,
-    old_price: 2.19,
-    discount_percent: 22,
-    quantity: 1,
-    unit: 'kg',
-    unit_price: 1.69,
-    app_price: false,
-  },
-  {
-    product_name: 'Mere rosii Jonagold (Äpfel)',
-    store_name: 'Netto',
-    brand: 'Heimatliebe',
-    category: 'mâncare',
-    price: 1.99,
-    old_price: 2.99,
-    discount_percent: 33,
-    quantity: 2,
-    unit: 'kg',
-    unit_price: 1.00,
-    app_price: false,
-  },
-  // Sonnenblumenöl (Ulei)
-  {
-    product_name: 'Ulei de floarea soarelui (Sonnenblumenöl)',
-    store_name: 'Lidl',
-    brand: 'Vita D\'or',
-    category: 'mâncare',
-    price: 1.39,
-    old_price: 1.79,
-    discount_percent: 22,
-    quantity: 1,
-    unit: 'L',
-    unit_price: 1.39,
-    app_price: false,
-  }
-]
-
-function KaufdaFeedTab({ t, shoppingList = [], onImportOffer }) {
-  const [search, setSearch] = useState('')
-  const [storeFilter, setStoreFilter] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('all')
-
-  const offersWithDates = useMemo(() => {
-    const now = new Date()
-    const currentDay = now.getDay()
-    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay
-    
-    const monday = new Date(now)
-    monday.setDate(now.getDate() + distanceToMonday)
-    
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    
-    const formatDate = (d) => {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    }
-
-    const validity = {
-      valid_from: formatDate(monday),
-      valid_until: formatDate(sunday)
-    }
-
-    return kaufdaMockOffers.map(offer => ({
-      ...offer,
-      valid_from: validity.valid_from,
-      valid_until: validity.valid_until
-    }))
-  }, [])
-
-  // Highlight calculations
-  const cheapestMilk = useMemo(() => {
-    const milks = offersWithDates.filter(o => o.product_name.toLowerCase().includes('milch') || o.product_name.toLowerCase().includes('lapte'))
-    if (!milks.length) return null
-    return milks.reduce((min, o) => o.price < min.price ? o : min, milks[0])
-  }, [offersWithDates])
-
-  const cheapestCoffee = useMemo(() => {
-    const coffees = offersWithDates.filter(o => o.product_name.toLowerCase().includes('kaffee') || o.product_name.toLowerCase().includes('cafea'))
-    if (!coffees.length) return null
-    return coffees.reduce((min, o) => {
-      const oUnitVal = o.unit_price || o.price
-      const minUnitVal = min.unit_price || min.price
-      return oUnitVal < minUnitVal ? o : min
-    }, coffees[0])
-  }, [offersWithDates])
-
-  // React filter
-  const filteredOffers = useMemo(() => {
-    return offersWithDates.filter(offer => {
-      const query = search.trim().toLowerCase()
-      const matchesSearch = !query ||
-        offer.product_name.toLowerCase().includes(query) ||
-        offer.brand.toLowerCase().includes(query) ||
-        offer.store_name.toLowerCase().includes(query)
-      
-      const matchesStore = !storeFilter || offer.store_name.toLowerCase() === storeFilter.toLowerCase()
-      
-      let matchesCat = true
-      const isMilk = offer.product_name.toLowerCase().includes('milch') || offer.product_name.toLowerCase().includes('lapte')
-      const isCoffee = offer.product_name.toLowerCase().includes('kaffee') || offer.product_name.toLowerCase().includes('cafea')
-      const isButter = offer.product_name.toLowerCase().includes('butter') || offer.product_name.toLowerCase().includes('unt')
-      const isVeg = /zwiebel|kartoffel|ceapa|ceapă|cartof|tomate/i.test(offer.product_name)
-      const isFruit = /banan|apfel|mere|obst/i.test(offer.product_name)
-
-      if (selectedCategory === 'milk') {
-        matchesCat = isMilk
-      } else if (selectedCategory === 'coffee') {
-        matchesCat = isCoffee
-      } else if (selectedCategory === 'butter') {
-        matchesCat = isButter
-      } else if (selectedCategory === 'veg') {
-        matchesCat = isVeg
-      } else if (selectedCategory === 'fruit') {
-        matchesCat = isFruit
-      } else if (selectedCategory === 'other') {
-        matchesCat = !isMilk && !isCoffee && !isButter && !isVeg && !isFruit
-      }
-      
-      return matchesSearch && matchesStore && matchesCat
-    })
-  }, [offersWithDates, search, storeFilter, selectedCategory])
-
-  const categories = [
-    { key: 'all', label: t('kaufdaAllOffers') },
-    { key: 'milk', label: t('kaufdaMilkOnly') },
-    { key: 'coffee', label: t('kaufdaCoffeeOnly') },
-    { key: 'butter', label: t('kaufdaButterOnly') },
-    { key: 'veg', label: t('kaufdaVegOnly') },
-    { key: 'fruit', label: t('kaufdaFruitOnly') },
-    { key: 'other', label: t('kaufdaOthersOnly') }
-  ]
-
-  return (
-    <>
-      <section className="section">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-          <h2 style={{ fontSize: '1.25rem', color: '#17463c' }}>{t('kaufdaFeedTitle')}</h2>
-          <p className="muted" style={{ fontSize: '0.88rem' }}>{t('kaufdaFeedSubtitle')}</p>
-        </div>
-
-        {/* Dynamic highlights dashboard */}
-        <div className="metric-grid" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
-          {cheapestMilk && (
-            <div className="metric-card positive" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid rgba(23, 70, 60, 0.15)', boxShadow: '0 4px 12px rgba(23, 70, 60, 0.05)', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '4.5rem', opacity: 0.08, pointerEvents: 'none' }}>🥛</div>
-              <div>
-                <span style={{ textTransform: 'uppercase', fontSize: '0.74rem', fontWeight: '900', letterSpacing: '0.04em', color: '#17463c' }}>
-                  {t('kaufdaCheapestMilkHighlight')}
-                </span>
-                <h3 style={{ margin: '0.3rem 0 0.1rem 0', color: '#17463c', fontWeight: '800', fontSize: '1.05rem', lineHeight: '1.25' }}>
-                  {cheapestMilk.product_name}
-                </h3>
-                <span style={{ fontSize: '0.8rem', color: '#63746e' }}>
-                  {cheapestMilk.brand} · {cheapestMilk.quantity}{cheapestMilk.unit}
-                </span>
-              </div>
-              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <strong style={{ fontSize: '1.45rem', color: '#17463c', fontWeight: '900' }}>{cheapestMilk.price.toFixed(2)}€</strong>
-                {cheapestMilk.old_price && (
-                  <span style={{ textDecoration: 'line-through', fontSize: '0.82rem', color: '#a7352a', opacity: 0.8 }}>
-                    {cheapestMilk.old_price.toFixed(2)}€
-                  </span>
-                )}
-                <span className="badge" style={{ backgroundColor: '#17463c', color: '#fff', fontSize: '0.72rem', padding: '0.18rem 0.45rem', borderRadius: '4px' }}>
-                  {cheapestMilk.store_name}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {cheapestCoffee && (
-            <div className="metric-card positive" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid rgba(23, 70, 60, 0.15)', boxShadow: '0 4px 12px rgba(23, 70, 60, 0.05)', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '4.5rem', opacity: 0.08, pointerEvents: 'none' }}>☕</div>
-              <div>
-                <span style={{ textTransform: 'uppercase', fontSize: '0.74rem', fontWeight: '900', letterSpacing: '0.04em', color: '#17463c' }}>
-                  {t('kaufdaCheapestCoffeeHighlight')}
-                </span>
-                <h3 style={{ margin: '0.3rem 0 0.1rem 0', color: '#17463c', fontWeight: '800', fontSize: '1.05rem', lineHeight: '1.25' }}>
-                  {cheapestCoffee.product_name}
-                </h3>
-                <span style={{ fontSize: '0.8rem', color: '#63746e' }}>
-                  {cheapestCoffee.brand} · {cheapestCoffee.quantity}{cheapestCoffee.unit} ({cheapestCoffee.unit_price.toFixed(2)}€/kg)
-                </span>
-              </div>
-              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <strong style={{ fontSize: '1.45rem', color: '#17463c', fontWeight: '900' }}>{cheapestCoffee.price.toFixed(2)}€</strong>
-                {cheapestCoffee.old_price && (
-                  <span style={{ textDecoration: 'line-through', fontSize: '0.82rem', color: '#a7352a', opacity: 0.8 }}>
-                    {cheapestCoffee.old_price.toFixed(2)}€
-                  </span>
-                )}
-                <span className="badge" style={{ backgroundColor: '#17463c', color: '#fff', fontSize: '0.72rem', padding: '0.18rem 0.45rem', borderRadius: '4px' }}>
-                  {cheapestCoffee.store_name}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Category Chips and Filters Grid */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginTop: '0.5rem' }}>
-          {/* Brand Filter Chips */}
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            {categories.map(cat => (
-              <button
-                key={cat.key}
-                type="button"
-                className={selectedCategory === cat.key ? 'active' : 'secondary'}
-                onClick={() => setSelectedCategory(cat.key)}
-                style={{
-                  borderRadius: '20px',
-                  padding: '0.35rem 0.9rem',
-                  fontSize: '0.82rem',
-                  minHeight: 'auto',
-                  transition: 'all 0.2s ease',
-                  backgroundColor: selectedCategory === cat.key ? '#17463c' : '#e8eee4',
-                  color: selectedCategory === cat.key ? '#fff' : '#17463c',
-                  border: 'none',
-                  boxShadow: selectedCategory === cat.key ? '0 3px 8px rgba(23, 70, 60, 0.2)' : 'none'
-                }}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Search bar and Supermarket filter dropdown */}
-          <div className="filters" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.65rem' }}>
-            <input 
-              type="text" 
-              value={search} 
-              onChange={(e) => setSearch(e.target.value)} 
-              placeholder={t('kaufdaSearchPlaceholder')}
-              style={{
-                borderRadius: '8px',
-                border: '1px solid #cdd8d2',
-                padding: '0.65rem 0.75rem',
-                fontSize: '0.9rem'
-              }}
-            />
-            <select 
-              value={storeFilter} 
-              onChange={(e) => setStoreFilter(e.target.value)}
-              aria-label={t('kaufdaFilterStore')}
-              style={{
-                borderRadius: '8px',
-                border: '1px solid #cdd8d2',
-                padding: '0.65rem 0.75rem',
-                fontSize: '0.9rem'
-              }}
-            >
-              <option value="">{t('all')}</option>
-              {['Aldi', 'Lidl', 'Netto', 'Norma', 'Rewe', 'Kaufland', 'Edeka'].map(store => (
-                <option key={store} value={store}>{store}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Offers Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '1.1rem',
-          marginTop: '0.5rem'
-        }}>
-          {filteredOffers.length === 0 ? (
-            <div className="empty" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2.5rem' }}>
-              {t('kaufdaNoOffersMatched')}
-            </div>
-          ) : (
-            filteredOffers.map((offer, idx) => {
-              const isAlreadyImported = shoppingList.some(saved => 
-                !saved.purchased &&
-                (normalizeProduct(saved.product_name).includes(normalizeProduct(offer.product_name)) ||
-                 normalizeProduct(offer.product_name).includes(normalizeProduct(saved.product_name))) &&
-                String(saved.preferred_store).toLowerCase() === String(offer.store_name).toLowerCase()
-              )
-
-              const storeColors = {
-                lidl: { bg: '#e5effb', border: '#2861a8', badgeBg: '#0050aa', text: '#fff' },
-                aldi: { bg: '#e8eff5', border: '#002f6c', badgeBg: '#002f6c', text: '#fff' },
-                netto: { bg: '#fffce8', border: '#ffcc00', badgeBg: '#d30000', text: '#fff' },
-                norma: { bg: '#fff3e8', border: '#e67e22', badgeBg: '#d35400', text: '#fff' },
-                rewe: { bg: '#fdebeb', border: '#cc0022', badgeBg: '#cc0022', text: '#fff' },
-                kaufland: { bg: '#fff2f2', border: '#e30613', badgeBg: '#e30613', text: '#fff' },
-                edeka: { bg: '#eef6ea', border: '#339933', badgeBg: '#00529f', text: '#fff' }
-              }
-
-              const defaultColors = { bg: '#fcfcfc', border: '#dde4da', badgeBg: '#63746e', text: '#fff' }
-              const colors = storeColors[offer.store_name.toLowerCase()] || defaultColors
-
-              return (
-                <article 
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'stretch',
-                    backgroundColor: '#ffffff',
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '12px',
-                    padding: '1.2rem',
-                    position: 'relative',
-                    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.02)',
-                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                    cursor: 'default'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-3px)'
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.05)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)'
-                    e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.02)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                    <span style={{ 
-                      backgroundColor: colors.badgeBg, 
-                      color: colors.text, 
-                      fontWeight: '900', 
-                      fontSize: '0.78rem', 
-                      padding: '0.25rem 0.6rem', 
-                      borderRadius: '5px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em'
-                    }}>
-                      {offer.store_name}
-                    </span>
-                    {offer.discount_percent && (
-                      <span className="badge danger" style={{ fontSize: '0.82rem', fontWeight: '800' }}>
-                        -{offer.discount_percent}%
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#15231f', lineHeight: '1.3' }}>
-                      {offer.product_name}
-                    </h4>
-                    <span style={{ fontSize: '0.82rem', color: '#63746e' }}>
-                      Brand: <strong>{offer.brand || '-'}</strong>
-                    </span>
-                    <span style={{ fontSize: '0.82rem', color: '#63746e' }}>
-                      {t('kaufdaUnitLabel')}: <strong>{offer.quantity} {offer.unit}</strong> 
-                      {offer.unit_price && ` (${offer.unit_price.toFixed(2)}€/${normalizedUnitLabel(offer.unit)})`}
-                    </span>
-                    <span style={{ fontSize: '0.74rem', color: '#93a49e', marginTop: '0.2rem' }}>
-                      {t('kaufdaValidUntil')}: {offer.valid_until}
-                    </span>
-                    
-                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.4rem', marginBottom: '0.6rem' }}>
-                      {offer.app_price && (
-                        <span className="badge" style={{ backgroundColor: '#fff0c8', color: '#735214', border: '1px solid #ffe299', fontSize: '0.72rem', padding: '0.15rem 0.4rem' }}>
-                          📱 {t('kaufdaAppPrice')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ 
-                    borderTop: '1px solid #f2f2f2', 
-                    paddingTop: '0.75rem', 
-                    marginTop: '0.4rem',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {offer.old_price && (
-                        <span style={{ textDecoration: 'line-through', fontSize: '0.74rem', color: '#a7352a', opacity: 0.85 }}>
-                          {offer.old_price.toFixed(2)}€
-                        </span>
-                      )}
-                      <strong style={{ fontSize: '1.35rem', color: '#17463c', fontWeight: '900' }}>{offer.price.toFixed(2)}€</strong>
-                    </div>
-                    
-                    <button 
-                      type="button" 
-                      disabled={isAlreadyImported}
-                      className={isAlreadyImported ? 'secondary' : ''}
-                      onClick={() => onImportOffer(offer)}
-                      style={{
-                        padding: '0.45rem 0.75rem',
-                        minHeight: 'auto',
-                        fontSize: '0.82rem',
-                        borderRadius: '6px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                        backgroundColor: isAlreadyImported ? '#e3efe8' : '#17463c',
-                        color: isAlreadyImported ? '#17463c' : '#fff',
-                        cursor: isAlreadyImported ? 'default' : 'pointer'
-                      }}
-                    >
-                      {isAlreadyImported ? '✓ ' + t('kaufdaImportedStatus') : t('kaufdaAddToMyOffers')}
-                    </button>
-                  </div>
-                </article>
-              )
-            })
-          )}
-        </div>
-      </section>
     </>
   )
 }
@@ -2913,6 +2285,38 @@ function parseOfferText(text, meta = {}) {
     .filter(Boolean)
 }
 
+function parseReceiptText(text = '') {
+  return normalizePdfText(text)
+    .split(/\r?\n/)
+    .map((line) => parseReceiptLine(line.trim()))
+    .filter(Boolean)
+}
+
+function parseReceiptLine(line = '') {
+  if (!line || /summe|total|gesamt|bar|karte|mwst|ust|datum|beleg|bon/i.test(line)) return null
+  const priceMatch = line.match(/(\d+(?:[,.]\d{1,2})?)\s*(?:eur|€)?\s*$/i)
+  if (!priceMatch) return null
+  const totalPrice = Number(String(priceMatch[1]).replace(',', '.'))
+  if (!totalPrice || Number.isNaN(totalPrice)) return null
+  const beforePrice = line.slice(0, priceMatch.index).trim()
+  if (!beforePrice || beforePrice.length < 2) return null
+  const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|stk|stück|buc|x)\s*$/i)
+  const quantity = quantityMatch ? Number(String(quantityMatch[1]).replace(',', '.')) : null
+  const unit = quantityMatch ? normalizeUnit(quantityMatch[2]) : null
+  const productName = (quantityMatch ? beforePrice.slice(0, quantityMatch.index) : beforePrice)
+    .replace(/^\d+\s*x\s*/i, '')
+    .trim()
+  const unitInfo = quantity && unit ? offerUnitPrice(totalPrice, quantity, unit) : null
+  return {
+    product_name: productName,
+    category: inferOfferCategory(productName),
+    quantity,
+    unit,
+    unit_price: unitInfo?.price ?? null,
+    total_price: totalPrice,
+  }
+}
+
 function splitOfferLines(text = '') {
   const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   return lines.reduce((result, line) => {
@@ -2997,12 +2401,14 @@ function mergePreviewRows(existing = [], incoming = []) {
 function parseOfferLine(line, meta) {
   if (storeNames.some((store) => line.toLowerCase() === store.toLowerCase())) return null
   if (/\b(valid|gültig|valabil|gültig vom|von|vom|bis|pana|până)\b/i.test(line)) return null
-  const priceMatch = line.match(/(\d+[,.]?\d*)\s*(€|eur)?$/i) || line.match(/(\d+)\s*[,. ]\s*(\d{2})\s*(€|eur)?/i)
+  const priceMatch = line.match(/(\d+(?:[.,]\d{1,2})?)(?:\s*[-.–])?\s*(€|eur)?$/i) || line.match(/(\d+)\s*[., ]\s*(\d{2})\s*(€|eur)?/i)
   if (!priceMatch) return null
 
-  const price = priceMatch[2]
-    ? Number(`${priceMatch[1].replace(',', '.')}.${priceMatch[2]}`)
-    : Number(String(priceMatch[1]).replace(',', '.'))
+  let rawPrice = String(priceMatch[1]).replace(',', '.')
+  if (/^\d+\.$/.test(rawPrice)) rawPrice = `${rawPrice}00`
+  if (/^\d+\.\d$/.test(rawPrice)) rawPrice = `${rawPrice}0`
+  const price = Number(rawPrice)
+  if (Number.isNaN(price)) return null
 
   const beforePrice = line.slice(0, priceMatch.index).trim()
   const quantityMatch = beforePrice.match(/(\d+(?:[,.]\d+)?)\s*(kg|g|l|liter|ml|buc|stk|stück|role|rollen|pachet|pack|sticlă|sticla|fl|cutie)$/i)
@@ -3128,87 +2534,8 @@ function normalizeProduct(value = '') {
     .trim()
 }
 
-function buildShoppingHistory(journalEntries = []) {
-  const rows = journalEntries
-    .filter((item) => item.product_name && toNumber(item.amount) > 0)
-    .map((item) => {
-      const unitInfo = normalizedUnitPrice(item)
-      return {
-        product: item.product_name,
-        value: unitInfo?.price ?? toNumber(item.amount),
-        unit: unitInfo?.unit,
-        store: item.store,
-        date: item.entry_date,
-      }
-    })
-  const byProduct = new Map()
-  rows.forEach((row) => {
-    const key = normalizeProduct(row.product)
-    if (!byProduct.has(key)) byProduct.set(key, [])
-    byProduct.get(key).push(row)
-  })
-  return [...byProduct.entries()].map(([key, items]) => {
-    const sorted = [...items].sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    return {
-      key,
-      product: sorted[sorted.length - 1].product,
-      unit: sorted[sorted.length - 1].unit,
-      last: sorted[sorted.length - 1],
-      min: sorted.reduce((min, item) => item.value < min.value ? item : min, sorted[0]),
-      max: sorted.reduce((max, item) => item.value > max.value ? item : max, sorted[0]),
-    }
-  })
-}
-
-function bestShoppingMatches(shoppingList = [], offers = [], journalEntries = []) {
-  const history = buildShoppingHistory(journalEntries)
-  return shoppingList.map((item) => {
-    const matches = offers
-      .map((offer) => ({ offer, ...productMatch(item.product_name, offer.product_name) }))
-      .filter((row) => row.match)
-      .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
-    const best = matches[0]?.offer || null
-    const hist = history.find((row) => productMatch(item.product_name, row.product).match)
-    const bestValue = best ? offerCompareValue(best) : 0
-    const lastValue = hist?.last?.value || 0
-    const minValue = hist?.min?.value || 0
-    return {
-      product_name: item.product_name,
-      best,
-      history: hist,
-      saving: best && lastValue ? lastValue - bestValue : 0,
-      isBestObserved: Boolean(best && minValue && bestValue < minValue),
-      approx: Boolean(matches[0]?.approx),
-    }
-  })
-}
-
 function offerCompareValue(offer) {
   return toNumber(offer.unit_price) || toNumber(offer.price)
-}
-
-function buildStoreRecommendations(bestPrices = [], stores = []) {
-  const byStore = new Map()
-  bestPrices.filter((item) => item.best).forEach((item) => {
-    const store = item.best.store_name
-    if (!byStore.has(store)) byStore.set(store, { store, matches: 0, bestCount: 0, saving: 0, total: 0 })
-    const row = byStore.get(store)
-    row.matches += 1
-    row.bestCount += 1
-    row.saving += Math.max(0, item.saving)
-    row.total += toNumber(item.best.price)
-  })
-  return [...byStore.values()].map((row) => {
-    const storeSettings = stores.find((store) => store.name === row.store)
-    const travelCost = storeSettings?.distance_km && storeSettings?.fuel_cost_estimate
-      ? toNumber(storeSettings.distance_km) * 2 * toNumber(storeSettings.fuel_cost_estimate)
-      : null
-    const netSaving = travelCost === null ? null : row.saving - travelCost
-    const recommendation = netSaving !== null
-      ? (netSaving >= 2 ? 'worthIt' : storeSettings?.on_regular_route ? 'routeOnly' : 'noExtraTrip')
-      : row.saving >= 2 ? 'worthIt' : 'routeOnly'
-    return { ...row, netSaving, recommendation }
-  }).sort((a, b) => b.saving - a.saving)
 }
 
 export default App

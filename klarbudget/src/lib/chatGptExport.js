@@ -19,6 +19,7 @@ export function buildChatGptBudgetSummary({
   settings,
   summary,
   syncedAt,
+  utilityReadings = [],
 }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const now = new Date()
@@ -93,6 +94,9 @@ export function buildChatGptBudgetSummary({
     'Buget mancare:',
     formatVariableBudgets(foodBudgets, currency, locale, journalEntries),
     '',
+    'Utilitati - contoare, avans lunar si regularizare estimata:',
+    formatUtilityReadings(utilityReadings, settings, currency, locale),
+    '',
     'Jurnal zilnic - ultimele cheltuieli reale:',
     formatJournalEntries(journalEntries.slice(0, 20), currency, locale),
     '',
@@ -150,5 +154,86 @@ function formatVariableBudgets(expenses, currency, locale, journalEntries = []) 
   return expenses.map((expense) => {
     const stats = variableBudgetStats(expense, new Date(), journalEntries)
     return `- ${expense.name} (${expense.category}): buget ${formatMoney(stats.budget, currency, locale)}, cheltuit ${formatMoney(stats.spent, currency, locale)}, ramas ${formatMoney(stats.remaining, currency, locale)}`
+  }).join('\n')
+}
+
+function formatUtilityReadings(readings = [], settings = {}, currency, locale) {
+  if (!readings.length) return '- nu exista citiri de utilitati introduse.'
+
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const monthsElapsed = now.getMonth() + 1
+  const labels = {
+    electricity: 'Curent / electricitate',
+    gas: 'Gaz',
+    water: 'Apa',
+  }
+  const units = {
+    electricity: 'kWh',
+    gas: 'm3',
+    water: 'm3',
+  }
+  const priceKeys = {
+    electricity: 'utility_price_electricity',
+    gas: 'utility_price_gas',
+    water: 'utility_price_water',
+  }
+  const paymentKeys = {
+    electricity: 'utility_monthly_payment_electricity',
+    gas: 'utility_monthly_payment_gas',
+    water: 'utility_monthly_payment_water',
+  }
+
+  return ['electricity', 'gas', 'water'].map((meterType) => {
+    const meterReadings = readings
+      .filter((item) => item.meter_type === meterType)
+      .sort((a, b) => String(a.reading_date).localeCompare(String(b.reading_date)))
+    if (meterReadings.length < 2) {
+      const latest = meterReadings[meterReadings.length - 1]
+      return latest
+        ? `- ${labels[meterType]}: exista o singura citire (${latest.reading_date}, index ${toNumber(latest.value).toFixed(2)} ${units[meterType]}). Mai trebuie o citire ca sa calculez consumul real.`
+        : `- ${labels[meterType]}: nu exista citiri.`
+    }
+
+    const unitPrice = toNumber(settings[priceKeys[meterType]])
+    const monthlyPayment = toNumber(settings[paymentKeys[meterType]])
+    let currentYearConsumption = 0
+    let currentYearCost = 0
+    let currentYearDays = 0
+
+    for (let i = 1; i < meterReadings.length; i++) {
+      const previous = meterReadings[i - 1]
+      const current = meterReadings[i]
+      if (new Date(current.reading_date).getFullYear() !== currentYear) continue
+
+      const consumption = toNumber(current.value) - toNumber(previous.value)
+      if (consumption < 0) continue
+
+      const days = Math.ceil((new Date(current.reading_date) - new Date(previous.reading_date)) / (1000 * 60 * 60 * 24))
+      const cost = current.cost_estimate ? toNumber(current.cost_estimate) : consumption * unitPrice
+      currentYearConsumption += consumption
+      currentYearCost += cost
+      currentYearDays += Math.max(0, days)
+    }
+
+    const latest = meterReadings[meterReadings.length - 1]
+    const previous = meterReadings[meterReadings.length - 2]
+    const lastConsumption = toNumber(latest.value) - toNumber(previous.value)
+    const paidToDate = monthlyPayment * monthsElapsed
+    const difference = paidToDate - currentYearCost
+    const projectedAnnualCost = currentYearDays > 0 ? (currentYearCost / currentYearDays) * 365 : 0
+    const recommendedMonthlyPayment = projectedAnnualCost > 0 ? projectedAnnualCost / 12 : 0
+
+    return [
+      `- ${labels[meterType]}:`,
+      `  - ultima citire: ${latest.reading_date}, index ${toNumber(latest.value).toFixed(2)} ${units[meterType]}`,
+      `  - consum ultimul interval: ${lastConsumption.toFixed(2)} ${units[meterType]}`,
+      `  - tarif folosit: ${unitPrice.toFixed(4)} EUR/${units[meterType]}`,
+      `  - avans lunar platit: ${formatMoney(monthlyPayment, currency, locale)}`,
+      `  - platit pana acum in ${currentYear}: ${formatMoney(paidToDate, currency, locale)}`,
+      `  - cost real estimat in ${currentYear}: ${formatMoney(currentYearCost, currency, locale)}`,
+      `  - diferenta estimata: ${difference >= 0 ? 'posibil bani inapoi' : 'posibil de plata'} ${formatMoney(Math.abs(difference), currency, locale)}`,
+      recommendedMonthlyPayment > 0 ? `  - avans lunar recomandat estimativ: ${formatMoney(recommendedMonthlyPayment, currency, locale)}` : '',
+    ].filter(Boolean).join('\n')
   }).join('\n')
 }
