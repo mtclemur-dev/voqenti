@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { calendarGroups, daysUntil, formatMoney } from '../lib/finance'
 import { clearStoredGoogleCalendarToken, createGoogleCalendarEvent, fetchGoogleCalendarEvents, getStoredGoogleCalendarToken, hasGoogleCalendarConfig, requestGoogleCalendarToken } from '../lib/googleCalendar'
 
-export function PaymentCalendar({ t, language, currency, expenses, settings, paymentStatuses, onPaymentStatus, onEdit }) {
+export function PaymentCalendar({ t, language, currency, expenses, settings, paymentStatuses, onPaymentStatus, onEdit, familyMode = false }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const [calendarView, setCalendarView] = useState('month')
   const [filter, setFilter] = useState('all')
@@ -217,7 +217,7 @@ export function PaymentCalendar({ t, language, currency, expenses, settings, pay
             <h3>{t(titleKey)}</h3>
             {items.length === 0 ? <p className="muted">{t('noData')}</p> : items.map((item) => item.source === 'google'
               ? <GoogleCalendarRow item={item} locale={locale} t={t} key={`${titleKey}-google-${item.id}`} />
-              : <KlarBudgetRow item={item} currency={currency} locale={locale} onEdit={onEdit} onPaymentStatus={onPaymentStatus} t={t} key={`${titleKey}-kb-${item.id}-${item.due_date_iso || 'none'}`} />
+              : <KlarBudgetRow item={item} currency={currency} locale={locale} onEdit={onEdit} onPaymentStatus={onPaymentStatus} t={t} familyMode={familyMode} key={`${titleKey}-kb-${item.id}-${item.due_date_iso || 'none'}`} />
             )}
           </div>
         ))}
@@ -292,7 +292,7 @@ function MonthCalendar({ currency, items, locale, monthDate, onChangeMonth, onSe
   )
 }
 
-function KlarBudgetRow({ item, currency, locale, onEdit, onPaymentStatus, t }) {
+function KlarBudgetRow({ item, currency, locale, onEdit, onPaymentStatus, t, familyMode }) {
   return (
     <article className={`payment-row ${item.is_large ? 'large' : ''} ${item.payment_status}`}>
       <div>
@@ -308,7 +308,9 @@ function KlarBudgetRow({ item, currency, locale, onEdit, onPaymentStatus, t }) {
         {item.payment_mode === 'manual_payment' && (
           <button type="button" className="ghost" onClick={() => onPaymentStatus(item, 'paid')}>{t('markPaid')}</button>
         )}
-        <button type="button" className="ghost" onClick={() => onEdit(item)}>{t('edit')}</button>
+        {!familyMode && (
+          <button type="button" className="ghost" onClick={() => onEdit(item)}>{t('edit')}</button>
+        )}
       </div>
     </article>
   )

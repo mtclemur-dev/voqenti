@@ -1310,3 +1310,263 @@ h3 {
     min-width: 220px;
   }
 }
+
+/* ==========================================
+   Mod Familie Style Customization
+   ========================================== */
+
+.family-mode {
+  --ink: #2b2214;
+  --muted: #7a6e5d;
+  --surface: #ffffff;
+  --surface-soft: #fcfaf7;
+  --line: #ebdcd0;
+  --green: #2e6640;
+  --green-soft: #eaf5ec;
+  --mint: #eaf5ec;
+  --gold: #b38600;
+  --gold-soft: #fffbe6;
+  --red: #c94c4c;
+  --red-soft: #fdf2f2;
+  --blue: #3a75c4;
+  --blue-soft: #f0f5fc;
+}
+
+.family-mode.app-shell {
+  background: #faf8f5 !important;
+}
+
+.family-mode .topbar {
+  background: #ffffff;
+  border-bottom: 1px solid #ebdcd0;
+}
+
+.family-mode .tabbar {
+  background: #faf8f5;
+  border-bottom: 1px solid #ebdcd0;
+}
+
+.family-mode .tabbar button {
+  background: #f3ece4;
+  color: #2b2214;
+  border-radius: 12px;
+  margin-right: 0.25rem;
+}
+
+.family-mode .tabbar button.active {
+  background: #2e6640;
+  color: #ffffff;
+}
+
+.family-mode .section {
+  border-radius: 16px;
+  border: 1px solid #ebdcd0;
+  box-shadow: 0 4px 12px rgba(43, 34, 20, 0.04);
+  padding: 1.25rem;
+}
+
+.family-mode .metric-card {
+  border: 1px solid #ebdcd0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(43, 34, 20, 0.04);
+  padding: 1.25rem;
+}
+
+.family-mode .list-item,
+.family-mode .payment-row {
+  border-radius: 12px;
+  border: 1px solid #ebdcd0;
+  padding: 1rem;
+}
+
+.family-mode .notice {
+  background: #fcf8f2;
+  color: #5c4a37;
+  border: 1px solid #ebdcd0;
+}
+
+.family-mode .notice.danger {
+  background: #fdf2f2;
+  color: #c94c4c;
+  border: 1px solid #f9d5d5;
+}
+
+/* Friendly status pill indicator */
+.family-mode .status-pill {
+  padding: 0.45rem 0.85rem;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.88rem;
+  display: inline-block;
+  text-align: center;
+}
+
+.family-mode .status-pill.good {
+  background: #eaf5ec;
+  color: #2e6640;
+}
+
+.family-mode .status-pill.warning {
+  background: #fffbe6;
+  color: #735214;
+}
+
+.family-mode .status-pill.danger {
+  background: #fdf2f2;
+  color: #c94c4c;
+}
+
+.family-mode .status-pill.info {
+  background: #f0f5fc;
+  color: #3a75c4;
+}
+
+/* Progress bar inside family food & dashboard cards */
+.family-mode .progress-container {
+  width: 100%;
+  background: #f3ece4;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 0.5rem;
+}
+
+.family-mode .progress-bar {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.family-mode .progress-bar.good {
+  background: #2e6640;
+}
+
+.family-mode .progress-bar.warning {
+  background: #b38600;
+}
+
+.family-mode .progress-bar.danger {
+  background: #c94c4c;
+}
+
+/* Big spend action button */
+.family-mode .big-action-button {
+  background: #2e6640;
+  color: #ffffff;
+  padding: 1.15rem;
+  font-size: 1.15rem;
+  border-radius: 16px;
+  text-align: center;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(46, 102, 64, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  width: 100%;
+  min-height: 52px;
+}
+
+.family-mode .big-action-button:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 6px rgba(46, 102, 64, 0.2);
+}
+
+/* Modal overlay styling for quick spend modal */
+.quick-spend-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(43, 34, 20, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .quick-spend-overlay {
+    align-items: center;
+  }
+}
+
+.quick-spend-modal {
+  width: 100%;
+  max-width: 500px;
+  background: #ffffff;
+  border-radius: 24px 24px 0 0;
+  padding: 1.5rem;
+  box-shadow: 0 -8px 32px rgba(43, 34, 20, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 640px) {
+  .quick-spend-modal {
+    border-radius: 24px;
+    margin: 1.5rem;
+  }
+}
+
+.quick-spend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ebdcd0;
+  padding-bottom: 0.75rem;
+}
+
+.quick-spend-header h2 {
+  font-size: 1.3rem;
+  color: #2b2214;
+}
+
+.quick-spend-close {
+  background: transparent;
+  color: #7a6e5d;
+  min-height: auto;
+  padding: 0.35rem;
+  font-size: 1.6rem;
+  border: none;
+  font-weight: normal;
+}
+
+.quick-spend-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.quick-spend-form label {
+  font-size: 0.95rem;
+}
+
+.quick-spend-form input,
+.quick-spend-form select {
+  font-size: 1.05rem;
+  padding: 0.8rem;
+  border: 1px solid #ebdcd0;
+}
+
+.quick-spend-form select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a6e5d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  background-size: 1.1rem;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 2rem;
+}
+

@@ -56,7 +56,7 @@ function isLegacyWallet(wallet) {
   return name === 'daria' || name === 'fiul de 5 ani'
 }
 
-export function FamilyTokenEconomy({ user, childOnly = false, parentOnly = false, onOpenKidMode, onParentExit }) {
+export function FamilyTokenEconomy({ user, childOnly = false, parentOnly = false, onOpenKidMode, onParentExit, familyMode = false }) {
   const [activeTab, setActiveTab] = useState(parentOnly ? 'parent' : 'child')
   const [wallets, setWallets] = useState([])
   const [rewards, setRewards] = useState([])
@@ -70,6 +70,7 @@ export function FamilyTokenEconomy({ user, childOnly = false, parentOnly = false
   const [rewardForm, setRewardForm] = useState({ title: '', cost: '', icon: 'gift' })
   const [coinBurst, setCoinBurst] = useState('')
   const [previousBalance, setPreviousBalance] = useState(null)
+
 
   const currentChildName = loggedChildName(user)
   const isRealChildAccount = Boolean(currentChildName) || Boolean(user?.user_metadata?.child_name) || user?.user_metadata?.account_role === 'child'
@@ -614,15 +615,17 @@ export function FamilyTokenEconomy({ user, childOnly = false, parentOnly = false
               </div>
             </div>
 
-            <form className="rounded-xl border border-slate-200 bg-white p-4" onSubmit={addReward}>
-              <h3 className="text-lg font-black text-slate-900">Recompensa noua</h3>
-              <div className="mt-4 grid gap-3">
-                <input className="rounded-lg border border-slate-300 p-3" placeholder="Titlu recompensa" value={rewardForm.title} onChange={(event) => setRewardForm({ ...rewardForm, title: event.target.value })} />
-                <input className="rounded-lg border border-slate-300 p-3" placeholder="Cost monede" type="number" value={rewardForm.cost} onChange={(event) => setRewardForm({ ...rewardForm, cost: event.target.value })} />
-                <input className="rounded-lg border border-slate-300 p-3" placeholder="Icon sau text scurt" value={rewardForm.icon} onChange={(event) => setRewardForm({ ...rewardForm, icon: event.target.value })} />
-                <button type="submit" className="rounded-lg bg-amber-600 px-4 py-3 text-sm font-black text-white">Adauga recompensa</button>
-              </div>
-            </form>
+            {!familyMode && (
+              <form className="rounded-xl border border-slate-200 bg-white p-4" onSubmit={addReward}>
+                <h3 className="text-lg font-black text-slate-900">Recompensa noua</h3>
+                <div className="mt-4 grid gap-3">
+                  <input className="rounded-lg border border-slate-300 p-3" placeholder="Titlu recompensa" value={rewardForm.title} onChange={(event) => setRewardForm({ ...rewardForm, title: event.target.value })} />
+                  <input className="rounded-lg border border-slate-300 p-3" placeholder="Cost monede" type="number" value={rewardForm.cost} onChange={(event) => setRewardForm({ ...rewardForm, cost: event.target.value })} />
+                  <input className="rounded-lg border border-slate-300 p-3" placeholder="Icon sau text scurt" value={rewardForm.icon} onChange={(event) => setRewardForm({ ...rewardForm, icon: event.target.value })} />
+                  <button type="submit" className="rounded-lg bg-amber-600 px-4 py-3 text-sm font-black text-white">Adauga recompensa</button>
+                </div>
+              </form>
+            )}
 
             <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4">
               <h3 className="text-lg font-black text-slate-900">Cereri in asteptare</h3>

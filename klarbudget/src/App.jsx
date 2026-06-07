@@ -8,6 +8,10 @@ import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
 import { FamilyTokenEconomy } from './components/FamilyTokenEconomy'
+import { KidsZone } from './components/KidsZone'
+import { DashboardFamily } from './components/DashboardFamily'
+import { FamilyPayments } from './components/FamilyPayments'
+import { FamilyFood } from './components/FamilyFood'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
@@ -47,7 +51,21 @@ function App() {
   const [profileAccountRole, setProfileAccountRole] = useState('parent')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState('dashboard')
+  const [profileUser, setProfileUser] = useState(() => {
+    return localStorage.getItem('klarbudget-profile-user') || 'Victor'
+  })
+  const [familyMode, setFamilyMode] = useState(() => {
+    const saved = localStorage.getItem('klarbudget-family-mode')
+    return saved !== null ? saved === 'true' : true
+  })
+  const [view, setView] = useState(() => {
+    const isDoinaStr = localStorage.getItem('klarbudget-profile-user') === 'Doina'
+    const savedFamilyMode = localStorage.getItem('klarbudget-family-mode')
+    const startInFamilyMode = savedFamilyMode !== null ? savedFamilyMode === 'true' : true
+    return (isDoinaStr || startInFamilyMode) ? 'dashboard_family' : 'dashboard'
+  })
+  const [quickSpendOpen, setQuickSpendOpen] = useState(false)
+  const [quickSpendForm, setQuickSpendForm] = useState({ amount: '', category: 'mâncare', store: '', person: 'Familie', notes: '' })
   const [incomes, setIncomes] = useState([])
   const [expenses, setExpenses] = useState([])
   const [debts, setDebts] = useState([])
@@ -83,9 +101,29 @@ function App() {
 
   const t = useMemo(() => makeTranslator(language), [language])
 
+  const isDoinaUser = user?.email?.toLowerCase().includes('doina')
+  const isSimpleModeForced = isDoinaUser
+  const activeFamilyMode = isSimpleModeForced ? true : familyMode
+  const activeProfileUser = isSimpleModeForced ? 'Doina' : profileUser
+
   useEffect(() => {
     localStorage.setItem('klarbudget-language', language)
   }, [language])
+
+  useEffect(() => {
+    localStorage.setItem('klarbudget-profile-user', profileUser)
+  }, [profileUser])
+
+  useEffect(() => {
+    localStorage.setItem('klarbudget-family-mode', familyMode ? 'true' : 'false')
+  }, [familyMode])
+
+  useEffect(() => {
+    setQuickSpendForm((prev) => ({
+      ...prev,
+      person: activeProfileUser === 'Doina' ? 'Doina' : 'Familie'
+    }))
+  }, [activeProfileUser])
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -719,14 +757,14 @@ function App() {
         </nav>
         <main className="content">
           {notice && <div className="toast">{notice}</div>}
-          <FamilyTokenEconomy user={user} childOnly />
+          <KidsZone user={user} />
         </main>
       </div>
     )
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${activeFamilyMode ? 'family-mode' : ''}`}>
       <header className="topbar">
         <div>
           <p className="eyebrow">{t('appName')}</p>
@@ -734,63 +772,197 @@ function App() {
           <h1>{t('tagline')}</h1>
         </div>
         <div className="top-actions">
-          <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language">
+          {isSimpleModeForced ? (
+            <span style={{ fontWeight: 'bold', marginRight: '0.5rem', display: 'inline-flex', alignItems: 'center', minHeight: '44px' }}>
+              👤 Doina
+            </span>
+          ) : (
+            <select
+              style={{ width: 'auto', display: 'inline-block', padding: '0.45rem 0.75rem', minHeight: '44px' }}
+              value={activeProfileUser}
+              onChange={(e) => {
+                const val = e.target.value
+                setProfileUser(val)
+                if (val === 'Doina') {
+                  setFamilyMode(true)
+                  setView('dashboard_family')
+                } else {
+                  setView(familyMode ? 'dashboard_family' : 'dashboard')
+                }
+              }}
+              aria-label="Profil"
+            >
+              <option value="Victor">👤 Victor</option>
+              <option value="Doina">👤 Doina</option>
+            </select>
+          )}
+
+          {!isSimpleModeForced && activeProfileUser === 'Victor' && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ minHeight: '44px', padding: '0.45rem 0.75rem' }}
+              onClick={() => {
+                const nextMode = !familyMode
+                setFamilyMode(nextMode)
+                setView(nextMode ? 'dashboard_family' : 'dashboard')
+              }}
+            >
+              {activeFamilyMode ? '⚙️ ' + t('detailedView') : '🏡 ' + t('familyView')}
+            </button>
+          )}
+
+          <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language" style={{ width: 'auto', display: 'inline-block', minHeight: '44px' }}>
             {languages.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
           </select>
-          <button type="button" className="secondary" onClick={() => supabase.auth.signOut()}>{t('signOut')}</button>
+          <button type="button" className="secondary" onClick={() => supabase.auth.signOut()} style={{ minHeight: '44px' }}>{t('signOut')}</button>
         </div>
       </header>
 
-      <nav className="tabbar" aria-label="KlarBudget navigation" style={{ position: 'static', borderBottom: 0 }}>
-        <button
-          type="button"
-          className={['dashboard', 'insights', 'aiActions'].includes(view) ? 'active' : ''}
-          onClick={() => setView('dashboard')}
-        >
-          📂 {t('navGroup_general')}
-        </button>
-        <button
-          type="button"
-          className={['incomes', 'expenses', 'debts', 'accounts'].includes(view) ? 'active' : ''}
-          onClick={() => setView('incomes')}
-        >
-          💰 {t('navGroup_budget')}
-        </button>
-        <button
-          type="button"
-          className={['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].includes(view) ? 'active' : ''}
-          onClick={() => setView('journal')}
-        >
-          📋 {t('navGroup_activity')}
-        </button>
-      </nav>
+      {activeFamilyMode ? (
+        <nav className="tabbar" aria-label="KlarBudget navigation" style={{ position: 'static', borderBottom: 0 }}>
+          <button
+            type="button"
+            className={view === 'dashboard_family' ? 'active' : ''}
+            onClick={() => setView('dashboard_family')}
+          >
+            🏡 {t('navGroup_general')}
+          </button>
+          <button
+            type="button"
+            className={view === 'family_payments' ? 'active' : ''}
+            onClick={() => setView('family_payments')}
+          >
+            💳 {t('paymentsNext')}
+          </button>
+          <button
+            type="button"
+            className={view === 'family_food' ? 'active' : ''}
+            onClick={() => setView('family_food')}
+          >
+            🍏 {t('budgetFoodTitle')}
+          </button>
+          <button
+            type="button"
+            className={view === 'kids' ? 'active' : ''}
+            onClick={() => setView('kids')}
+          >
+            🧸 {t('kids')}
+          </button>
+          <button
+            type="button"
+            className={view === 'calendar' ? 'active' : ''}
+            onClick={() => setView('calendar')}
+          >
+            📅 {t('calendar')}
+          </button>
+        </nav>
+      ) : (
+        <>
+          <nav className="tabbar" aria-label="KlarBudget navigation" style={{ position: 'static', borderBottom: 0 }}>
+            <button
+              type="button"
+              className={['dashboard', 'insights', 'aiActions', 'utilities'].includes(view) ? 'active' : ''}
+              onClick={() => setView('dashboard')}
+            >
+              📂 {t('navGroup_general')}
+            </button>
+            <button
+              type="button"
+              className={['incomes', 'expenses', 'debts', 'accounts'].includes(view) ? 'active' : ''}
+              onClick={() => setView('incomes')}
+            >
+              💰 {t('navGroup_budget')}
+            </button>
+            <button
+              type="button"
+              className={['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) ? 'active' : ''}
+              onClick={() => setView('journal')}
+            >
+              📋 {t('navGroup_activity')}
+            </button>
+          </nav>
 
-      <nav className="tabbar sub-tabbar" aria-label="KlarBudget sub-navigation">
-        {['dashboard', 'insights', 'aiActions'].includes(view) &&
-          ['dashboard', 'insights', 'aiActions'].map((item) => (
-            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
-              {t(item)}
-            </button>
-          ))
-        }
-        {['incomes', 'expenses', 'debts', 'accounts'].includes(view) &&
-          ['incomes', 'expenses', 'debts', 'accounts'].map((item) => (
-            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
-              {t(item)}
-            </button>
-          ))
-        }
-        {['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].includes(view) &&
-          ['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].map((item) => (
-            <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
-              {t(item)}
-            </button>
-          ))
-        }
-      </nav>
+          <nav className="tabbar sub-tabbar" aria-label="KlarBudget sub-navigation">
+            {['dashboard', 'insights', 'aiActions', 'utilities'].includes(view) &&
+              ['dashboard', 'insights', 'aiActions', 'utilities'].map((item) => (
+                <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+                  {t(item)}
+                </button>
+              ))
+            }
+            {['incomes', 'expenses', 'debts', 'accounts'].includes(view) &&
+              ['incomes', 'expenses', 'debts', 'accounts'].map((item) => (
+                <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+                  {t(item)}
+                </button>
+              ))
+            }
+            {['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) &&
+              ['journal', 'shopping', 'workAbsence', 'calendar'].map((item) => (
+                <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
+                  {t(item)}
+                </button>
+              ))
+            }
+          </nav>
+        </>
+      )}
 
       <main className="content">
         {notice && <div className="toast">{notice}</div>}
+        {view === 'dashboard_family' && (
+          <DashboardFamily
+            t={t}
+            language={language}
+            currency={currency}
+            summary={summary}
+            expenses={expenses}
+            journalEntries={journalEntries}
+            accounts={accounts}
+            onOpenQuickSpend={(initialValues = {}) => {
+              setQuickSpendForm({
+                amount: '',
+                category: initialValues.category || 'mâncare',
+                store: '',
+                person: activeProfileUser === 'Doina' ? 'Doina' : 'Familie',
+                notes: ''
+              })
+              setQuickSpendOpen(true)
+            }}
+            onNavigate={(nextView) => setView(nextView)}
+          />
+        )}
+        {view === 'family_payments' && (
+          <FamilyPayments
+            t={t}
+            language={language}
+            currency={currency}
+            expenses={expenses}
+            settings={settings}
+            paymentStatuses={paymentStatuses}
+            onPaymentStatus={setExpensePaymentStatus}
+          />
+        )}
+        {view === 'family_food' && (
+          <FamilyFood
+            t={t}
+            language={language}
+            currency={currency}
+            expenses={expenses}
+            journalEntries={journalEntries}
+            onOpenQuickSpend={(initialValues = {}) => {
+              setQuickSpendForm({
+                amount: '',
+                category: initialValues.category || 'mâncare',
+                store: '',
+                person: activeProfileUser === 'Doina' ? 'Doina' : 'Familie',
+                notes: ''
+              })
+              setQuickSpendOpen(true)
+            }}
+          />
+        )}
         {view === 'dashboard' && (
           <Dashboard
             t={t}
@@ -884,6 +1056,7 @@ function App() {
             language={language}
             locale={locale}
             schemaReady={utilitySchemaReady}
+            settings={settings}
             t={t}
             onCancel={() => setEditing((current) => ({ ...current, utilityReading: null }))}
             onDelete={(item) => deleteRow('kb_utility_readings', item)}
@@ -893,6 +1066,10 @@ function App() {
             }}
             onSubmit={(payload) => saveUtilityReading(payload, editing.utilityReading)}
             onToggleForm={() => setFormOpen((current) => ({ ...current, utilityReading: !current.utilityReading }))}
+            onSaveSettings={async (changes) => {
+              await updateSettings(changes)
+              setNotice(t('savedSuccess'))
+            }}
           />
         )}
         {view === 'accounts' && (
@@ -950,70 +1127,6 @@ function App() {
                   />
                   {t('includeOverdraftInDebtPlan')}
                 </label>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '1rem', borderTop: '1px solid rgba(23, 70, 60, 0.1)', paddingTop: '1rem', width: '100%', gridColumn: 'span 2' }}>
-                  <h3 style={{ gridColumn: 'span 2', fontSize: '1rem', color: '#17463c', margin: '0 0 0.5rem 0' }}>💡 {t('utilities')}</h3>
-                  <label>
-                    {t('utilityPriceElectricity')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      value={settingsDraft.utility_price_electricity ?? 0.35}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_electricity: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                  <label>
-                    {t('utilityPaymentElectricity')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={settingsDraft.utility_monthly_payment_electricity ?? 0}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_electricity: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                  <label>
-                    {t('utilityPriceGas')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      value={settingsDraft.utility_price_gas ?? 1.20}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_gas: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                  <label>
-                    {t('utilityPaymentGas')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={settingsDraft.utility_monthly_payment_gas ?? 0}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_gas: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                  <label>
-                    {t('utilityPriceWater')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      value={settingsDraft.utility_price_water ?? 4.50}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_water: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                  <label>
-                    {t('utilityPaymentWater')}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={settingsDraft.utility_monthly_payment_water ?? 0}
-                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_water: Number(event.target.value || 0) }))}
-                    />
-                  </label>
-                </div>
               </div>
             </section>
             {(formOpen.accounts || editing.accounts) && (
@@ -1196,7 +1309,7 @@ function App() {
           <DebtPlan t={t} language={language} currency={currency} debts={debts} settings={settings} onSettingsChange={updateSettings} />
         )}
         {view === 'calendar' && (
-          <PaymentCalendar t={t} language={language} currency={currency} expenses={expenses} settings={settings} paymentStatuses={paymentStatuses} onPaymentStatus={setExpensePaymentStatus} onEdit={(item) => {
+          <PaymentCalendar t={t} language={language} currency={currency} expenses={expenses} settings={settings} paymentStatuses={paymentStatuses} onPaymentStatus={setExpensePaymentStatus} familyMode={activeFamilyMode} onEdit={(item) => {
             setView('expenses')
             setEditing({ incomes: null, expenses: item, debts: null })
             setFormOpen((current) => ({ ...current, expenses: true }))
@@ -1218,8 +1331,114 @@ function App() {
             utilityReadings={utilityReadings}
           />
         )}
-        {view === 'kids' && <FamilyTokenEconomy user={user} />}
+        {view === 'kids' && <KidsZone user={user} />}
       </main>
+
+      {/* Quick Spend Modal for Mod Familie */}
+      {quickSpendOpen && (
+        <div className="quick-spend-overlay" onClick={() => setQuickSpendOpen(false)}>
+          <div className="quick-spend-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="quick-spend-header">
+              <h2>{t('quickSpend')}</h2>
+              <button type="button" className="quick-spend-close" onClick={() => setQuickSpendOpen(false)}>×</button>
+            </div>
+            <form
+              className="quick-spend-form"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const amountNum = parseFloat(quickSpendForm.amount)
+                if (isNaN(amountNum) || amountNum <= 0) {
+                  window.alert(t('saveError'))
+                  return
+                }
+
+                await saveJournalEntry({
+                  entry_date: isoDate(new Date()),
+                  description: quickSpendForm.store || t('quickSpend'),
+                  amount: amountNum,
+                  category: quickSpendForm.category,
+                  store: quickSpendForm.store || null,
+                  person: quickSpendForm.person,
+                  notes: quickSpendForm.notes || null,
+                  entry_mode: 'quick',
+                })
+
+                setQuickSpendOpen(false)
+                window.alert(t('spentSaved'))
+              }}
+            >
+              <label>
+                {t('amount')} ({currency})
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  autoFocus
+                  placeholder="0.00"
+                  value={quickSpendForm.amount}
+                  onChange={(e) => setQuickSpendForm({ ...quickSpendForm, amount: e.target.value })}
+                />
+              </label>
+
+              <label>
+                {t('category')}
+                <select
+                  value={quickSpendForm.category}
+                  onChange={(e) => setQuickSpendForm({ ...quickSpendForm, category: e.target.value })}
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                {t('store')} ({t('other')} / {language === 'de' ? 'optional' : 'opțional'})
+                <input
+                  type="text"
+                  placeholder="Lidl, Rewe, Netto..."
+                  value={quickSpendForm.store}
+                  onChange={(e) => setQuickSpendForm({ ...quickSpendForm, store: e.target.value })}
+                />
+              </label>
+
+              <label>
+                {t('person')}
+                <select
+                  value={quickSpendForm.person}
+                  onChange={(e) => setQuickSpendForm({ ...quickSpendForm, person: e.target.value })}
+                >
+                  <option value="Doina">{t('doina')}</option>
+                  <option value="Victor">{t('victor')}</option>
+                  <option value="Familie">{t('family')}</option>
+                </select>
+              </label>
+
+              <label>
+                {t('notes')} ({language === 'de' ? 'optional' : 'opțional'})
+                <input
+                  type="text"
+                  placeholder="..."
+                  value={quickSpendForm.notes}
+                  onChange={(e) => setQuickSpendForm({ ...quickSpendForm, notes: e.target.value })}
+                />
+              </label>
+
+              <div className="form-actions" style={{ marginTop: '0.5rem' }}>
+                <button type="submit" className="big-action-button" style={{ margin: 0 }}>
+                  {t('save')}
+                </button>
+                <button type="button" className="ghost" onClick={() => setQuickSpendOpen(false)}>
+                  {t('cancel')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2825,7 +3044,31 @@ function Input({ label, value, onChange, type = 'text', ...props }) {
   return <label>{label}<input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} /></label>
 }
 
-function UtilityReadings({ readings, currency, editing, formOpen, language, schemaReady, t, onCancel, onDelete, onEdit, onSubmit, onToggleForm }) {
+function UtilityReadings({ readings, currency, editing, formOpen, language, locale, schemaReady, settings = {}, t, onCancel, onDelete, onEdit, onSubmit, onToggleForm, onSaveSettings }) {
+  const [settingsDraft, setSettingsDraft] = useState({
+    utility_price_electricity: settings.utility_price_electricity ?? 0.35,
+    utility_price_gas: settings.utility_price_gas ?? 1.20,
+    utility_price_water: settings.utility_price_water ?? 4.50,
+    utility_monthly_payment_electricity: settings.utility_monthly_payment_electricity ?? 0,
+    utility_monthly_payment_gas: settings.utility_monthly_payment_gas ?? 0,
+    utility_monthly_payment_water: settings.utility_monthly_payment_water ?? 0,
+  });
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  const handleSaveSettings = async () => {
+    if (onSaveSettings) {
+      await onSaveSettings({
+        utility_price_electricity: Number(settingsDraft.utility_price_electricity),
+        utility_price_gas: Number(settingsDraft.utility_price_gas),
+        utility_price_water: Number(settingsDraft.utility_price_water),
+        utility_monthly_payment_electricity: Number(settingsDraft.utility_monthly_payment_electricity),
+        utility_monthly_payment_gas: Number(settingsDraft.utility_monthly_payment_gas),
+        utility_monthly_payment_water: Number(settingsDraft.utility_monthly_payment_water),
+      });
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 2500);
+    }
+  };
   const recentReadings = readings.map((item) => ({
     ...item,
     name: t(item.meter_type),
@@ -2838,40 +3081,795 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, sche
     water: 'm³'
   }
 
+  const formatMeterVal = (val) => {
+    const num = Number(val);
+    if (Number.isNaN(num)) return '0';
+    return new Intl.NumberFormat(locale, {
+      minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(num);
+  };
+
+  const formatCalculatedVal = (val) => {
+    const num = Number(val);
+    if (Number.isNaN(num)) return '0,00';
+    return new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(num);
+  };
+
+  const getUtilityData = (type) => {
+    const typeReadings = readings
+      .filter((r) => r.meter_type === type)
+      .sort((a, b) => new Date(a.reading_date) - new Date(b.reading_date));
+
+    const unitPrice = Number(settings[`utility_price_${type}`] ?? (type === 'electricity' ? 0.35 : type === 'gas' ? 1.20 : 4.50));
+    const monthlyPayment = Number(settings[`utility_monthly_payment_${type}`] ?? 0);
+
+    if (typeReadings.length < 2) {
+      return {
+        hasEnoughData: false,
+        readings: typeReadings,
+        latest: typeReadings[typeReadings.length - 1] || null
+      };
+    }
+
+    const veche = typeReadings[typeReadings.length - 2];
+    const noua = typeReadings[typeReadings.length - 1];
+
+    const consum = Number(noua.value) - Number(veche.value);
+    const costEstimat = consum * unitPrice;
+
+    const dateNew = new Date(noua.reading_date);
+    const dateOld = new Date(veche.reading_date);
+    const diffTime = dateNew - dateOld;
+    const days = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+
+    const medieZilnica = consum / days;
+    const costMediuZilnic = costEstimat / days;
+
+    const fractionOfMonth = days / 30.44;
+    const platiEstimate = monthlyPayment * fractionOfMonth;
+    const diferenta = platiEstimate - costEstimat;
+
+    return {
+      hasEnoughData: true,
+      readings: typeReadings,
+      latest: noua,
+      consum,
+      costEstimat,
+      days,
+      medieZilnica,
+      costMediuZilnic,
+      plataLunara: monthlyPayment,
+      platiEstimate,
+      diferenta,
+      isPlus: diferenta >= 0,
+      diffAbs: Math.abs(diferenta)
+    };
+  };
+
+  const gasData = getUtilityData('gas');
+  const electricityData = getUtilityData('electricity');
+  const waterData = getUtilityData('water');
+
+  const configs = {
+    gas: {
+      gradient: 'linear-gradient(135deg, #ff6b35 0%, #f97316 40%, #ea580c 100%)',
+      gradientSoft: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
+      accentColor: '#f97316',
+      accentDark: '#c2410c',
+      textOnGradient: '#fff',
+      iconBg: 'rgba(255,255,255,0.2)',
+      borderColor: '#fed7aa',
+      glowColor: 'rgba(249,115,22,0.25)',
+    },
+    electricity: {
+      gradient: 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 40%, #a78bfa 100%)',
+      gradientSoft: 'linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%)',
+      accentColor: '#8b5cf6',
+      accentDark: '#5b21b6',
+      textOnGradient: '#fff',
+      iconBg: 'rgba(255,255,255,0.2)',
+      borderColor: '#ddd6fe',
+      glowColor: 'rgba(139,92,246,0.25)',
+    },
+    water: {
+      gradient: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 40%, #60a5fa 100%)',
+      gradientSoft: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+      accentColor: '#3b82f6',
+      accentDark: '#1e3a8a',
+      textOnGradient: '#fff',
+      iconBg: 'rgba(255,255,255,0.2)',
+      borderColor: '#bfdbfe',
+      glowColor: 'rgba(59,130,246,0.25)',
+    }
+  };
+
+  const renderCard = (type, title, icon, data) => {
+    const unit = meterUnits[type];
+    const cfg = configs[type];
+
+    return (
+      <div style={{
+        background: '#ffffff',
+        borderRadius: '20px',
+        border: `1px solid ${cfg.borderColor}`,
+        boxShadow: `0 8px 32px ${cfg.glowColor}, 0 2px 8px rgba(0,0,0,0.04)`,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '460px',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+      }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-4px)';
+          e.currentTarget.style.boxShadow = `0 16px 48px ${cfg.glowColor}, 0 4px 16px rgba(0,0,0,0.06)`;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = `0 8px 32px ${cfg.glowColor}, 0 2px 8px rgba(0,0,0,0.04)`;
+        }}
+      >
+        {/* Gradient Header */}
+        <div style={{
+          background: cfg.gradient,
+          padding: '1.5rem 1.5rem 2rem',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {/* Big background icon */}
+          <div style={{
+            position: 'absolute',
+            right: '-12px',
+            top: '-12px',
+            fontSize: '6rem',
+            opacity: 0.15,
+            pointerEvents: 'none',
+            lineHeight: 1,
+          }}>
+            {icon}
+          </div>
+
+          {/* Top row: icon circle + unit badge */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '14px',
+              background: cfg.iconBg,
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.6rem',
+              border: '1px solid rgba(255,255,255,0.3)',
+            }}>
+              {icon}
+            </div>
+            <span style={{
+              background: 'rgba(255,255,255,0.25)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.35)',
+              color: '#fff',
+              fontWeight: '900',
+              fontSize: '0.78rem',
+              padding: '0.3rem 0.75rem',
+              borderRadius: '20px',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
+              {unit}
+            </span>
+          </div>
+
+          {/* Title */}
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.35rem', fontWeight: '900', color: '#fff', letterSpacing: '-0.01em' }}>
+            {title}
+          </h3>
+
+          {/* Last reading value */}
+          {data.latest ? (
+            <div>
+              <div style={{
+                fontSize: '0.65rem',
+                fontWeight: '800',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.7)',
+                marginBottom: '0.2rem',
+              }}>
+                ULTIMA CITIRE
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                <span style={{ fontSize: '2.75rem', fontWeight: '900', color: '#fff', lineHeight: 1, letterSpacing: '-0.02em' }}>
+                  {formatMeterVal(data.latest.value)}
+                </span>
+                <span style={{ fontSize: '1.1rem', fontWeight: '600', color: 'rgba(255,255,255,0.75)' }}>
+                  {unit}
+                </span>
+              </div>
+              <div style={{
+                fontSize: '0.82rem',
+                color: 'rgba(255,255,255,0.7)',
+                marginTop: '0.2rem',
+                fontWeight: '500',
+              }}>
+                📅 {data.latest.reading_date}
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', fontWeight: '600' }}>
+              Nicio citire introdusă
+            </div>
+          )}
+        </div>
+
+        {/* Body */}
+        <div style={{
+          padding: '1.4rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.9rem',
+          flexGrow: 1,
+          background: cfg.gradientSoft,
+        }}>
+          {data.hasEnoughData ? (
+            <>
+              {/* Stats rows */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                {[
+                  { label: 'Consum ultima perioadă', value: `${formatCalculatedVal(data.consum)} ${unit}`, highlight: false },
+                  { label: 'Cost estimat ultima perioadă', value: formatMoney(data.costEstimat, currency, locale), highlight: true },
+                  { label: 'Medie zilnică', value: `${formatCalculatedVal(data.medieZilnica)} ${unit}/zi`, highlight: false },
+                  { label: 'Cost mediu zilnic', value: `${formatMoney(data.costMediuZilnic, currency, locale)}/zi`, highlight: false },
+                  { label: 'Plată lunară', value: formatMoney(data.plataLunara, currency, locale), highlight: true },
+                ].map(({ label, value, highlight }) => (
+                  <div key={label} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '10px',
+                    background: highlight ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.35)',
+                    border: highlight ? `1px solid ${cfg.borderColor}` : '1px solid rgba(255,255,255,0.5)',
+                    backdropFilter: 'blur(4px)',
+                  }}>
+                    <span style={{ fontSize: '0.82rem', color: '#374151', fontWeight: '500' }}>{label}</span>
+                    <strong style={{
+                      fontSize: highlight ? '0.95rem' : '0.88rem',
+                      color: cfg.accentDark,
+                      fontWeight: '800',
+                      letterSpacing: '-0.01em',
+                    }}>{value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              {/* Status Panel */}
+              <div style={{
+                marginTop: 'auto',
+                padding: '0.9rem 1rem',
+                borderRadius: '14px',
+                background: data.isPlus
+                  ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)'
+                  : 'linear-gradient(135deg, #fee2e2, #fecaca)',
+                border: data.isPlus ? '1px solid #86efac' : '1px solid #fca5a5',
+                boxShadow: data.isPlus
+                  ? '0 4px 12px rgba(34,197,94,0.15)'
+                  : '0 4px 12px rgba(239,68,68,0.15)',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  fontWeight: '900',
+                  fontSize: '0.88rem',
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                  color: data.isPlus ? '#15803d' : '#b91c1c',
+                  marginBottom: '0.3rem',
+                }}>
+                  <span>{data.isPlus ? '✅' : '⚠️'}</span>
+                  <span>{data.isPlus ? `PE PLUS  +${formatMoney(data.diffAbs, currency, locale)}` : `PE MINUS  −${formatMoney(data.diffAbs, currency, locale)}`}</span>
+                </div>
+                <div style={{
+                  fontSize: '0.8rem',
+                  color: data.isPlus ? '#166534' : '#991b1b',
+                  lineHeight: '1.45',
+                  fontWeight: '500',
+                }}>
+                  {data.isPlus
+                    ? `Ai plătit estimativ cu ${formatMoney(data.diffAbs, currency, locale)} mai mult decât consumul calculat.`
+                    : `Consumul estimat este cu ${formatMoney(data.diffAbs, currency, locale)} peste plățile lunare.`}
+                </div>
+              </div>
+            </>
+          ) : data.latest ? (
+            <div style={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1.5rem',
+              background: 'rgba(255,255,255,0.5)',
+              borderRadius: '14px',
+              border: '1px dashed rgba(0,0,0,0.1)',
+              textAlign: 'center',
+              gap: '0.4rem',
+            }}>
+              <span style={{ fontSize: '2rem' }}>📊</span>
+              <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: '600' }}>
+                Ai nevoie de cel puțin două citiri pentru calcul.
+              </span>
+            </div>
+          ) : (
+            <div style={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '2rem',
+              background: 'rgba(255,255,255,0.5)',
+              borderRadius: '14px',
+              border: '1px dashed rgba(0,0,0,0.1)',
+              textAlign: 'center',
+              gap: '0.4rem',
+            }}>
+              <span style={{ fontSize: '2.5rem' }}>📋</span>
+              <span style={{ fontSize: '0.9rem', color: '#6b7280', fontWeight: '600' }}>
+                Nicio citire introdusă încă.
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
+                Adaugă prima citire cu butonul de sus.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMiniChartCard = (type, title, icon, data) => {
+    const cfg = configs[type];
+    const typeReadings = data.readings || [];
+    const lastThree = typeReadings.slice(-3);
+    const maxVal = lastThree.length > 0 ? Math.max(...lastThree.map((r) => Number(r.value))) : 0;
+
+    return (
+      <div style={{
+        background: '#fff',
+        borderRadius: '16px',
+        border: `1px solid ${cfg.borderColor}`,
+        boxShadow: `0 4px 16px ${cfg.glowColor}`,
+        overflow: 'hidden',
+      }}>
+        {/* Mini header bar */}
+        <div style={{
+          background: cfg.gradient,
+          padding: '0.85rem 1.1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+        }}>
+          <span style={{ fontSize: '1.25rem' }}>{icon}</span>
+          <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#fff' }}>{title}</h4>
+        </div>
+
+        <div style={{ padding: '1.1rem', background: cfg.gradientSoft }}>
+          {lastThree.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {lastThree.map((reading, idx) => {
+                const val = Number(reading.value);
+                const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                const isLatest = idx === lastThree.length - 1;
+                return (
+                  <div key={reading.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: '#6b7280', fontWeight: '500' }}>
+                        {reading.reading_date}
+                      </span>
+                      <strong style={{
+                        fontSize: isLatest ? '0.92rem' : '0.82rem',
+                        color: isLatest ? cfg.accentDark : '#374151',
+                        fontWeight: '800',
+                      }}>
+                        {formatMeterVal(val)} {meterUnits[type]}
+                      </strong>
+                    </div>
+                    <div style={{
+                      height: '10px',
+                      background: 'rgba(255,255,255,0.6)',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.8)',
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${pct}%`,
+                        background: isLatest ? cfg.gradient : cfg.accentColor + '88',
+                        borderRadius: '6px',
+                        transition: 'width 0.4s ease',
+                        boxShadow: isLatest ? `0 2px 6px ${cfg.glowColor}` : 'none',
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{
+              padding: '1rem',
+              textAlign: 'center',
+              fontSize: '0.82rem',
+              color: '#9ca3af',
+              fontWeight: '500',
+            }}>
+              Nu există citiri introduse.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const elecTitle = language === 'ro' ? 'Curent' : 'Strom';
+
   return (
     <>
-      <section className="section">
-        <div className="section-title">
+      {/* Page Header */}
+      <div style={{
+        background: 'linear-gradient(135deg, #17463c 0%, #1e5945 50%, #2d7a5e 100%)',
+        borderRadius: '20px',
+        padding: '2rem 2rem 2.5rem',
+        position: 'relative',
+        overflow: 'hidden',
+        marginBottom: '0.5rem',
+        boxShadow: '0 8px 32px rgba(23,70,60,0.25)',
+      }}>
+        {/* Background decoration */}
+        <div style={{
+          position: 'absolute', right: '-30px', top: '-30px',
+          width: '200px', height: '200px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)',
+          pointerEvents: 'none',
+        }} />
+        <div style={{
+          position: 'absolute', right: '80px', bottom: '-50px',
+          width: '150px', height: '150px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.03)',
+          pointerEvents: 'none',
+        }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', position: 'relative' }}>
           <div>
-            <h2>{t('utilities')}</h2>
-            <p className="muted">{t('utilitiesSubtitle')}</p>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              background: 'rgba(255,255,255,0.12)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.18)',
+              borderRadius: '20px',
+              padding: '0.25rem 0.75rem',
+              marginBottom: '0.6rem',
+              fontSize: '0.72rem',
+              fontWeight: '800',
+              color: 'rgba(255,255,255,0.8)',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+            }}>
+              🏠 Acasă
+            </div>
+            <h1 style={{ margin: '0 0 0.35rem', fontSize: '1.9rem', fontWeight: '900', color: '#fff', letterSpacing: '-0.02em' }}>
+              {t('utilities')}
+            </h1>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'rgba(255,255,255,0.65)', fontWeight: '400' }}>
+              {t('utilitiesSubtitle')}
+            </p>
           </div>
-          <button type="button" onClick={onToggleForm}>{formOpen ? t('hideForm') : t('addUtilityReading')}</button>
+
+          <button
+            type="button"
+            onClick={onToggleForm}
+            style={{
+              background: formOpen ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.95)',
+              backdropFilter: 'blur(8px)',
+              color: formOpen ? '#fff' : '#17463c',
+              fontWeight: '800',
+              fontSize: '0.88rem',
+              borderRadius: '12px',
+              padding: '0.7rem 1.3rem',
+              border: formOpen ? '1px solid rgba(255,255,255,0.3)' : 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              minHeight: 'auto',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {formOpen ? '✕ ' + t('hideForm') : t('addUtilityReading')}
+          </button>
         </div>
-        {!schemaReady && <div className="notice danger">{t('utilitiesMigrationMissing')}</div>}
-      </section>
+
+        {!schemaReady && (
+          <div style={{
+            marginTop: '1rem',
+            background: 'rgba(239,68,68,0.15)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: '10px',
+            padding: '0.75rem 1rem',
+            color: '#fca5a5',
+            fontSize: '0.85rem',
+            fontWeight: '500',
+          }}>
+            {t('utilitiesMigrationMissing')}
+          </div>
+        )}
+      </div>
 
       {formOpen && (
-        <UtilityReadingForm
-          t={t}
-          initialItem={editing}
-          onSubmit={onSubmit}
-          onCancel={onCancel}
-        />
+        <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+          <UtilityReadingForm
+            t={t}
+            initialItem={editing}
+            onSubmit={onSubmit}
+            onCancel={onCancel}
+          />
+        </div>
       )}
 
-      <EntityList
-        title={t('utilities')}
-        items={recentReadings}
-        currency={currency}
-        language={language}
-        emptyText={t('noData')}
-        editText={t('edit')}
-        deleteText={t('delete')}
-        renderMeta={(item) => `${item.reading_date} — ${item.value} ${meterUnits[item.meter_type] || ''} ${item.cost_estimate ? `(Cost: ${item.cost_estimate} ${currency})` : ''} ${item.notes ? `[${item.notes}]` : ''}`}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
+      {/* 3 Main Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+        gap: '1.5rem',
+        marginTop: '1.75rem',
+        marginBottom: '2.5rem',
+      }}>
+        {renderCard('gas', t('gas'), '🔥', gasData)}
+        {renderCard('electricity', elecTitle, '⚡', electricityData)}
+        {renderCard('water', t('water'), '💧', waterData)}
+      </div>
+
+      {/* Charts Section */}
+      <div style={{ marginBottom: '2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{
+            width: '4px',
+            height: '24px',
+            borderRadius: '2px',
+            background: 'linear-gradient(180deg, #f97316, #8b5cf6)',
+          }} />
+          <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#15231f', fontWeight: '900' }}>
+            Diagrame consum
+          </h2>
+        </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '1.1rem',
+        }}>
+          {renderMiniChartCard('gas', t('gas'), '🔥', gasData)}
+          {renderMiniChartCard('electricity', elecTitle, '⚡', electricityData)}
+          {renderMiniChartCard('water', t('water'), '💧', waterData)}
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      <div style={{ marginBottom: '2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{
+            width: '4px',
+            height: '24px',
+            borderRadius: '2px',
+            background: 'linear-gradient(180deg, #17463c, #3b82f6)',
+          }} />
+          <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#15231f', fontWeight: '900' }}>
+            ⚙️ Setări utilități
+          </h2>
+        </div>
+
+        <div style={{
+          background: '#fff',
+          borderRadius: '20px',
+          border: '1px solid #dde4da',
+          boxShadow: '0 4px 20px rgba(23,70,60,0.06)',
+          overflow: 'hidden',
+        }}>
+          {/* Panel header */}
+          <div style={{
+            background: 'linear-gradient(135deg, #17463c 0%, #1e5945 100%)',
+            padding: '1rem 1.5rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+          }}>
+            <div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
+                Prețuri &amp; Avansuri lunare
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)', marginTop: '0.15rem' }}>
+                Valorile sunt folosite pentru calculul costurilor și al balanței.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              style={{
+                background: settingsSaved ? 'rgba(34,197,94,0.9)' : 'rgba(255,255,255,0.92)',
+                color: settingsSaved ? '#fff' : '#17463c',
+                fontWeight: '800',
+                fontSize: '0.85rem',
+                borderRadius: '10px',
+                padding: '0.55rem 1.1rem',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                transition: 'all 0.25s ease',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {settingsSaved ? '✅ Salvat!' : '💾 Salvează'}
+            </button>
+          </div>
+
+          {/* 3 utility rows */}
+          <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {[
+              {
+                type: 'gas',
+                icon: '🔥',
+                label: language === 'ro' ? 'Gaz' : 'Gas',
+                priceKey: 'utility_price_gas',
+                paymentKey: 'utility_monthly_payment_gas',
+                accentColor: '#f97316',
+                bgColor: '#fff7ed',
+                borderColor: '#fed7aa',
+                unit: 'm³',
+              },
+              {
+                type: 'electricity',
+                icon: '⚡',
+                label: language === 'ro' ? 'Curent' : 'Strom',
+                priceKey: 'utility_price_electricity',
+                paymentKey: 'utility_monthly_payment_electricity',
+                accentColor: '#8b5cf6',
+                bgColor: '#faf5ff',
+                borderColor: '#ddd6fe',
+                unit: 'kWh',
+              },
+              {
+                type: 'water',
+                icon: '💧',
+                label: language === 'ro' ? 'Apă' : 'Wasser',
+                priceKey: 'utility_price_water',
+                paymentKey: 'utility_monthly_payment_water',
+                accentColor: '#3b82f6',
+                bgColor: '#eff6ff',
+                borderColor: '#bfdbfe',
+                unit: 'm³',
+              },
+            ].map(({ type, icon, label, priceKey, paymentKey, accentColor, bgColor, borderColor, unit }) => (
+              <div key={type} style={{
+                background: bgColor,
+                border: `1px solid ${borderColor}`,
+                borderRadius: '14px',
+                padding: '1rem 1.25rem',
+                display: 'grid',
+                gridTemplateColumns: '140px 1fr 1fr',
+                gap: '1rem',
+                alignItems: 'center',
+              }}>
+                {/* Label */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    background: accentColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.1rem',
+                    flexShrink: 0,
+                  }}>
+                    {icon}
+                  </div>
+                  <strong style={{ fontSize: '0.95rem', color: '#15231f', fontWeight: '800' }}>{label}</strong>
+                </div>
+
+                {/* Pret per unitate */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', margin: 0 }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Preț / {unit}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={settingsDraft[priceKey]}
+                    onChange={(e) => setSettingsDraft((prev) => ({ ...prev, [priceKey]: Number(e.target.value || 0) }))}
+                    style={{
+                      border: `1.5px solid ${borderColor}`,
+                      borderRadius: '8px',
+                      padding: '0.45rem 0.65rem',
+                      fontSize: '0.95rem',
+                      fontWeight: '700',
+                      color: '#15231f',
+                      background: '#fff',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </label>
+
+                {/* Avans lunar */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', margin: 0 }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Avans lunar ({currency})
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={settingsDraft[paymentKey]}
+                    onChange={(e) => setSettingsDraft((prev) => ({ ...prev, [paymentKey]: Number(e.target.value || 0) }))}
+                    style={{
+                      border: `1.5px solid ${borderColor}`,
+                      borderRadius: '8px',
+                      padding: '0.45rem 0.65rem',
+                      fontSize: '0.95rem',
+                      fontWeight: '700',
+                      color: '#15231f',
+                      background: '#fff',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Entity list */}
+      <div style={{
+        background: '#fff',
+        borderRadius: '16px',
+        border: '1px solid #dde4da',
+        padding: '0.25rem',
+        boxShadow: '0 2px 8px rgba(23,70,60,0.04)',
+      }}>
+        <EntityList
+          title={t('utilities')}
+          items={recentReadings}
+          currency={currency}
+          language={language}
+          emptyText={t('noData')}
+          editText={t('edit')}
+          deleteText={t('delete')}
+          renderMeta={(item) => `${item.reading_date} — ${item.value} ${meterUnits[item.meter_type] || ''} ${item.cost_estimate ? `(Cost: ${item.cost_estimate} ${currency})` : ''} ${item.notes ? `[${item.notes}]` : ''}`}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </div>
     </>
   )
 }
