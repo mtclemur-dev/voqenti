@@ -1416,7 +1416,7 @@ export function KidsZone({ user, familyOwnerId }) {
   // ─── TAB: Chat familie ────────────────────────────────────────────────────
 
   const renderChat = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '600px', maxHeight: '70vh' }}>
+    <div className="family-chat-container">
       {!schemaReady.chat && (
         <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '1rem', color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem' }}>
           ⚠️ Chat familie indisponibil. Rulați scriptul <strong>KB_MIGRATION_FAMILY_CHAT.sql</strong> în Supabase.
@@ -1424,18 +1424,7 @@ export function KidsZone({ user, familyOwnerId }) {
       )}
 
       {/* Messages area */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '1rem',
-        background: '#f9fafb',
-        borderRadius: '14px',
-        border: '1px solid #e5e7eb',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-        marginBottom: '0.75rem',
-      }}>
+      <div className="family-chat-messages">
         {messages.length === 0 && (
           <div style={{ color: '#9ca3af', textAlign: 'center', margin: 'auto', fontSize: '0.9rem' }}>
             💬 Niciun mesaj încă. Începe conversația!
@@ -1495,30 +1484,20 @@ export function KidsZone({ user, familyOwnerId }) {
       </div>
 
       {/* Input */}
-      <div style={{ display: 'flex', gap: '0.6rem' }}>
+      <div className="family-chat-input-wrapper">
         <input
           value={chatText}
           onChange={(e) => setChatText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(chatText) } }}
           placeholder="Scrie un mesaj..."
-          style={{ flex: 1, border: '1.5px solid #d1d5db', borderRadius: '10px', padding: '0.65rem', fontSize: '0.9rem' }}
+          className="family-chat-input"
           disabled={!schemaReady.chat}
         />
         <button
           type="button"
           onClick={() => sendMessage(chatText)}
           disabled={chatSending || !chatText.trim() || !schemaReady.chat}
-          style={{
-            minHeight: 'auto',
-            padding: '0.65rem 1.2rem',
-            background: 'linear-gradient(135deg, #17463c, #2d7a5e)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '10px',
-            fontWeight: 800,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-          }}
+          className="family-chat-send-btn"
         >
           Trimite ➤
         </button>
@@ -1769,35 +1748,14 @@ export function KidsZone({ user, familyOwnerId }) {
                   key={qm.text}
                   type="button"
                   onClick={() => sendMessage(qm.text, wallet.member_name, 'child')}
-                  style={{
-                    minHeight: 'auto',
-                    padding: '0.35rem 0.75rem',
-                    background: '#fff',
-                    color: '#374151',
-                    border: '1.5px solid #d1d5db',
-                    borderRadius: '20px',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  className="kid-chat-quick-btn"
                 >
                   {qm.label}
                 </button>
               ))}
             </div>
             {/* Recent messages */}
-            <div style={{
-              background: '#f9fafb',
-              borderRadius: '12px',
-              border: '1px solid #e5e7eb',
-              padding: '0.75rem',
-              maxHeight: '200px',
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem',
-              marginBottom: '0.6rem',
-            }}>
+            <div className="kid-chat-messages-container">
               {messages.slice(-10).map((msg) => {
                 const isSystem = msg.message_type !== 'normal'
                 const isKid = msg.sender_name === wallet.member_name
@@ -1831,13 +1789,13 @@ export function KidsZone({ user, familyOwnerId }) {
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(kidChatText, wallet.member_name, 'child') } }}
                 placeholder="Scrie un mesaj..."
                 disabled={!schemaReady.chat}
-                style={{ flex: 1, border: '1.5px solid #d1d5db', borderRadius: '10px', padding: '0.55rem', fontSize: '0.88rem' }}
+                className="kid-chat-input"
               />
               <button
                 type="button"
                 onClick={() => sendMessage(kidChatText, wallet.member_name, 'child')}
                 disabled={!kidChatText.trim() || !schemaReady.chat}
-                style={{ minHeight: 'auto', padding: '0.55rem 1rem', background: 'linear-gradient(135deg, #f97316, #ea580c)', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer' }}
+                className="kid-chat-send-btn"
               >
                 ➤
               </button>
