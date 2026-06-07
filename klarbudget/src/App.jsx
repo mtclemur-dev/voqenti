@@ -766,31 +766,18 @@ function App() {
   }
 
   const isChildAccount = profileAccountRole === 'child' || user.user_metadata?.account_role === 'child'
+  const childAccountName = user.user_metadata?.child_name || null
 
   if (isChildAccount) {
     return (
       <div className="app-shell">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{t('appName')}</p>
-            <p className="build-label">{BUILD_LABEL}</p>
-            <h1>{t('kids')}</h1>
-            <p className="muted">Cont copil: acces doar la recompense.</p>
-          </div>
-          <div className="top-actions">
-            <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language">
-              {languages.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-            </select>
-            <button type="button" className="secondary" onClick={() => supabase.auth.signOut()}>{t('signOut')}</button>
-          </div>
-        </header>
-        <nav className="tabbar" aria-label="KlarBudget child navigation">
-          <button type="button" className="active">{t('kids')}</button>
-        </nav>
-        <main className="content">
-          {notice && <div className="toast">{notice}</div>}
-          <KidsZone user={user} familyOwnerId={familyOwnerId} />
-        </main>
+        <KidsZone
+          user={user}
+          familyOwnerId={familyOwnerId}
+          isChildAccount={true}
+          childAccountName={childAccountName}
+          onSignOut={() => supabase.auth.signOut()}
+        />
       </div>
     )
   }

@@ -212,12 +212,23 @@ function WalletCard({ wallet, coinValue, isSelected, onClick }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function KidsZone({ user, familyOwnerId }) {
-  const dbUserId = familyOwnerId || user?.id
+export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAccountName = null, onSignOut = null }) {
+  // For child accounts, resolve family owner ID independently to ensure chat goes to correct place
+  const [resolvedOwnerId, setResolvedOwnerId] = useState(familyOwnerId || null)
+  const dbUserId = resolvedOwnerId || familyOwnerId || user?.id
   // Tab navigation
   const [kidsTab, setKidsTab] = useState('admin')
-  const [kidModeActive, setKidModeActive] = useState(false)
-  const [kidModeChild, setKidModeChild] = useState('Veronica') // child selected in kid mode
+  // Auto-activate kid mode for child accounts; parents start at false
+  const [kidModeActive, setKidModeActive] = useState(isChildAccount)
+  // Set child name from account metadata if available
+  const [kidModeChild, setKidModeChild] = useState(() => {
+    if (childAccountName) {
+      // Match with known children names (case-insensitive prefix match)
+      const match = CHILDREN.find((n) => n.toLowerCase().startsWith(childAccountName.toLowerCase().slice(0, 3)))
+      return match || CHILDREN[0]
+    }
+    return CHILDREN[0]
+  })
 
   // Data
   const [wallets, setWallets] = useState([])
@@ -260,6 +271,37 @@ export function KidsZone({ user, familyOwnerId }) {
   // Kid Mode
   const [kidChatText, setKidChatText] = useState('')
   const [kidExitConfirm, setKidExitConfirm] = useState(false)
+
+  // For child accounts: resolve family owner ID from kb_family_members so
+  // messages and wallet data go under the parent's user_id (not the child's own id)
+  useEffect(() => {
+    if (!isChildAccount || !user?.email) return
+    // If we already have a valid family owner id from App.jsx, use it
+    if (familyOwnerId && familyOwnerId !== user?.id) {
+      setResolvedOwnerId(familyOwnerId)
+      return
+    }
+    // Otherwise look it up directly
+    supabase
+      .from('kb_family_members')
+      .select('family_owner_user_id')
+      .eq('email', user.email)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.family_owner_user_id) {
+          setResolvedOwnerId(data.family_owner_user_id)
+        } else {
+          // Fallback: use familyOwnerId or user.id
+          setResolvedOwnerId(familyOwnerId || user.id)
+        }
+      })
+      .catch(() => setResolvedOwnerId(familyOwnerId || user.id))
+  }, [isChildAccount, user, familyOwnerId])
+
+  // Also update resolvedOwnerId when familyOwnerId prop changes
+  useEffect(() => {
+    if (familyOwnerId) setResolvedOwnerId(familyOwnerId)
+  }, [familyOwnerId])
 
   const showNotice = useCallback((msg, ms = 3000) => {
     setNotice(msg)
@@ -1577,26 +1619,50 @@ export function KidsZone({ user, familyOwnerId }) {
             {avatar} {wallet.member_name}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {CHILDREN.filter((n) => n !== wallet.member_name).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setKidModeChild(n)}
-                style={{
-                  minHeight: 'auto',
-                  padding: '0.3rem 0.7rem',
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.35)',
-                  borderRadius: '20px',
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                {childAvatar(n)} {n}
-              </button>
-            ))}
+            {isChildAccount ? (
+              /* Child account: show only sign out */
+              onSignOut && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  style={{
+                    minHeight: 'auto',
+                    padding: '0.3rem 0.7rem',
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: '20px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🚪 Ieșire
+                </button>
+              )
+            ) : (
+              /* Parent: can switch between children */
+              CHILDREN.filter((n) => n !== wallet.member_name).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setKidModeChild(n)}
+                  style={{
+                    minHeight: 'auto',
+                    padding: '0.3rem 0.7rem',
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: '20px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {childAvatar(n)} {n}
+                </button>
+              ))
+            )}
           </div>
         </div>
 
@@ -1837,51 +1903,55 @@ export function KidsZone({ user, familyOwnerId }) {
             </div>
           )}
 
-          {/* Exit button */}
-          <div style={{ textAlign: 'center', paddingTop: '0.5rem', paddingBottom: '2rem' }}>
-            <button
-              type="button"
-              onClick={() => setKidExitConfirm(true)}
-              style={{
-                minHeight: 'auto',
-                background: 'rgba(0,0,0,0.06)',
-                color: '#6b7280',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0.5rem 1rem',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              🔐 Ieșire părinți
-            </button>
-          </div>
-
-          {/* Exit confirm dialog (replaces window.confirm, blocked in Android WebView) */}
-          {kidExitConfirm && (
-            <div className="kid-exit-confirm-overlay">
-              <div className="kid-exit-confirm-box">
-                <h3>🔐 Ieșire Mod Copil</h3>
-                <p>Ești sigur că vrei să ieși din modul copil?</p>
-                <div className="kid-exit-confirm-btns">
-                  <button
-                    type="button"
-                    onClick={() => setKidExitConfirm(false)}
-                    style={{ background: '#f3f4f6', color: '#374151' }}
-                  >
-                    Rămân
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setKidExitConfirm(false); setKidModeActive(false) }}
-                    style={{ background: '#17463c', color: '#fff' }}
-                  >
-                    Ieșire
-                  </button>
-                </div>
+          {/* Exit button — only shown for parents, not child accounts */}
+          {!isChildAccount && (
+            <>
+              <div style={{ textAlign: 'center', paddingTop: '0.5rem', paddingBottom: '2rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setKidExitConfirm(true)}
+                  style={{
+                    minHeight: 'auto',
+                    background: 'rgba(0,0,0,0.06)',
+                    color: '#6b7280',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🔐 Ieșire părinți
+                </button>
               </div>
-            </div>
+
+              {/* Exit confirm dialog (replaces window.confirm, blocked in Android WebView) */}
+              {kidExitConfirm && (
+                <div className="kid-exit-confirm-overlay">
+                  <div className="kid-exit-confirm-box">
+                    <h3>🔐 Ieșire Mod Copil</h3>
+                    <p>Ești sigur că vrei să ieși din modul copil?</p>
+                    <div className="kid-exit-confirm-btns">
+                      <button
+                        type="button"
+                        onClick={() => setKidExitConfirm(false)}
+                        style={{ background: '#f3f4f6', color: '#374151' }}
+                      >
+                        Rămân
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setKidExitConfirm(false); setKidModeActive(false) }}
+                        style={{ background: '#17463c', color: '#fff' }}
+                      >
+                        Ieșire
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1897,6 +1967,12 @@ export function KidsZone({ user, familyOwnerId }) {
         {renderKidMode()}
       </>
     )
+  }
+
+  // If this is a child account but kid mode was somehow deactivated, re-activate it
+  if (isChildAccount) {
+    setKidModeActive(true)
+    return null
   }
 
   const TABS = [
