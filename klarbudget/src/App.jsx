@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
-import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm, WorkAbsenceForm } from './components/Forms'
+import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm, WorkAbsenceForm, UtilityReadingForm } from './components/Forms'
 import { EntityList } from './components/EntityList'
 import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
@@ -24,6 +24,12 @@ const defaultSettings = {
   include_mortgage_in_plan: false,
   minimum_reserve: 200,
   include_overdraft_in_debt_plan: false,
+  utility_price_electricity: 0.35,
+  utility_price_gas: 1.20,
+  utility_price_water: 4.50,
+  utility_monthly_payment_electricity: 0,
+  utility_monthly_payment_gas: 0,
+  utility_monthly_payment_water: 0,
 }
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
@@ -58,11 +64,13 @@ function App() {
   const [stores, setStores] = useState([])
   const [offerSources, setOfferSources] = useState([])
   const [shoppingSchemaReady, setShoppingSchemaReady] = useState(true)
+  const [utilityReadings, setUtilityReadings] = useState([])
+  const [utilitySchemaReady, setUtilitySchemaReady] = useState(true)
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
-  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null, journal: null, workAbsence: null })
-  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false, journal: true, workAbsence: false })
+  const [editing, setEditing] = useState({ incomes: null, expenses: null, debts: null, accounts: null, journal: null, workAbsence: null, utilityReading: null })
+  const [formOpen, setFormOpen] = useState({ incomes: false, expenses: false, debts: false, accounts: false, journal: true, workAbsence: false, utilityReading: false })
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
@@ -101,7 +109,7 @@ function App() {
     if (!user) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -120,6 +128,7 @@ function App() {
       supabase.from('kb_price_history').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
       supabase.from('kb_receipts').select('*').eq('user_id', user.id).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('kb_receipt_items').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('kb_utility_readings').select('*').eq('user_id', user.id).order('reading_date', { ascending: false }),
     ])
 
     const metadataRole = user.user_metadata?.account_role === 'child' ? 'child' : 'parent'
@@ -176,6 +185,8 @@ function App() {
     setReceipts(receiptsRes.data || [])
     setReceiptItems(receiptItemsRes.data || [])
     setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error && !receiptsRes.error && !receiptItemsRes.error)
+    setUtilityReadings(utilityReadingsRes.data || [])
+    setUtilitySchemaReady(!utilityReadingsRes.error)
     setLoading(false)
   }, [language, user])
 
@@ -372,6 +383,23 @@ function App() {
     }
     setEditing((current) => ({ ...current, workAbsence: null }))
     setFormOpen((current) => ({ ...current, workAbsence: false }))
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const saveUtilityReading = async (payload, currentItem = null) => {
+    const prepared = preparePayload(payload)
+    const query = currentItem
+      ? supabase.from('kb_utility_readings').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
+      : supabase.from('kb_utility_readings').insert({ ...prepared, user_id: user.id })
+    const { error } = await query
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setEditing((current) => ({ ...current, utilityReading: null }))
+    setFormOpen((current) => ({ ...current, utilityReading: false }))
     setNotice(t('savedSuccess'))
     loadData()
   }
@@ -587,6 +615,12 @@ function App() {
     await updateSettings({
       minimum_reserve: Number(settingsDraft.minimum_reserve || 0),
       include_overdraft_in_debt_plan: Boolean(settingsDraft.include_overdraft_in_debt_plan),
+      utility_price_electricity: Number(settingsDraft.utility_price_electricity ?? 0.35),
+      utility_price_gas: Number(settingsDraft.utility_price_gas ?? 1.20),
+      utility_price_water: Number(settingsDraft.utility_price_water ?? 4.50),
+      utility_monthly_payment_electricity: Number(settingsDraft.utility_monthly_payment_electricity ?? 0),
+      utility_monthly_payment_gas: Number(settingsDraft.utility_monthly_payment_gas ?? 0),
+      utility_monthly_payment_water: Number(settingsDraft.utility_monthly_payment_water ?? 0),
     })
     setNotice(t('savedSuccess'))
   }
@@ -724,7 +758,7 @@ function App() {
         </button>
         <button
           type="button"
-          className={['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) ? 'active' : ''}
+          className={['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].includes(view) ? 'active' : ''}
           onClick={() => setView('journal')}
         >
           📋 {t('navGroup_activity')}
@@ -746,8 +780,8 @@ function App() {
             </button>
           ))
         }
-        {['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) &&
-          ['journal', 'shopping', 'workAbsence', 'calendar'].map((item) => (
+        {['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].includes(view) &&
+          ['journal', 'shopping', 'workAbsence', 'utilities', 'calendar'].map((item) => (
             <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
               {t(item)}
             </button>
@@ -841,6 +875,26 @@ function App() {
             onToggleForm={() => setFormOpen((current) => ({ ...current, workAbsence: !current.workAbsence }))}
           />
         )}
+        {view === 'utilities' && (
+          <UtilityReadings
+            readings={utilityReadings}
+            currency={currency}
+            editing={editing.utilityReading}
+            formOpen={formOpen.utilityReading}
+            language={language}
+            locale={locale}
+            schemaReady={utilitySchemaReady}
+            t={t}
+            onCancel={() => setEditing((current) => ({ ...current, utilityReading: null }))}
+            onDelete={(item) => deleteRow('kb_utility_readings', item)}
+            onEdit={(item) => {
+              setEditing((current) => ({ ...current, utilityReading: item }))
+              setFormOpen((current) => ({ ...current, utilityReading: true }))
+            }}
+            onSubmit={(payload) => saveUtilityReading(payload, editing.utilityReading)}
+            onToggleForm={() => setFormOpen((current) => ({ ...current, utilityReading: !current.utilityReading }))}
+          />
+        )}
         {view === 'accounts' && (
           <>
             <section className="section">
@@ -896,6 +950,70 @@ function App() {
                   />
                   {t('includeOverdraftInDebtPlan')}
                 </label>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '1rem', borderTop: '1px solid rgba(23, 70, 60, 0.1)', paddingTop: '1rem', width: '100%', gridColumn: 'span 2' }}>
+                  <h3 style={{ gridColumn: 'span 2', fontSize: '1rem', color: '#17463c', margin: '0 0 0.5rem 0' }}>💡 {t('utilities')}</h3>
+                  <label>
+                    {t('utilityPriceElectricity')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      value={settingsDraft.utility_price_electricity ?? 0.35}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_electricity: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                  <label>
+                    {t('utilityPaymentElectricity')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={settingsDraft.utility_monthly_payment_electricity ?? 0}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_electricity: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                  <label>
+                    {t('utilityPriceGas')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      value={settingsDraft.utility_price_gas ?? 1.20}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_gas: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                  <label>
+                    {t('utilityPaymentGas')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={settingsDraft.utility_monthly_payment_gas ?? 0}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_gas: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                  <label>
+                    {t('utilityPriceWater')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      value={settingsDraft.utility_price_water ?? 4.50}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_price_water: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                  <label>
+                    {t('utilityPaymentWater')}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={settingsDraft.utility_monthly_payment_water ?? 0}
+                      onChange={(event) => setSettingsDraft((current) => ({ ...current, utility_monthly_payment_water: Number(event.target.value || 0) }))}
+                    />
+                  </label>
+                </div>
               </div>
             </section>
             {(formOpen.accounts || editing.accounts) && (
@@ -1097,6 +1215,7 @@ function App() {
             settings={settings}
             paymentStatuses={paymentStatuses}
             journalEntries={journalEntries}
+            utilityReadings={utilityReadings}
           />
         )}
         {view === 'kids' && <FamilyTokenEconomy user={user} />}
@@ -2704,6 +2823,57 @@ function KaufdaFeedTab({ t, shoppingList = [], onImportOffer }) {
 
 function Input({ label, value, onChange, type = 'text', ...props }) {
   return <label>{label}<input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} /></label>
+}
+
+function UtilityReadings({ readings, currency, editing, formOpen, language, schemaReady, t, onCancel, onDelete, onEdit, onSubmit, onToggleForm }) {
+  const recentReadings = readings.map((item) => ({
+    ...item,
+    name: t(item.meter_type),
+    amount: null,
+  }))
+
+  const meterUnits = {
+    electricity: 'kWh',
+    gas: 'm³',
+    water: 'm³'
+  }
+
+  return (
+    <>
+      <section className="section">
+        <div className="section-title">
+          <div>
+            <h2>{t('utilities')}</h2>
+            <p className="muted">{t('utilitiesSubtitle')}</p>
+          </div>
+          <button type="button" onClick={onToggleForm}>{formOpen ? t('hideForm') : t('addUtilityReading')}</button>
+        </div>
+        {!schemaReady && <div className="notice danger">{t('utilitiesMigrationMissing')}</div>}
+      </section>
+
+      {formOpen && (
+        <UtilityReadingForm
+          t={t}
+          initialItem={editing}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+        />
+      )}
+
+      <EntityList
+        title={t('utilities')}
+        items={recentReadings}
+        currency={currency}
+        language={language}
+        emptyText={t('noData')}
+        editText={t('edit')}
+        deleteText={t('delete')}
+        renderMeta={(item) => `${item.reading_date} — ${item.value} ${meterUnits[item.meter_type] || ''} ${item.cost_estimate ? `(Cost: ${item.cost_estimate} ${currency})` : ''} ${item.notes ? `[${item.notes}]` : ''}`}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    </>
+  )
 }
 
 function WorkAbsence({ absences, currency, editing, formOpen, language, locale, schemaReady, t, onCancel, onDelete, onEdit, onExport, onStart, onStop, onSubmit, onToggleForm }) {

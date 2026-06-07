@@ -29,7 +29,7 @@ export function AIActionPanel({ currency, debts, expenses, incomes, journalEntri
   // Save messages to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem(MESSAGES_LS_KEY, JSON.stringify(messages))
-  }, [messages])
+  }, [MESSAGES_LS_KEY, messages])
 
   // Scroll to bottom of chat
   const scrollToBottom = () => {

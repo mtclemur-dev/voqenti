@@ -277,3 +277,21 @@ function CheckboxInput({ name, label, checked, onChange }) {
     </label>
   )
 }
+
+const utilityReadingDefaults = { meter_type: 'electricity', reading_date: isoDate(new Date()), value: '', cost_estimate: '', notes: '' }
+
+export function UtilityReadingForm({ t, initialItem, onSubmit, onCancel }) {
+  return (
+    <FormShell title={initialItem ? t('edit') : t('addUtilityReading')} defaults={utilityReadingDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('add')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
+      {({ values, update }) => (
+        <>
+          <SelectInput name="meter_type" label={t('meterType')} value={values.meter_type} onChange={update} options={[['electricity', t('electricity')], ['gas', t('gas')], ['water', t('water')]]} />
+          <TextInput name="reading_date" label={t('readingDate')} type="date" value={values.reading_date} onChange={update} required />
+          <TextInput name="value" label={t('meterValue')} type="number" step="0.01" value={values.value} onChange={update} required />
+          <TextInput name="cost_estimate" label={t('costEstimateOptional')} type="number" step="0.01" value={values.cost_estimate} onChange={update} />
+          <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
+        </>
+      )}
+    </FormShell>
+  )
+}

@@ -8,19 +8,56 @@ const defaultRewards = [
   { title: '5 EUR bani de buzunar', cost: 50, icon: 'money' },
 ]
 
-const defaultWallets = ['Daria', 'Fiul de 5 ani']
+const defaultWallets = ['Veronica', 'Robert']
 
-function rewardIcon(icon) {
-  const normalized = String(icon || '').toLowerCase()
-  if (normalized.includes('game')) return '🎮'
-  if (normalized.includes('film')) return '🎬'
-  if (normalized.includes('desert')) return '🍰'
-  if (normalized.includes('money')) return '💶'
-  return icon || '🎁'
+const childLoginByEmail = {
+  'mtclemur@gmx.de': 'Veronica',
 }
 
-export function FamilyTokenEconomy({ user, childOnly = false }) {
-  const [activeTab, setActiveTab] = useState('child')
+function rewardIcon(icon, title = '') {
+  const cleanIcon = String(icon || '').trim()
+  const normalized = `${cleanIcon} ${title}`.toLowerCase()
+  if (normalized.includes('game') || normalized.includes('tablet')) return '🎮'
+  if (normalized.includes('film')) return '🎬'
+  if (normalized.includes('desert')) return '🍰'
+  if (normalized.includes('money') || normalized.includes('bani') || normalized.includes('eur')) return '💶'
+  if (cleanIcon && !cleanIcon.includes('?') && !cleanIcon.includes('�')) return cleanIcon
+  return '⭐'
+}
+
+function childAvatar(name = '') {
+  return name.toLowerCase().includes('veronica') ? '🌸' : '🚀'
+}
+
+function normalizeChildName(value = '') {
+  return String(value).trim().toLowerCase()
+}
+
+function displayChildName(value = '') {
+  const normalized = normalizeChildName(value)
+  if (normalized.includes('robert')) return 'Robert'
+  if (normalized.includes('veronica')) return 'Veronica'
+  return String(value || 'Copil').trim()
+}
+
+function loggedChildName(user) {
+  const emailChild = childLoginByEmail[String(user?.email || '').toLowerCase()]
+  if (emailChild) return emailChild
+  const metadataName = displayChildName(user?.user_metadata?.child_name || '')
+  if (['Robert', 'Veronica'].includes(metadataName)) return metadataName
+  const identity = `${user?.email || ''} ${user?.user_metadata?.name || ''}`.toLowerCase()
+  if (identity.includes('robert')) return 'Robert'
+  if (identity.includes('veronica')) return 'Veronica'
+  return ''
+}
+
+function isLegacyWallet(wallet) {
+  const name = normalizeChildName(wallet?.member_name)
+  return name === 'daria' || name === 'fiul de 5 ani'
+}
+
+export function FamilyTokenEconomy({ user, childOnly = false, parentOnly = false, onOpenKidMode, onParentExit }) {
+  const [activeTab, setActiveTab] = useState(parentOnly ? 'parent' : 'child')
   const [wallets, setWallets] = useState([])
   const [rewards, setRewards] = useState([])
   const [requests, setRequests] = useState([])
@@ -31,10 +68,24 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
   const [loading, setLoading] = useState(true)
   const [schemaReady, setSchemaReady] = useState(true)
   const [rewardForm, setRewardForm] = useState({ title: '', cost: '', icon: 'gift' })
+  const [coinBurst, setCoinBurst] = useState('')
+  const [previousBalance, setPreviousBalance] = useState(null)
+
+  const currentChildName = loggedChildName(user)
+  const isRealChildAccount = Boolean(currentChildName) || Boolean(user?.user_metadata?.child_name) || user?.user_metadata?.account_role === 'child'
+
+  const displayWallets = useMemo(() => {
+    const visible = wallets.filter((wallet) => !isLegacyWallet(wallet))
+    const cleanWallets = visible.length ? visible : wallets
+    if (childOnly && isRealChildAccount && currentChildName) {
+      return cleanWallets.filter((wallet) => displayChildName(wallet.member_name) === currentChildName)
+    }
+    return cleanWallets
+  }, [childOnly, currentChildName, isRealChildAccount, wallets])
 
   const selectedWallet = useMemo(
-    () => wallets.find((wallet) => wallet.id === selectedWalletId) || wallets[0],
-    [selectedWalletId, wallets],
+    () => displayWallets.find((wallet) => wallet.id === selectedWalletId) || displayWallets[0],
+    [displayWallets, selectedWalletId],
   )
 
   const pendingRequests = useMemo(
@@ -69,10 +120,33 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
           (request.reward_title === reward.title && Number(request.reward_cost || 0) === Number(reward.cost || 0))),
     )
 
+  useEffect(() => {
+    if (!selectedWallet) return
+    const balance = Number(selectedWallet.balance || 0)
+    if (previousBalance !== null && balance > previousBalance) {
+      setCoinBurst(`+${balance - previousBalance} 🪙`)
+      setPreviousBalance(balance)
+      const timer = window.setTimeout(() => setCoinBurst(''), 1600)
+      return () => window.clearTimeout(timer)
+    }
+    setPreviousBalance(balance)
+  }, [previousBalance, selectedWallet])
+
+  useEffect(() => {
+    if (parentOnly) setActiveTab('parent')
+  }, [parentOnly])
+
+  const rewardMotivation = (balance, cost, pending) => {
+    if (pending) return 'Cerere trimisa. Asteapta aprobarea.'
+    if (balance >= cost) return 'Super! Poti cere aceasta recompensa!'
+    if (cost > 0 && balance / cost >= 0.7) return 'Mai ai putin pana la recompensa!'
+    return 'Continua, esti pe drumul bun!'
+  }
+
   const createDefaultData = async () => {
     if (!user) return false
-    const childWalletName = user.user_metadata?.child_name || user.email?.split('@')?.[0] || 'Copil'
-    const initialWallets = childOnly ? [childWalletName] : defaultWallets
+    const childWalletName = currentChildName || displayChildName(user.user_metadata?.child_name || user.email?.split('@')?.[0] || 'Copil')
+    const initialWallets = childOnly && isRealChildAccount ? [childWalletName] : defaultWallets
 
     const { data: walletData, error: walletError } = await supabase
       .from('family_wallets')
@@ -106,8 +180,48 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
     }
 
     setWallets(walletData || [])
-    setSelectedWalletId((current) => current || walletData?.[0]?.id || '')
+    const firstVisibleWallet = walletData?.find((wallet) => !isLegacyWallet(wallet)) || walletData?.[0]
+    setSelectedWalletId((current) => current || firstVisibleWallet?.id || '')
     return true
+  }
+
+  const ensureDefaultChildren = async (currentWallets) => {
+    if (isRealChildAccount) {
+      const requiredChildName = currentChildName || displayChildName(user.user_metadata?.child_name || user.email?.split('@')?.[0] || 'Copil')
+      const hasChildWallet = currentWallets.some((wallet) => displayChildName(wallet.member_name) === requiredChildName)
+      if (hasChildWallet) return currentWallets
+
+      const { data, error } = await supabase
+        .from('family_wallets')
+        .upsert([{ user_id: user.id, member_name: requiredChildName, balance: 0 }], { onConflict: 'user_id,member_name' })
+        .select('*')
+
+      if (error) {
+        console.warn('Could not ensure child wallet:', error)
+        return currentWallets
+      }
+
+      return [...currentWallets, ...(data || [])].sort((a, b) => String(a.member_name).localeCompare(String(b.member_name)))
+    }
+
+    const existingNames = new Set(currentWallets.map((wallet) => String(wallet.member_name || '').trim().toLowerCase()))
+    const missingNames = defaultWallets.filter((name) => !existingNames.has(name.toLowerCase()))
+    if (!missingNames.length) return currentWallets
+
+    const { data, error } = await supabase
+      .from('family_wallets')
+      .upsert(
+        missingNames.map((member_name) => ({ user_id: user.id, member_name, balance: 0 })),
+        { onConflict: 'user_id,member_name' },
+      )
+      .select('*')
+
+    if (error) {
+      console.warn('Could not ensure default child wallets:', error)
+      return currentWallets
+    }
+
+    return [...currentWallets, ...(data || [])].sort((a, b) => String(a.member_name).localeCompare(String(b.member_name)))
   }
 
   const loadData = async () => {
@@ -165,11 +279,18 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
       nextRewards = data || []
     }
 
+    nextWallets = await ensureDefaultChildren(nextWallets)
+
     setWallets(nextWallets)
     setRewards(nextRewards)
     setRequests(requestRes.data || [])
     setTransactions(transactionRes.data || [])
-    setSelectedWalletId((current) => current || nextWallets[0]?.id || '')
+    const selectableWallets = nextWallets.filter((wallet) => !isLegacyWallet(wallet))
+    const childWallet = currentChildName
+      ? selectableWallets.find((wallet) => displayChildName(wallet.member_name) === currentChildName)
+      : null
+    const firstVisibleWallet = childWallet || selectableWallets[0] || nextWallets[0]
+    setSelectedWalletId((current) => current || firstVisibleWallet?.id || '')
     setSchemaReady(true)
     setLoading(false)
   }
@@ -207,6 +328,7 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
     }
 
     setNotice(`${amount} monede adaugate pentru ${selectedWallet.member_name}.`)
+    setCoinBurst(`+${amount} 🪙`)
     await loadData()
   }
 
@@ -215,12 +337,12 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
     const balance = Number(selectedWallet.balance || 0)
     const cost = Number(reward.cost || 0)
     if (balance < cost) {
-      setNotice(`Nu sunt destule monede. Mai lipsesc ${cost - balance}.`)
+      setNotice(`Iti mai trebuie ${cost - balance} monede.`)
       return
     }
 
     if (hasPendingRequest(reward)) {
-      setNotice('Cererea pentru aceasta recompensa este deja in asteptare.')
+      setNotice('Cerere trimisa. Asteapta aprobarea.')
       return
     }
 
@@ -238,7 +360,7 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
       return
     }
 
-    setNotice('Cererea de recompensa a fost trimisa catre parinti.')
+    setNotice('Cererea a fost trimisa parintilor.')
     await loadData()
   }
 
@@ -339,22 +461,41 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
   }
 
   return (
-    <section className="section">
-      <div className="flex flex-col gap-4">
+    <section className={childOnly ? 'kid-mode-shell' : 'section'}>
+      {childOnly && (
+        <button type="button" className="kid-parent-exit" onClick={onParentExit}>
+          Iesire parinti
+        </button>
+      )}
+      <div className={childOnly ? 'kid-mode-content' : 'flex flex-col gap-4'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-black text-emerald-950">Family Token Economy</h2>
-            <p className="text-sm text-slate-600">Monede virtuale pentru obiceiuri bune, ajutor in casa si recompense.</p>
+            <h2 className={childOnly ? 'kid-title' : 'text-2xl font-black text-emerald-950'}>{childOnly ? 'Recompensele mele' : 'Family Token Economy'}</h2>
+            <p className={childOnly ? 'kid-subtitle' : 'text-sm text-slate-600'}>
+              {childOnly ? 'Strange monede pentru recompense!' : 'Monede virtuale pentru obiceiuri bune, ajutor in casa si recompense.'}
+            </p>
           </div>
           {!childOnly && (
             <div className="inline-flex rounded-lg bg-emerald-50 p-1">
-              <button type="button" className={`rounded-md px-4 py-2 text-sm font-bold ${activeTab === 'child' ? 'bg-emerald-800 text-white' : 'text-emerald-950'}`} onClick={() => setActiveTab('child')}>Vizualizare Copil</button>
+              {!parentOnly && <button type="button" className={`rounded-md px-4 py-2 text-sm font-bold ${activeTab === 'child' ? 'bg-emerald-800 text-white' : 'text-emerald-950'}`} onClick={() => setActiveTab('child')}>Vizualizare Copil</button>}
               <button type="button" className={`rounded-md px-4 py-2 text-sm font-bold ${activeTab === 'parent' ? 'bg-emerald-800 text-white' : 'text-emerald-950'}`} onClick={() => setActiveTab('parent')}>Panoul Parintilor</button>
             </div>
           )}
         </div>
 
-        {notice && <div className="notice">{notice}</div>}
+        {parentOnly && (
+          <div className="kid-open-card">
+            <div>
+              <strong>Mod Copil</strong>
+              <span>Deschide o interfata separata pentru Veronica si Robert, fara meniurile financiare.</span>
+            </div>
+            <button type="button" className="kid-open-button" onClick={onOpenKidMode}>
+              Deschide Mod Copil
+            </button>
+          </div>
+        )}
+
+        {notice && <div className={childOnly ? 'kid-notice' : 'notice'}>{notice}</div>}
         {loading ? <div className="empty">Se incarca...</div> : null}
 
         {!loading && wallets.length === 0 && (
@@ -378,25 +519,42 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
           </div>
         )}
 
-        {wallets.length > 0 && !childOnly && (
+        {displayWallets.length > 0 && !childOnly && (
           <label className="text-sm font-bold text-slate-700">
             Copil
             <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3" value={selectedWallet?.id || ''} onChange={(event) => setSelectedWalletId(event.target.value)}>
-              {wallets.map((wallet) => <option key={wallet.id} value={wallet.id}>{wallet.member_name}</option>)}
+              {displayWallets.map((wallet) => <option key={wallet.id} value={wallet.id}>{wallet.member_name}</option>)}
             </select>
           </label>
         )}
 
-        {activeTab === 'child' && selectedWallet && (
-          <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center shadow-sm">
-              <div className="text-6xl">🪙</div>
-              <h3 className="mt-3 text-2xl font-black text-amber-950">{selectedWallet.member_name}</h3>
-              <div className="mt-3 text-5xl font-black text-amber-700">{selectedWallet.balance}</div>
-              <p className="text-sm font-bold text-amber-900">monede disponibile</p>
+        {displayWallets.length > 1 && childOnly && (
+          <div className="kid-child-picker" aria-label="Alege copilul">
+            {displayWallets.map((wallet) => (
+              <button
+                type="button"
+                key={wallet.id}
+                className={wallet.id === selectedWallet?.id ? 'active' : ''}
+                onClick={() => setSelectedWalletId(wallet.id)}
+              >
+                <span>{childAvatar(wallet.member_name)}</span>
+                {wallet.member_name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'child' && !parentOnly && selectedWallet && (
+          <div className={childOnly ? 'kid-layout' : 'grid gap-4 lg:grid-cols-[320px_1fr]'}>
+            <div className={childOnly ? 'kid-wallet-card' : 'rounded-xl border border-amber-200 bg-amber-50 p-6 text-center shadow-sm'}>
+              <div className={childOnly ? 'kid-coin' : 'text-6xl'}>🪙</div>
+              {coinBurst && <div className="kid-coin-burst">{coinBurst}</div>}
+              <h3 className={childOnly ? 'kid-name' : 'mt-3 text-2xl font-black text-amber-950'}>{selectedWallet.member_name}</h3>
+              <div className={childOnly ? 'kid-balance' : 'mt-3 text-5xl font-black text-amber-700'}>{selectedWallet.balance} monede</div>
+              <p className={childOnly ? 'kid-tagline' : 'text-sm font-bold text-amber-900'}>Strange monede pentru recompense!</p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={childOnly ? 'kid-reward-grid' : 'grid gap-3 sm:grid-cols-2'}>
               {visibleRewards.map((reward) => {
                 const balance = Number(selectedWallet.balance || 0)
                 const cost = Number(reward.cost || 0)
@@ -404,25 +562,29 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
                 const progress = cost > 0 ? Math.min(100, Math.round((balance / cost) * 100)) : 0
                 const canRequest = balance >= cost
                 const pending = hasPendingRequest(reward)
+                const motivation = rewardMotivation(balance, cost, pending)
 
                 return (
-                  <article key={reward.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="text-4xl">{rewardIcon(reward.icon)}</div>
+                  <article key={reward.id} className={childOnly ? 'kid-reward-card' : 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm'}>
+                    <div className={childOnly ? 'kid-reward-head' : 'flex items-start gap-3'}>
+                      <div className={childOnly ? 'kid-reward-icon' : 'text-4xl'}>{rewardIcon(reward.icon, reward.title)}</div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-lg font-black text-slate-900">{reward.title}</h4>
-                        <p className="text-sm font-bold text-amber-700">{cost} monede</p>
-                        <p className="mt-1 text-xs font-bold text-slate-600">{balance} / {cost} monede</p>
-                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-amber-500" style={{ width: `${progress}%` }} />
+                        <h4 className={childOnly ? 'kid-reward-title' : 'text-lg font-black text-slate-900'}>{reward.title}</h4>
+                        <p className={childOnly ? 'kid-reward-cost' : 'text-sm font-bold text-amber-700'}>{cost} monede</p>
+                        <p className={childOnly ? 'kid-progress-text' : 'mt-1 text-xs font-bold text-slate-600'}>Progres: {balance} / {cost}</p>
+                        <div className={childOnly ? 'kid-progress' : 'mt-2 h-2 overflow-hidden rounded-full bg-slate-100'}>
+                          <div className={childOnly ? 'kid-progress-fill' : 'h-full rounded-full bg-amber-500'} style={{ width: progress + '%' }} />
                         </div>
-                        {missing > 0 && <p className="mt-2 text-xs font-bold text-red-700">Iti mai trebuie {missing} monede</p>}
-                        {pending && <p className="mt-2 text-xs font-bold text-emerald-700">Cerere in asteptare</p>}
+                        {missing > 0 && <p className={childOnly ? 'kid-missing' : 'mt-2 text-xs font-bold text-red-700'}>Iti mai trebuie {missing} monede</p>}
+                        {pending && <p className={childOnly ? 'kid-pending' : 'mt-2 text-xs font-bold text-emerald-700'}>Cerere trimisa. Asteapta aprobarea.</p>}
+                        <p className={childOnly ? 'kid-motivation' : 'mt-2 text-xs font-bold text-slate-600'}>{motivation}</p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      className={`mt-4 w-full rounded-lg px-4 py-3 text-sm font-black ${canRequest && !pending ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-500'}`}
+                      className={childOnly
+                        ? 'kid-reward-button ' + (canRequest && !pending ? '' : 'disabled')
+                        : 'mt-4 w-full rounded-lg px-4 py-3 text-sm font-black ' + (canRequest && !pending ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-500')}
                       disabled={!canRequest || pending}
                       onClick={() => requestReward(reward)}
                     >
@@ -434,7 +596,6 @@ export function FamilyTokenEconomy({ user, childOnly = false }) {
             </div>
           </div>
         )}
-
         {!childOnly && activeTab === 'parent' && selectedWallet && (
           <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
             <div className="rounded-xl border border-slate-200 bg-white p-4">
