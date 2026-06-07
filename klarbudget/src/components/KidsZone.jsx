@@ -442,49 +442,88 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, dbUserId])
 
-  // ── Supabase Realtime — mesaje şi cereri instant ──────────────────────────
+  // ── Polling automat — mesaje noi la 5s, cereri la 8s ─────────────────────
+  // (Supabase Realtime necesită configurare replicare în dashboard;
+  //  polling-ul funcționează garantat fără configurare extra)
   useEffect(() => {
     if (!dbUserId) return
 
-    // Abonare la mesaje noi
-    const msgChannel = supabase
-      .channel('kids-messages-' + dbUserId)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'kb_family_messages', filter: `user_id=eq.${dbUserId}` },
-        (payload) => {
-          setMessages((prev) => {
-            // Evită duplicatele (mesajul optimistic deja adăugat)
-            if (prev.some((m) => m.id === payload.new.id)) return prev
-            return [...prev, payload.new]
-          })
-        }
-      )
-      .subscribe()
+    // Funcție care aduce doar mesajele NOI (mai noi decât ultimul cunoscut)
+    const pollMessages = async () => {
+      const { data } = await supabase
+        .from('kb_family_messages')
+        .select('*')
+        .eq('user_id', dbUserId)
+        .order('created_at', { ascending: true })
+        .limit(100)
+      if (data) {
+        setMessages((prev) => {
+          // Adaugă doar mesajele care nu sunt deja în listă (evită duplicate cu optimistic)
+          const existingIds = new Set(prev.map((m) => m.id))
+          const fresh = data.filter((m) => !existingIds.has(m.id) && !String(m.id).startsWith('optimistic-'))
+          if (!fresh.length) return prev
+          // Înlocuiește și mesajele optimistice cu cele reale dacă există
+          const withoutOptimistic = prev.filter((m) => !String(m.id).startsWith('optimistic-'))
+          return [...withoutOptimistic, ...data.filter((d) => !String(d.id).startsWith('optimistic-'))]
+        })
+      }
+    }
 
-    // Abonare la cereri noi
-    const reqChannel = supabase
-      .channel('kids-requests-' + dbUserId)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'kb_kid_requests', filter: `user_id=eq.${dbUserId}` },
-        () => {
-          // Reîncarcă doar cererile, nu tot
-          supabase
-            .from('kb_kid_requests')
-            .select('*')
-            .eq('user_id', dbUserId)
-            .order('created_at', { ascending: false })
-            .then(({ data }) => { if (data) setRequests(data) })
-        }
-      )
-      .subscribe()
+    const pollRequests = async () => {
+      const { data } = await supabase
+        .from('kb_kid_requests')
+        .select('*')
+        .eq('user_id', dbUserId)
+        .order('created_at', { ascending: false })
+      if (data) setRequests(data)
+    }
+
+    // Polling la 5 secunde pentru mesaje, 8 secunde pentru cereri
+    const msgInterval = setInterval(pollMessages, 5000)
+    const reqInterval = setInterval(pollRequests, 8000)
+
+    // Rulează imediat la montare
+    pollMessages()
+    pollRequests()
+
+    // Încearcă și Realtime ca bonus (dacă e configurat în Supabase Dashboard)
+    let msgChannel = null
+    let reqChannel = null
+    try {
+      msgChannel = supabase
+        .channel('kids-rt-msg-' + dbUserId)
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'kb_family_messages', filter: `user_id=eq.${dbUserId}` },
+          (payload) => {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === payload.new.id)) return prev
+              const withoutOptimistic = prev.filter((m) => !String(m.id).startsWith('optimistic-'))
+              return [...withoutOptimistic, payload.new]
+            })
+          }
+        )
+        .subscribe()
+
+      reqChannel = supabase
+        .channel('kids-rt-req-' + dbUserId)
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'kb_kid_requests', filter: `user_id=eq.${dbUserId}` },
+          () => pollRequests()
+        )
+        .subscribe()
+    } catch (_e) {
+      // Realtime nu e disponibil — polling continuă să funcționeze
+    }
 
     return () => {
-      supabase.removeChannel(msgChannel)
-      supabase.removeChannel(reqChannel)
+      clearInterval(msgInterval)
+      clearInterval(reqInterval)
+      if (msgChannel) supabase.removeChannel(msgChannel)
+      if (reqChannel) supabase.removeChannel(reqChannel)
     }
   }, [dbUserId])
+
+
 
   useEffect(() => {
     if (chatEndRef.current) {
