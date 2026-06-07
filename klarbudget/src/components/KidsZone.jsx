@@ -1474,6 +1474,9 @@ export function KidsZone({ user, familyOwnerId }) {
                 fontWeight: 500,
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 border: isParent && !isSelf ? '1px solid #e5e7eb' : 'none',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                whiteSpace: 'pre-wrap',
               }}>
                 {msg.message_text}
               </div>
@@ -1775,6 +1778,9 @@ export function KidsZone({ user, familyOwnerId }) {
                       borderRadius: '10px',
                       fontSize: '0.82rem',
                       border: isKid ? 'none' : '1px solid #e5e7eb',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                      whiteSpace: 'pre-wrap',
                     }}>
                       {msg.message_text}
                     </div>
