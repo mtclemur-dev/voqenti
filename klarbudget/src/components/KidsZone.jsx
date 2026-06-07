@@ -442,6 +442,50 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, dbUserId])
 
+  // ── Supabase Realtime — mesaje şi cereri instant ──────────────────────────
+  useEffect(() => {
+    if (!dbUserId) return
+
+    // Abonare la mesaje noi
+    const msgChannel = supabase
+      .channel('kids-messages-' + dbUserId)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'kb_family_messages', filter: `user_id=eq.${dbUserId}` },
+        (payload) => {
+          setMessages((prev) => {
+            // Evită duplicatele (mesajul optimistic deja adăugat)
+            if (prev.some((m) => m.id === payload.new.id)) return prev
+            return [...prev, payload.new]
+          })
+        }
+      )
+      .subscribe()
+
+    // Abonare la cereri noi
+    const reqChannel = supabase
+      .channel('kids-requests-' + dbUserId)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'kb_kid_requests', filter: `user_id=eq.${dbUserId}` },
+        () => {
+          // Reîncarcă doar cererile, nu tot
+          supabase
+            .from('kb_kid_requests')
+            .select('*')
+            .eq('user_id', dbUserId)
+            .order('created_at', { ascending: false })
+            .then(({ data }) => { if (data) setRequests(data) })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(msgChannel)
+      supabase.removeChannel(reqChannel)
+    }
+  }, [dbUserId])
+
   useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -787,21 +831,41 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
 
   const sendMessage = async (text, sender = senderName, role = senderRole) => {
     if (!schemaReady.chat || !text.trim()) return
-    setChatSending(true)
-    const { error } = await supabase.from('kb_family_messages').insert({
+    const trimmed = text.trim()
+
+    // Optimistic UI — adaugă mesajul instant în listă
+    const optimisticMsg = {
+      id: 'optimistic-' + Date.now(),
       user_id: dbUserId,
       sender_name: sender,
       sender_role: role,
-      message_text: text.trim(),
+      message_text: trimmed,
       message_type: 'normal',
-    })
-    if (error) showNotice('Eroare chat: ' + error.message)
-    else {
-      setChatText('')
-      setKidChatText('')
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, optimisticMsg])
+    setChatText('')
+    setKidChatText('')
+
+    setChatSending(true)
+    const { data: inserted, error } = await supabase.from('kb_family_messages').insert({
+      user_id: dbUserId,
+      sender_name: sender,
+      sender_role: role,
+      message_text: trimmed,
+      message_type: 'normal',
+    }).select('*').single()
+
+    if (error) {
+      // Dacă esuează, scoate mesajul optimistic
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id))
+      showNotice('Eroare chat: ' + error.message)
+    } else if (inserted) {
+      // Înlocuiește mesajul optimistic cu cel real (cu ID corect)
+      setMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? inserted : m))
     }
     setChatSending(false)
-    await loadData()
+    // NU mai apelăm loadData() — Realtime și optimistic UI gestionează asta
   }
 
   // ─── Render helpers ───────────────────────────────────────────────────────
