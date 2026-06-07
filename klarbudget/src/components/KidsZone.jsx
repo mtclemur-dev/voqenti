@@ -259,6 +259,7 @@ export function KidsZone({ user, familyOwnerId }) {
 
   // Kid Mode
   const [kidChatText, setKidChatText] = useState('')
+  const [kidExitConfirm, setKidExitConfirm] = useState(false)
 
   const showNotice = useCallback((msg, ms = 3000) => {
     setNotice(msg)
@@ -1563,14 +1564,7 @@ export function KidsZone({ user, familyOwnerId }) {
     const kidRequests = requests.filter((r) => r.child_id === wallet.id).slice(0, 10)
 
     return (
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        background: 'linear-gradient(180deg, #fef9ef 0%, #fff7ed 100%)',
-        overflowY: 'auto',
-        padding: '0',
-      }}>
+      <div className="kid-mode-overlay">
         {/* Kid mode header */}
         <div style={{
           background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
@@ -1847,9 +1841,7 @@ export function KidsZone({ user, familyOwnerId }) {
           <div style={{ textAlign: 'center', paddingTop: '0.5rem', paddingBottom: '2rem' }}>
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm('Ieși din Mod Copil?')) setKidModeActive(false)
-              }}
+              onClick={() => setKidExitConfirm(true)}
               style={{
                 minHeight: 'auto',
                 background: 'rgba(0,0,0,0.06)',
@@ -1865,6 +1857,32 @@ export function KidsZone({ user, familyOwnerId }) {
               🔐 Ieșire părinți
             </button>
           </div>
+
+          {/* Exit confirm dialog (replaces window.confirm, blocked in Android WebView) */}
+          {kidExitConfirm && (
+            <div className="kid-exit-confirm-overlay">
+              <div className="kid-exit-confirm-box">
+                <h3>🔐 Ieșire Mod Copil</h3>
+                <p>Ești sigur că vrei să ieși din modul copil?</p>
+                <div className="kid-exit-confirm-btns">
+                  <button
+                    type="button"
+                    onClick={() => setKidExitConfirm(false)}
+                    style={{ background: '#f3f4f6', color: '#374151' }}
+                  >
+                    Rămân
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setKidExitConfirm(false); setKidModeActive(false) }}
+                    style={{ background: '#17463c', color: '#fff' }}
+                  >
+                    Ieșire
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -1914,15 +1932,8 @@ export function KidsZone({ user, familyOwnerId }) {
         </p>
       </div>
 
-      {/* Tab bar */}
-      <div style={{
-        display: 'flex',
-        gap: '0.25rem',
-        overflowX: 'auto',
-        padding: '0.75rem 0',
-        scrollbarWidth: 'none',
-        msOverflowStyle: 'none',
-      }}>
+      {/* Tab bar - uses .kids-tab-scroll for native Android touch swipe */}
+      <div className="kids-tab-scroll">
         {TABS.map((tab) => (
           <button
             key={tab.id}

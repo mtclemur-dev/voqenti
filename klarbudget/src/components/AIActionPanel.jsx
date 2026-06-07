@@ -321,19 +321,22 @@ Folosește aceste date pentru a răspunde cu calcule exacte la întrebări (cum 
                   border: '1px solid rgba(23, 70, 60, 0.1)',
                   borderRadius: '8px',
                   backgroundColor: '#fafbfc',
-                  padding: '1rem',
-                  maxHeight: '400px',
+                  padding: '0.75rem',
+                  height: '450px',
+                  maxHeight: '60vh',
                   overflowY: 'auto',
                   marginBottom: '1rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.8rem'
+                  gap: '0.8rem',
+                  wordBreak: 'break-word',
+                  overflowWrap: 'anywhere'
                 }}
               >
                 {messages.length === 0 ? (
                   <div style={{ display: 'flex', gap: '0.6rem', padding: '0.5rem' }}>
                     <div style={{ fontSize: '1.2rem' }}>🤖</div>
-                    <div style={{ background: '#eef2f1', color: '#17463c', padding: '0.6rem 0.9rem', borderRadius: '12px 12px 12px 0', fontSize: '0.86rem', maxWidth: '80%', alignSelf: 'flex-start' }}>
+                    <div style={{ background: '#eef2f1', color: '#17463c', padding: '0.6rem 0.9rem', borderRadius: '12px 12px 12px 0', fontSize: '0.86rem', maxWidth: '90%', alignSelf: 'flex-start' }}>
                       <p style={{ margin: 0, fontWeight: 'bold', marginBottom: '0.2rem' }}>KlarBudget AI</p>
                       <p style={{ margin: 0 }}>Salut! Sunt asistentul tău financiar KlarBudget AI. Întreabă-mă orice despre veniturile, cheltuielile sau datoriile tale de mai jos, sau folosește întrebările rapide.</p>
                     </div>
@@ -342,8 +345,8 @@ Folosește aceste date pentru a răspunde cu calcule exacte la întrebări (cum 
                   messages.map((msg, index) => {
                     const isUser = msg.role === 'user'
                     return (
-                      <div key={index} style={{ display: 'flex', gap: '0.5rem', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-                        {!isUser && <div style={{ fontSize: '1.2rem', marginTop: '2px' }}>🤖</div>}
+                      <div key={index} style={{ display: 'flex', gap: '0.5rem', justifyContent: isUser ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+                        {!isUser && <div style={{ fontSize: '1.2rem', marginTop: '2px', flexShrink: 0 }}>🤖</div>}
                         <div
                           style={{
                             background: isUser ? '#17463c' : msg.isError ? '#fde8e8' : '#eef2f1',
@@ -351,9 +354,10 @@ Folosește aceste date pentru a răspunde cu calcule exacte la întrebări (cum 
                             padding: '0.6rem 0.9rem',
                             borderRadius: isUser ? '12px 12px 0 12px' : '12px 12px 12px 0',
                             fontSize: '0.84rem',
-                            maxWidth: '85%',
+                            maxWidth: '90%',
                             border: msg.isError ? '1px solid #f8b4b4' : 'none',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                            overflowWrap: 'break-word'
                           }}
                         >
                           {!isUser && <div style={{ fontWeight: 'bold', fontSize: '0.74rem', marginBottom: '0.2rem', color: msg.isError ? '#9b1c1c' : '#56716a' }}>KlarBudget AI</div>}

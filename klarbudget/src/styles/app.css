@@ -24,16 +24,15 @@
   box-sizing: border-box;
 }
 
-html, body {
+html {
   margin: 0;
   padding: 0;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
+  margin: 0;
+  padding: 0;
   min-width: 320px;
   min-height: 100vh;
   background: linear-gradient(180deg, #f6f7f1 0%, #eef4ee 100%);
@@ -42,8 +41,7 @@ body {
 .app-shell {
   min-height: 100vh;
   width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
+  position: relative;
 }
 
 button,
@@ -1744,4 +1742,86 @@ h3 {
     max-height: 35vh;
   }
 }
+
+/* Kids tab bar - touch horizontal scroll on Android */
+.kids-tab-scroll {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.75rem 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* touch-action: pan-x allows horizontal swipe without blocking vertical scroll */
+  touch-action: pan-x;
+}
+
+.kids-tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Kid Mode fullscreen overlay — works in Android WebView (Capacitor) */
+/* Uses position:fixed but we allow it to work by NOT having overflow:hidden on parents */
+.kid-mode-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: linear-gradient(180deg, #fef9ef 0%, #fff7ed 100%);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Kid mode exit confirm - replaces window.confirm (blocked in Android WebView) */
+.kid-exit-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.kid-exit-confirm-box {
+  background: #fff;
+  border-radius: 20px;
+  padding: 1.75rem 1.5rem;
+  max-width: 320px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.kid-exit-confirm-box h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: #15231f;
+}
+
+.kid-exit-confirm-box p {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.kid-exit-confirm-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.kid-exit-confirm-btns button {
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+
 
