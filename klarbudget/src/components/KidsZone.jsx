@@ -212,7 +212,8 @@ function WalletCard({ wallet, coinValue, isSelected, onClick }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function KidsZone({ user }) {
+export function KidsZone({ user, familyOwnerId }) {
+  const dbUserId = familyOwnerId || user?.id
   // Tab navigation
   const [kidsTab, setKidsTab] = useState('admin')
   const [kidModeActive, setKidModeActive] = useState(false)
@@ -267,17 +268,17 @@ export function KidsZone({ user }) {
   // ── Data loading ──────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
-    if (!user) return
+    if (!user || !dbUserId) return
     setLoading(true)
 
     const [walletRes, taskRes, rewardRes, requestRes, txRes, msgRes, settingsRes] = await Promise.all([
-      supabase.from('family_wallets').select('*').eq('user_id', user.id).order('member_name', { ascending: true }),
-      supabase.from('kb_kid_tasks').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
-      supabase.from('family_rewards_shop').select('*').eq('user_id', user.id).order('cost', { ascending: true }),
-      supabase.from('kb_kid_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('family_transactions').select('*, family_wallets(member_name)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
-      supabase.from('kb_family_messages').select('*').eq('user_id', user.id).order('created_at', { ascending: true }).limit(100),
-      supabase.from('kb_family_settings').select('*').eq('user_id', user.id).maybeSingle(),
+      supabase.from('family_wallets').select('*').eq('user_id', dbUserId).order('member_name', { ascending: true }),
+      supabase.from('kb_kid_tasks').select('*').eq('user_id', dbUserId).order('created_at', { ascending: true }),
+      supabase.from('family_rewards_shop').select('*').eq('user_id', dbUserId).order('cost', { ascending: true }),
+      supabase.from('kb_kid_requests').select('*').eq('user_id', dbUserId).order('created_at', { ascending: false }),
+      supabase.from('family_transactions').select('*, family_wallets(member_name)').eq('user_id', dbUserId).order('created_at', { ascending: false }).limit(50),
+      supabase.from('kb_family_messages').select('*').eq('user_id', dbUserId).order('created_at', { ascending: true }).limit(100),
+      supabase.from('kb_family_settings').select('*').eq('user_id', dbUserId).maybeSingle(),
     ])
 
     const ready = {
@@ -295,7 +296,7 @@ export function KidsZone({ user }) {
       const { data: created } = await supabase
         .from('family_wallets')
         .upsert(
-          CHILDREN.map((name) => ({ user_id: user.id, member_name: name, balance: 0 })),
+          CHILDREN.map((name) => ({ user_id: dbUserId, member_name: name, balance: 0 })),
           { onConflict: 'user_id,member_name' }
         )
         .select('*')
@@ -308,7 +309,7 @@ export function KidsZone({ user }) {
       if (missing.length) {
         const { data: added } = await supabase
           .from('family_wallets')
-          .upsert(missing.map((name) => ({ user_id: user.id, member_name: name, balance: 0 })), { onConflict: 'user_id,member_name' })
+          .upsert(missing.map((name) => ({ user_id: dbUserId, member_name: name, balance: 0 })), { onConflict: 'user_id,member_name' })
           .select('*')
         nextWallets = [...nextWallets, ...(added || [])]
       }
@@ -325,7 +326,7 @@ export function KidsZone({ user }) {
         // Insert demo tasks
         const { data: inserted } = await supabase
           .from('kb_kid_tasks')
-          .insert(DEFAULT_TASKS_DEMO.map((task) => ({ ...task, user_id: user.id, child_id: null })))
+          .insert(DEFAULT_TASKS_DEMO.map((task) => ({ ...task, user_id: dbUserId, child_id: null })))
           .select('*')
         nextTasks = inserted || []
       }
@@ -344,7 +345,7 @@ export function KidsZone({ user }) {
           cost: r.cost_coins,
           icon: r.icon,
           is_available: true,
-          user_id: user.id,
+          user_id: dbUserId,
         })))
         .select('*')
       nextRewards = inserted || []
@@ -380,7 +381,7 @@ export function KidsZone({ user }) {
       // Create default settings
       const { data: created } = await supabase
         .from('kb_family_settings')
-        .insert({ user_id: user.id, coin_value_eur: DEFAULT_COIN_VALUE, show_child_eur: false })
+        .insert({ user_id: dbUserId, coin_value_eur: DEFAULT_COIN_VALUE, show_child_eur: false })
         .select('*')
         .single()
       if (created) {
@@ -391,12 +392,12 @@ export function KidsZone({ user }) {
     }
 
     setLoading(false)
-  }, [user, selectedWalletId])
+  }, [user, dbUserId, selectedWalletId])
 
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [user, dbUserId])
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -437,11 +438,11 @@ export function KidsZone({ user }) {
       .from('family_wallets')
       .update({ balance })
       .eq('id', selectedWallet.id)
-      .eq('user_id', user.id)
+      .eq('user_id', dbUserId)
     if (upErr) { showNotice('Eroare: ' + upErr.message); return }
 
     await supabase.from('family_transactions').insert({
-      user_id: user.id,
+      user_id: dbUserId,
       wallet_id: selectedWallet.id,
       amount,
       description,
@@ -450,7 +451,7 @@ export function KidsZone({ user }) {
     // Chat system message
     if (schemaReady.chat) {
       await supabase.from('kb_family_messages').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         sender_name: senderName,
         sender_role: 'system',
         message_text: `${senderName} a acordat +${amount} monede lui ${selectedWallet.member_name}. Motiv: ${description}`,
@@ -470,9 +471,9 @@ export function KidsZone({ user }) {
 
     const payload = { coin_value_eur: val, show_child_eur: showChildEurDraft }
     if (familySettingsId) {
-      await supabase.from('kb_family_settings').update(payload).eq('id', familySettingsId).eq('user_id', user.id)
+      await supabase.from('kb_family_settings').update(payload).eq('id', familySettingsId).eq('user_id', dbUserId)
     } else {
-      await supabase.from('kb_family_settings').insert({ ...payload, user_id: user.id })
+      await supabase.from('kb_family_settings').insert({ ...payload, user_id: dbUserId })
     }
     setCoinValue(val)
     setShowChildEur(showChildEurDraft)
@@ -507,10 +508,10 @@ export function KidsZone({ user }) {
     }
 
     if (formData.id) {
-      const { error } = await supabase.from('kb_kid_tasks').update(payload).eq('id', formData.id).eq('user_id', user.id)
+      const { error } = await supabase.from('kb_kid_tasks').update(payload).eq('id', formData.id).eq('user_id', dbUserId)
       if (error) { showNotice('Eroare: ' + error.message); return }
     } else {
-      const { error } = await supabase.from('kb_kid_tasks').insert({ ...payload, user_id: user.id })
+      const { error } = await supabase.from('kb_kid_tasks').insert({ ...payload, user_id: dbUserId })
       if (error) { showNotice('Eroare: ' + error.message); return }
     }
 
@@ -526,13 +527,13 @@ export function KidsZone({ user }) {
     } else {
       if (!window.confirm(`Ștergi sarcina "${task.title}"?`)) return
     }
-    await supabase.from('kb_kid_tasks').delete().eq('id', task.id).eq('user_id', user.id)
+    await supabase.from('kb_kid_tasks').delete().eq('id', task.id).eq('user_id', dbUserId)
     showNotice('Sarcină ștearsă')
     await loadData()
   }
 
   const toggleTaskActive = async (task) => {
-    await supabase.from('kb_kid_tasks').update({ active: !task.active }).eq('id', task.id).eq('user_id', user.id)
+    await supabase.from('kb_kid_tasks').update({ active: !task.active }).eq('id', task.id).eq('user_id', dbUserId)
     await loadData()
   }
 
@@ -557,10 +558,10 @@ export function KidsZone({ user }) {
     }
 
     if (formData.id) {
-      const { error } = await supabase.from('family_rewards_shop').update(payload).eq('id', formData.id).eq('user_id', user.id)
+      const { error } = await supabase.from('family_rewards_shop').update(payload).eq('id', formData.id).eq('user_id', dbUserId)
       if (error) { showNotice('Eroare: ' + error.message); return }
     } else {
-      const { error } = await supabase.from('family_rewards_shop').insert({ ...payload, user_id: user.id })
+      const { error } = await supabase.from('family_rewards_shop').insert({ ...payload, user_id: dbUserId })
       if (error) { showNotice('Eroare: ' + error.message); return }
     }
 
@@ -571,7 +572,7 @@ export function KidsZone({ user }) {
 
   const deleteReward = async (reward) => {
     if (!window.confirm(`Ștergi recompensa "${reward.title}"?`)) return
-    await supabase.from('family_rewards_shop').update({ is_available: false }).eq('id', reward.id).eq('user_id', user.id)
+    await supabase.from('family_rewards_shop').update({ is_available: false }).eq('id', reward.id).eq('user_id', dbUserId)
     showNotice('Recompensă dezactivată')
     await loadData()
   }
@@ -590,16 +591,16 @@ export function KidsZone({ user }) {
     if (!task.requires_approval) {
       // Auto-approve: add coins directly
       const balance = Number(wallet.balance || 0) + task.coins
-      await supabase.from('family_wallets').update({ balance }).eq('id', walletId).eq('user_id', user.id)
+      await supabase.from('family_wallets').update({ balance }).eq('id', walletId).eq('user_id', dbUserId)
       await supabase.from('family_transactions').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         wallet_id: walletId,
         amount: task.coins,
         description: `${task.title} (auto-aprobat)`,
       })
       if (schemaReady.chat) {
         await supabase.from('kb_family_messages').insert({
-          user_id: user.id,
+          user_id: dbUserId,
           sender_name: 'Sistem',
           sender_role: 'system',
           message_text: `${wallet.member_name} a finalizat sarcina: ${task.title} (+${task.coins} monede) ✅`,
@@ -612,7 +613,7 @@ export function KidsZone({ user }) {
     }
 
     const { error } = await supabase.from('kb_kid_requests').insert({
-      user_id: user.id,
+      user_id: dbUserId,
       child_id: walletId,
       request_type: 'task_completion',
       task_id: task.id,
@@ -623,7 +624,7 @@ export function KidsZone({ user }) {
 
     if (schemaReady.chat) {
       await supabase.from('kb_family_messages').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         sender_name: 'Sistem',
         sender_role: 'system',
         message_text: `${wallet.member_name} a trimis spre aprobare: ${task.title} (+${task.coins} monede) 🙏`,
@@ -648,7 +649,7 @@ export function KidsZone({ user }) {
 
     if (schemaReady.tasks) {
       const { error } = await supabase.from('kb_kid_requests').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         child_id: walletId,
         request_type: 'reward_redeem',
         reward_id: reward.id,
@@ -660,7 +661,7 @@ export function KidsZone({ user }) {
 
     if (schemaReady.chat) {
       await supabase.from('kb_family_messages').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         sender_name: 'Sistem',
         sender_role: 'system',
         message_text: `${wallet.member_name} a cerut recompensa: ${reward.title} (−${cost} monede) 🎁`,
@@ -677,16 +678,16 @@ export function KidsZone({ user }) {
 
     if (req.request_type === 'task_completion') {
       const balance = Number(wallet.balance || 0) + req.coins
-      await supabase.from('family_wallets').update({ balance }).eq('id', wallet.id).eq('user_id', user.id)
+      await supabase.from('family_wallets').update({ balance }).eq('id', wallet.id).eq('user_id', dbUserId)
       await supabase.from('family_transactions').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         wallet_id: wallet.id,
         amount: req.coins,
         description: `Sarcină aprobată (${req.coins} monede)`,
       })
       if (schemaReady.chat) {
         await supabase.from('kb_family_messages').insert({
-          user_id: user.id,
+          user_id: dbUserId,
           sender_name: senderName,
           sender_role: 'system',
           message_text: `${senderName} a aprobat cererea lui ${wallet.member_name} ✅ +${req.coins} monede adăugate!`,
@@ -696,16 +697,16 @@ export function KidsZone({ user }) {
     } else if (req.request_type === 'reward_redeem') {
       const balance = Number(wallet.balance || 0)
       if (balance < req.coins) { showNotice(`Nu suficiente monede pentru ${wallet.member_name}.`); return }
-      await supabase.from('family_wallets').update({ balance: balance - req.coins }).eq('id', wallet.id).eq('user_id', user.id)
+      await supabase.from('family_wallets').update({ balance: balance - req.coins }).eq('id', wallet.id).eq('user_id', dbUserId)
       await supabase.from('family_transactions').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         wallet_id: wallet.id,
         amount: -req.coins,
         description: `Recompensă aprobată (${req.coins} monede)`,
       })
       if (schemaReady.chat) {
         await supabase.from('kb_family_messages').insert({
-          user_id: user.id,
+          user_id: dbUserId,
           sender_name: senderName,
           sender_role: 'system',
           message_text: `${senderName} a aprobat recompensa pentru ${wallet.member_name} 🎁 −${req.coins} monede scăzute.`,
@@ -715,7 +716,7 @@ export function KidsZone({ user }) {
     }
 
     if (schemaReady.tasks) {
-      await supabase.from('kb_kid_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', req.id).eq('user_id', user.id)
+      await supabase.from('kb_kid_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', req.id).eq('user_id', dbUserId)
     }
     showNotice(`Cererea lui ${wallet.member_name} a fost aprobată ✅`)
     await loadData()
@@ -724,11 +725,11 @@ export function KidsZone({ user }) {
   const rejectRequest = async (req, note = '') => {
     const wallet = wallets.find((w) => w.id === req.child_id)
     if (schemaReady.tasks) {
-      await supabase.from('kb_kid_requests').update({ status: 'rejected', note: note || null, updated_at: new Date().toISOString() }).eq('id', req.id).eq('user_id', user.id)
+      await supabase.from('kb_kid_requests').update({ status: 'rejected', note: note || null, updated_at: new Date().toISOString() }).eq('id', req.id).eq('user_id', dbUserId)
     }
     if (schemaReady.chat && wallet) {
       await supabase.from('kb_family_messages').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         sender_name: senderName,
         sender_role: 'system',
         message_text: `${senderName} a respins cererea lui ${wallet?.member_name || 'copil'}. ${note ? 'Motiv: ' + note : ''}`,
@@ -745,7 +746,7 @@ export function KidsZone({ user }) {
     if (!schemaReady.chat || !text.trim()) return
     setChatSending(true)
     const { error } = await supabase.from('kb_family_messages').insert({
-      user_id: user.id,
+      user_id: dbUserId,
       sender_name: sender,
       sender_role: role,
       message_text: text.trim(),

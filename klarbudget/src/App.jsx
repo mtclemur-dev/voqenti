@@ -44,6 +44,7 @@ const BUILD_LABEL = 'KlarBudget build 2026-06-06 20:40 stable-inputs'
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
   const [user, setUser] = useState(null)
+  const [familyOwnerId, setFamilyOwnerId] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [accountRole, setAccountRole] = useState('parent')
@@ -105,6 +106,7 @@ function App() {
   const isSimpleModeForced = isDoinaUser
   const activeFamilyMode = isSimpleModeForced ? true : familyMode
   const activeProfileUser = isSimpleModeForced ? 'Doina' : profileUser
+  const dbUserId = familyOwnerId || user?.id
 
   useEffect(() => {
     localStorage.setItem('klarbudget-language', language)
@@ -126,47 +128,77 @@ function App() {
   }, [activeProfileUser])
 
   useEffect(() => {
+    if (!user) {
+      setFamilyOwnerId(null)
+      return
+    }
+    setLoading(true)
+    supabase
+      .from('kb_family_members')
+      .select('family_owner_user_id')
+      .eq('email', user.email)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.family_owner_user_id) {
+          setFamilyOwnerId(data.family_owner_user_id)
+        } else {
+          setFamilyOwnerId(user.id)
+        }
+      })
+      .catch(() => {
+        setFamilyOwnerId(user.id)
+      })
+  }, [user])
+
+  useEffect(() => {
     if (!hasSupabaseConfig) {
       setLoading(false)
       return
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
-      setLoading(false)
+      const u = data.session?.user ?? null
+      setUser(u)
+      if (!u) {
+        setLoading(false)
+      }
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      const u = session?.user ?? null
+      setUser(u)
+      if (!u) {
+        setLoading(false)
+      }
     })
 
     return () => listener.subscription.unsubscribe()
   }, [])
 
   const loadData = useCallback(async () => {
-    if (!user) return
+    if (!user || !familyOwnerId) return
     setLoading(true)
 
     const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
-      supabase.from('kb_incomes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_expenses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_debts').select('*').eq('user_id', user.id).order('priority', { ascending: true }),
-      supabase.from('kb_payment_status').select('*').eq('user_id', user.id).order('due_date', { ascending: true }),
-      supabase.from('kb_settings').select('*').eq('user_id', user.id).maybeSingle(),
-      supabase.from('kb_accounts').select('*').eq('user_id', user.id).order('updated_at', { ascending: false }),
-      supabase.from('kb_account_snapshots').select('*').eq('user_id', user.id).order('snapshot_date', { ascending: false }),
-      supabase.from('kb_daily_entries').select('*').eq('user_id', user.id).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('kb_daily_closures').select('*').eq('user_id', user.id).order('closure_date', { ascending: false }),
-      supabase.from('kb_work_absences').select('*').eq('user_id', user.id).order('work_date', { ascending: false }).order('start_time', { ascending: false }),
-      supabase.from('kb_shopping_list').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_weekly_offers').select('*').eq('user_id', user.id).eq('status', 'confirmed').order('valid_until', { ascending: false }),
-      supabase.from('kb_stores').select('*').eq('user_id', user.id).order('name', { ascending: true }),
-      supabase.from('kb_offer_sources').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_price_history').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
-      supabase.from('kb_receipts').select('*').eq('user_id', user.id).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('kb_receipt_items').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('kb_utility_readings').select('*').eq('user_id', user.id).order('reading_date', { ascending: false }),
+      supabase.from('kb_incomes').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
+      supabase.from('kb_expenses').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
+      supabase.from('kb_debts').select('*').eq('user_id', familyOwnerId).order('priority', { ascending: true }),
+      supabase.from('kb_payment_status').select('*').eq('user_id', familyOwnerId).order('due_date', { ascending: true }),
+      supabase.from('kb_settings').select('*').eq('user_id', familyOwnerId).maybeSingle(),
+      supabase.from('kb_accounts').select('*').eq('user_id', familyOwnerId).order('updated_at', { ascending: false }),
+      supabase.from('kb_account_snapshots').select('*').eq('user_id', familyOwnerId).order('snapshot_date', { ascending: false }),
+      supabase.from('kb_daily_entries').select('*').eq('user_id', familyOwnerId).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('kb_daily_closures').select('*').eq('user_id', familyOwnerId).order('closure_date', { ascending: false }),
+      supabase.from('kb_work_absences').select('*').eq('user_id', familyOwnerId).order('work_date', { ascending: false }).order('start_time', { ascending: false }),
+      supabase.from('kb_shopping_list').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
+      supabase.from('kb_weekly_offers').select('*').eq('user_id', familyOwnerId).eq('status', 'confirmed').order('valid_until', { ascending: false }),
+      supabase.from('kb_stores').select('*').eq('user_id', familyOwnerId).order('name', { ascending: true }),
+      supabase.from('kb_offer_sources').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
+      supabase.from('kb_price_history').select('*').eq('user_id', familyOwnerId).order('recorded_at', { ascending: false }),
+      supabase.from('kb_receipts').select('*').eq('user_id', familyOwnerId).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('kb_receipt_items').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
+      supabase.from('kb_utility_readings').select('*').eq('user_id', familyOwnerId).order('reading_date', { ascending: false }),
     ])
 
     const metadataRole = user.user_metadata?.account_role === 'child' ? 'child' : 'parent'
@@ -187,7 +219,7 @@ function App() {
       const { data } = await supabase
         .from('kb_settings')
         .insert({
-          user_id: user.id,
+          user_id: familyOwnerId,
           monthly_extra_debt_payment: defaultSettings.monthly_extra_debt_payment,
           debt_method: defaultSettings.debt_method,
           large_payment_threshold: defaultSettings.large_payment_threshold,
@@ -226,7 +258,7 @@ function App() {
     setUtilityReadings(utilityReadingsRes.data || [])
     setUtilitySchemaReady(!utilityReadingsRes.error)
     setLoading(false)
-  }, [language, user])
+  }, [language, user, familyOwnerId])
 
   useEffect(() => {
     loadData()
@@ -273,8 +305,8 @@ function App() {
   const saveRow = async (table, payload, currentItem = null) => {
     const prepared = preparePayload(payload)
     const query = currentItem
-      ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
-      : supabase.from(table).insert({ ...prepared, user_id: user.id })
+      ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
+      : supabase.from(table).insert({ ...prepared, user_id: dbUserId })
     const { error } = await query
     if (error) {
       setNotice(t('saveError'))
@@ -289,7 +321,7 @@ function App() {
 
   const deleteRow = async (table, row) => {
     if (!window.confirm(t('deleteConfirm'))) return
-    const { error } = await supabase.from(table).delete().eq('id', row.id).eq('user_id', user.id)
+    const { error } = await supabase.from(table).delete().eq('id', row.id).eq('user_id', dbUserId)
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -304,8 +336,8 @@ function App() {
   const saveAccount = async (payload, currentItem = null) => {
     const prepared = preparePayload(cleanAccountPayload(payload))
     const query = currentItem
-      ? supabase.from('kb_accounts').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
-      : supabase.from('kb_accounts').insert({ ...prepared, user_id: user.id }).select('*').single()
+      ? supabase.from('kb_accounts').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
+      : supabase.from('kb_accounts').insert({ ...prepared, user_id: dbUserId }).select('*').single()
     const { data, error } = await query
     if (error) {
       setNotice(t('saveError'))
@@ -316,7 +348,7 @@ function App() {
     const accountId = currentItem?.id || data?.id
     if (accountId) {
       await supabase.from('kb_account_snapshots').insert({
-        user_id: user.id,
+        user_id: dbUserId,
         account_id: accountId,
         balance: prepared.current_balance,
       })
@@ -340,16 +372,16 @@ function App() {
       product_name: payload.product_name || inferProductName(payload.description),
     })
     let query = currentItem
-      ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
-      : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: user.id })
+      ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
+      : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: dbUserId })
     let { error } = await query
     if (error && /entry_mode|unit_price/i.test(error.message || '')) {
       const fallback = { ...prepared }
       delete fallback.entry_mode
       delete fallback.unit_price
       query = currentItem
-        ? supabase.from('kb_daily_entries').update(fallback).eq('id', currentItem.id).eq('user_id', user.id)
-        : supabase.from('kb_daily_entries').insert({ ...fallback, user_id: user.id })
+        ? supabase.from('kb_daily_entries').update(fallback).eq('id', currentItem.id).eq('user_id', dbUserId)
+        : supabase.from('kb_daily_entries').insert({ ...fallback, user_id: dbUserId })
       ;({ error } = await query)
     }
     if (error) {
@@ -366,7 +398,7 @@ function App() {
     const closed = dailyClosures.find((item) => item.closure_date === date)
     if (closed) {
       if (!window.confirm(t('reopenDayConfirm'))) return
-      const { error } = await supabase.from('kb_daily_closures').delete().eq('id', closed.id).eq('user_id', user.id)
+      const { error } = await supabase.from('kb_daily_closures').delete().eq('id', closed.id).eq('user_id', dbUserId)
       if (error) {
         setNotice(t('saveError'))
         window.alert(error.message)
@@ -379,7 +411,7 @@ function App() {
     const entries = journalEntries.filter((item) => item.entry_date === date)
     const total = entries.reduce((sum, item) => sum + toNumber(item.amount), 0)
     const { error } = await supabase.from('kb_daily_closures').upsert({
-      user_id: user.id,
+      user_id: dbUserId,
       closure_date: date,
       total_amount: total,
       entry_count: entries.length,
@@ -397,7 +429,7 @@ function App() {
     const closed = dailyClosures.some((closure) => closure.closure_date === item.entry_date)
     if (closed && !window.confirm(t('deleteClosedDayConfirm'))) return
     if (!window.confirm(t('journalDeleteConfirm'))) return
-    const { error } = await supabase.from('kb_daily_entries').delete().eq('id', item.id).eq('user_id', user.id)
+    const { error } = await supabase.from('kb_daily_entries').delete().eq('id', item.id).eq('user_id', dbUserId)
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -411,8 +443,8 @@ function App() {
   const saveWorkAbsence = async (payload, currentItem = null) => {
     const prepared = normalizeWorkAbsencePayload(payload)
     const query = currentItem
-      ? supabase.from('kb_work_absences').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
-      : supabase.from('kb_work_absences').insert({ ...prepared, user_id: user.id })
+      ? supabase.from('kb_work_absences').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
+      : supabase.from('kb_work_absences').insert({ ...prepared, user_id: dbUserId })
     const { error } = await query
     if (error) {
       setNotice(t('saveError'))
@@ -428,8 +460,8 @@ function App() {
   const saveUtilityReading = async (payload, currentItem = null) => {
     const prepared = preparePayload(payload)
     const query = currentItem
-      ? supabase.from('kb_utility_readings').update(prepared).eq('id', currentItem.id).eq('user_id', user.id)
-      : supabase.from('kb_utility_readings').insert({ ...prepared, user_id: user.id })
+      ? supabase.from('kb_utility_readings').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
+      : supabase.from('kb_utility_readings').insert({ ...prepared, user_id: dbUserId })
     const { error } = await query
     if (error) {
       setNotice(t('saveError'))
@@ -447,7 +479,7 @@ function App() {
     const insertData = {
       ...prepared,
       priority: prepared.priority || 'normal',
-      user_id: user.id,
+      user_id: dbUserId,
     }
     const { error } = await supabase.from('kb_shopping_list').insert(insertData)
     if (error) {
@@ -469,7 +501,7 @@ function App() {
     const { data: savedReceipt, error: receiptError } = await supabase
       .from('kb_receipts')
       .insert({
-        user_id: user.id,
+        user_id: dbUserId,
         store_name: receipt.store_name || 'Magazin',
         purchase_date: receipt.purchase_date || isoDate(new Date()),
         total_amount: total,
@@ -487,7 +519,7 @@ function App() {
     }
 
     const rows = items.map((item) => ({
-      user_id: user.id,
+      user_id: dbUserId,
       receipt_id: savedReceipt.id,
       product_name: item.product_name,
       category: item.category || inferOfferCategory(item.product_name),
@@ -506,7 +538,7 @@ function App() {
     }
 
     await supabase.from('kb_price_history').insert(rows.map((item) => ({
-      user_id: user.id,
+      user_id: dbUserId,
       product_name: item.product_name,
       store_name: savedReceipt.store_name,
       price: item.total_price,
@@ -537,7 +569,7 @@ function App() {
     const prepared = preparePayload(payload)
     if (prepared.import_mode === 'auto_future') prepared.active = false
     const table = 'source_url' in prepared || 'import_mode' in prepared ? 'kb_offer_sources' : 'kb_stores'
-    const { error } = await supabase.from(table).insert({ ...prepared, user_id: user.id })
+    const { error } = await supabase.from(table).insert({ ...prepared, user_id: dbUserId })
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -559,7 +591,7 @@ function App() {
         String(offer.valid_until || '') === String(item.valid_until || ''),
       ))
     if (!rows.length) return
-    const { error } = await supabase.from('kb_weekly_offers').insert(rows.map((row) => ({ ...row, user_id: user.id })))
+    const { error } = await supabase.from('kb_weekly_offers').insert(rows.map((row) => ({ ...row, user_id: dbUserId })))
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -575,7 +607,7 @@ function App() {
     if (active) return
     const now = new Date()
     const { error } = await supabase.from('kb_work_absences').insert({
-      user_id: user.id,
+      user_id: dbUserId,
       work_date: isoDate(now),
       start_time: timeValue(now),
       break_minutes: 0,
@@ -606,7 +638,7 @@ function App() {
       .from('kb_work_absences')
       .update(payload)
       .eq('id', active.id)
-      .eq('user_id', user.id)
+      .eq('user_id', dbUserId)
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
@@ -620,7 +652,7 @@ function App() {
     const dueDate = expense.due_date_iso ?? expense.due_date
     if (!dueDate) return
     const payload = {
-      user_id: user.id,
+      user_id: dbUserId,
       expense_id: expense.id,
       name: expense.name,
       amount: toNumber(expense.amount),
@@ -645,7 +677,7 @@ function App() {
     setSettings(next)
     const { error } = await supabase
       .from('kb_settings')
-      .upsert({ ...next, user_id: user.id }, { onConflict: 'user_id' })
+      .upsert({ ...next, user_id: dbUserId }, { onConflict: 'user_id' })
     if (error) window.alert(error.message)
   }
 
@@ -757,7 +789,7 @@ function App() {
         </nav>
         <main className="content">
           {notice && <div className="toast">{notice}</div>}
-          <KidsZone user={user} />
+          <KidsZone user={user} familyOwnerId={familyOwnerId} />
         </main>
       </div>
     )
@@ -1331,7 +1363,7 @@ function App() {
             utilityReadings={utilityReadings}
           />
         )}
-        {view === 'kids' && <KidsZone user={user} />}
+        {view === 'kids' && <KidsZone user={user} familyOwnerId={familyOwnerId} />}
       </main>
 
       {/* Quick Spend Modal for Mod Familie */}
