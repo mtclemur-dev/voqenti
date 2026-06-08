@@ -371,14 +371,17 @@ function App() {
       ...payload,
       product_name: payload.product_name || inferProductName(payload.description),
     })
+    // kb_daily_entries does not have a priority column - remove it if present
+    delete prepared.priority
     let query = currentItem
       ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
       : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: dbUserId })
     let { error } = await query
-    if (error && /entry_mode|unit_price/i.test(error.message || '')) {
+    if (error && /entry_mode|unit_price|priority/i.test(error.message || '')) {
       const fallback = { ...prepared }
       delete fallback.entry_mode
       delete fallback.unit_price
+      delete fallback.priority
       query = currentItem
         ? supabase.from('kb_daily_entries').update(fallback).eq('id', currentItem.id).eq('user_id', dbUserId)
         : supabase.from('kb_daily_entries').insert({ ...fallback, user_id: dbUserId })
@@ -393,6 +396,7 @@ function App() {
     setNotice(t('savedSuccess'))
     loadData()
   }
+
 
   const closeJournalDay = async (date) => {
     const closed = dailyClosures.find((item) => item.closure_date === date)
