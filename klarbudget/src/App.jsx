@@ -4050,11 +4050,11 @@ function preparePayload(payload) {
 
   if ('priority' in result) {
     const validPriorities = ['normal', 'important', 'offer_only']
-    if (!result.priority || result.priority === '' || result.priority === null || !validPriorities.includes(result.priority)) {
-      result.priority = 'normal'
+    if (typeof result.priority === 'string' || result.priority === null || result.priority === '') {
+      if (!result.priority || !validPriorities.includes(result.priority)) {
+        result.priority = 'normal'
+      }
     }
-  } else if (payload.product_name !== undefined) {
-    result.priority = 'normal'
   }
 
   numberFields.forEach((field) => {
