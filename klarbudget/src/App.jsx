@@ -66,7 +66,7 @@ function App() {
     return (isDoinaStr || startInFamilyMode) ? 'dashboard_family' : 'dashboard'
   })
   const [quickSpendOpen, setQuickSpendOpen] = useState(false)
-  const [quickSpendForm, setQuickSpendForm] = useState({ amount: '', category: 'mâncare', store: '', person: 'Familie', notes: '' })
+  const [quickSpendForm, setQuickSpendForm] = useState({ amount: '', category: 'mâncare', store: '', person: 'family', notes: '' })
   const [incomes, setIncomes] = useState([])
   const [expenses, setExpenses] = useState([])
   const [debts, setDebts] = useState([])
@@ -123,7 +123,7 @@ function App() {
   useEffect(() => {
     setQuickSpendForm((prev) => ({
       ...prev,
-      person: activeProfileUser === 'Doina' ? 'Doina' : 'Familie'
+      person: activeProfileUser === 'Doina' ? 'doina' : 'family'
     }))
   }, [activeProfileUser])
 
@@ -1434,9 +1434,9 @@ function App() {
                   value={quickSpendForm.person}
                   onChange={(e) => setQuickSpendForm({ ...quickSpendForm, person: e.target.value })}
                 >
-                  <option value="Doina">{t('doina')}</option>
-                  <option value="Victor">{t('victor')}</option>
-                  <option value="Familie">{t('family')}</option>
+                  <option value="doina">{t('doina')}</option>
+                  <option value="victor">{t('victor')}</option>
+                  <option value="family">{t('family')}</option>
                 </select>
               </label>
 
