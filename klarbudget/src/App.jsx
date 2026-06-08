@@ -373,6 +373,11 @@ function App() {
     })
     // kb_daily_entries does not have a priority column - remove it if present
     delete prepared.priority
+    // Normalize person field to match DB constraint: 'family', 'doina', 'victor'
+    if (prepared.person) {
+      const personMap = { Familie: 'family', Familie: 'family', Famille: 'family', Victor: 'victor', Doina: 'doina' }
+      prepared.person = personMap[prepared.person] ?? prepared.person.toLowerCase()
+    }
     let query = currentItem
       ? supabase.from('kb_daily_entries').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
       : supabase.from('kb_daily_entries').insert({ ...prepared, user_id: dbUserId })
