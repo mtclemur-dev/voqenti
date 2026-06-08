@@ -80,7 +80,7 @@ export function DashboardFamily({
   return (
     <div className="dashboard-family flex flex-col gap-4">
       {/* Situația de azi */}
-      <section className="section">
+      <section className="section section-month-state">
         <div className="section-title">
           <h2>🏡 {t('monthState')}</h2>
           <span className={`status-pill ${statusInfo.className}`}>{t(statusInfo.type)}</span>
@@ -96,7 +96,7 @@ export function DashboardFamily({
       </button>
 
       {/* Cât putem cheltui azi */}
-      <section className="section">
+      <section className="section section-daily-budget">
         <h2>💰 {t('dailyBudget')}</h2>
         <p style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--green)' }}>
           {dailyBudgetText}
@@ -105,7 +105,7 @@ export function DashboardFamily({
 
       {/* Mâncare */}
       {foodStats && (
-        <section className="section clickable" onClick={() => onNavigate('family_food')}>
+        <section className="section section-food clickable" onClick={() => onNavigate('family_food')}>
           <div className="section-title">
             <h2>🍏 {t('familyFood')}</h2>
             <span className={`status-pill ${foodColorClass}`}>{foodProgress}%</span>
@@ -134,7 +134,7 @@ export function DashboardFamily({
       )}
 
       {/* Următoarele plăți */}
-      <section className="section clickable" onClick={() => onNavigate('family_payments')}>
+      <section className="section section-next-payments clickable" onClick={() => onNavigate('family_payments')}>
         <div className="section-title">
           <h2>💳 {t('paymentsNext')}</h2>
           <span>{nextPayments.length}</span>
@@ -178,16 +178,16 @@ export function DashboardFamily({
       </section>
 
       {/* Conturi pe scurt */}
-      <section className="section">
+      <section className="section section-family-accounts">
         <h2>🏦 {t('accounts')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '0.5rem' }}>
-          <div className="metric-card" style={{ padding: '0.9rem', borderRadius: '12px' }}>
+          <div className="metric-card metric-card-net-balance" style={{ padding: '0.9rem', borderRadius: '12px' }}>
             <span>{t('netBalance')}</span>
             <strong style={{ fontSize: '1.2rem', color: summary.accounts?.netBalance < 0 ? 'var(--red)' : 'var(--green)' }}>
               {formatMoney(summary.accounts?.netBalance || 0, currency, locale)}
             </strong>
           </div>
-          <div className="metric-card" style={{ padding: '0.9rem', borderRadius: '12px' }}>
+          <div className="metric-card metric-card-overdraft-available" style={{ padding: '0.9rem', borderRadius: '12px' }}>
             <span>{t('limitaDispoRamasa')}</span>
             <strong style={{ fontSize: '1.2rem' }}>
               {formatMoney(summary.accounts?.overdraftAvailable || 0, currency, locale)}

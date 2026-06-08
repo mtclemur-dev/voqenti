@@ -1,20 +1,20 @@
 :root {
-  color: #15231f;
-  background: #f6f7f1;
-  --ink: #15231f;
-  --muted: #63746e;
-  --surface: #fffdf7;
-  --surface-soft: #f8f6ec;
-  --line: #dde4da;
-  --green: #17463c;
-  --green-soft: #e3efe8;
-  --mint: #d9eadf;
-  --gold: #b4832f;
-  --gold-soft: #fff0c8;
-  --red: #a7352a;
-  --red-soft: #f8ddd8;
-  --blue: #2861a8;
-  --blue-soft: #e5effb;
+  color: #152520;
+  background: #faf9f5;
+  --ink: #152520;
+  --muted: #576d65;
+  --surface: #ffffff;
+  --surface-soft: #f5f4ef;
+  --line: #e3e8e2;
+  --green: #0f766e;
+  --green-soft: #f0fdfa;
+  --mint: #ccfbf1;
+  --gold: #d97706;
+  --gold-soft: #fffbeb;
+  --red: #b91c1c;
+  --red-soft: #fef2f2;
+  --blue: #1d4ed8;
+  --blue-soft: #eff6ff;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -139,44 +139,84 @@ select,
   .lg\:col-span-2 { grid-column: span 2 / span 2; }
 }
 
-button {
+button, .button-link {
   min-height: 44px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--green);
   color: #fff;
-  font-weight: 700;
-  padding: 0.75rem 1rem;
+  font-weight: 800;
+  padding: 0.75rem 1.25rem;
   cursor: pointer;
   user-select: none;
-}
-
-.button-link {
-  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  padding: 0.45rem 0.65rem;
-  font-weight: 700;
+  gap: 0.5rem;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.12);
   text-decoration: none;
-  user-select: none;
 }
 
-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+button:hover, .button-link:hover {
+  background: #0d9488;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.22);
 }
 
-.secondary,
+button:active, .button-link:active {
+  transform: scale(0.97);
+}
+
+button:disabled, .button-link.disabled {
+  background: #e5e7eb !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+  opacity: 0.85 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.secondary {
+  background: #e6f4ea !important;
+  color: #115e59 !important;
+  border: 1px solid #bbf7d0 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important;
+}
+.secondary:hover {
+  background: #dcfce7 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+}
+
 .ghost {
-  background: var(--green-soft);
-  color: var(--green);
-}
-
-.ghost {
+  background: transparent !important;
+  color: var(--green) !important;
+  box-shadow: none !important;
   min-height: 36px;
   padding: 0.45rem 0.65rem;
+}
+.ghost:hover {
+  background: var(--green-soft) !important;
+  color: #0d9488 !important;
+}
+
+.danger, .danger-ghost {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+  box-shadow: 0 2px 8px rgba(185, 28, 28, 0.05) !important;
+}
+.danger:hover, .danger-ghost:hover {
+  background: #fca5a5 !important;
+  color: #7f1d1d !important;
+}
+
+.warning-btn {
+  background: #fef9c3 !important;
+  color: #854d0e !important;
+  border: 1px solid #fef08a !important;
+}
+.warning-btn:hover {
+  background: #fef08a !important;
 }
 
 .danger-text {
@@ -1907,6 +1947,373 @@ h3 {
   border-radius: 12px;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+/* ==========================================================================
+   PREMIUM THEME UPDATE: INSPIRED BY UTILITIES COMPONENT
+   ========================================================================== */
+
+/* Main cards/sections */
+.section {
+  border-radius: 20px !important;
+  background: var(--surface) !important;
+  border: 1.5px solid var(--line) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.03) !important;
+  padding: 1.5rem !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease !important;
+}
+
+.section.clickable:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Metric cards in Detailed Dashboard */
+.metric-card {
+  border-radius: 16px !important;
+  border: 1.5px solid var(--line) !important;
+  background: var(--surface) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02) !important;
+  padding: 1.25rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  min-height: 110px !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Dashboard category-specific gradients and borders */
+/* Venit lunar & Pozitiv - Green/Teal */
+.metric-card-totalIncome, 
+.metric-card-positiveBalanceTotal {
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%) !important;
+  border: 1.5px solid #bbf7d0 !important;
+  color: #14532d !important;
+  border-left: 5px solid #10b981 !important;
+}
+.metric-card-totalIncome strong, 
+.metric-card-positiveBalanceTotal strong {
+  color: #047857 !important;
+}
+
+/* Cheltuieli fixe - Crem / Galben pal */
+.metric-card-fixedExpenses {
+  background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%) !important;
+  border: 1.5px solid #fef3c7 !important;
+  color: #78350f !important;
+  border-left: 5px solid #f59e0b !important;
+}
+
+/* Cheltuieli variabile - Galben cald */
+.metric-card-variableExpenses {
+  background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%) !important;
+  border: 1.5px solid #fde68a !important;
+  color: #92400e !important;
+  border-left: 5px solid #d97706 !important;
+}
+
+/* Datorii - Roșu pal */
+.metric-card-totalDebt, 
+.metric-card-urgentDebt, 
+.metric-card-mortgageDebt {
+  background: linear-gradient(135deg, #ffffff 0%, #fef2f2 100%) !important;
+  border: 1.5px solid #fecaca !important;
+  color: #7f1d1d !important;
+  border-left: 5px solid #ef4444 !important;
+}
+
+/* Sold net actual / Economii estimate - Albastru/Teal */
+.metric-card-netBalance, 
+.metric-card-safeAvailableReal, 
+.metric-card-remainingMoney {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%) !important;
+  border: 1.5px solid #cffafe !important;
+  color: #083344 !important;
+  border-left: 5px solid #06b6d4 !important;
+}
+.metric-card-netBalance strong, 
+.metric-card-safeAvailableReal strong, 
+.metric-card-remainingMoney strong {
+  color: #0891b2 !important;
+}
+
+/* Overdraft Used - Roșu pal */
+.metric-card-overdraftUsed {
+  background: linear-gradient(135deg, #ffffff 0%, #fef2f2 100%) !important;
+  border: 1.5px solid #fca5a5 !important;
+  color: #7f1d1d !important;
+  border-left: 5px solid #dc2626 !important;
+}
+
+/* Buget zilnic rămas - Verde */
+.metric-card-dailyBudget {
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%) !important;
+  border: 1.5px solid #bbf7d0 !important;
+  color: #14532d !important;
+  border-left: 5px solid #10b981 !important;
+}
+.metric-card-dailyBudget strong {
+  color: #059669 !important;
+}
+
+/* Plăți următoare - Galben/Oranj */
+.metric-card-nextPaymentsTotal {
+  background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%) !important;
+  border: 1.5px solid #ffedd5 !important;
+  color: #7c2d12 !important;
+  border-left: 5px solid #f97316 !important;
+}
+
+/* Slate/Neutral pentru alte carduri */
+.metric-card-daysUntilSalary, 
+.metric-card-overdraftAvailable, 
+.metric-card-journalTodayTotal, 
+.metric-card-totalOnceThisMonth {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1.5px solid #e2e8f0 !important;
+  color: #1e293b !important;
+  border-left: 5px solid #64748b !important;
+}
+
+/* ==========================================================================
+   FAMILY DASHBOARD PREMIUM CARDS
+   ========================================================================== */
+
+/* Month state section (Situația de azi) */
+.section-month-state {
+  border-left: 6px solid #b45309 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #fffbeb 100%) !important;
+}
+
+/* Daily Budget card (Cât putem cheltui azi) */
+.section-daily-budget {
+  border-left: 6px solid #10b981 !important;
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%) !important;
+}
+
+/* Food card (Mâncare) */
+.section-food {
+  border-left: 6px solid #f97316 !important;
+  background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%) !important;
+}
+
+/* Next payments card (Următoarele plăți) */
+.section-next-payments {
+  border-left: 6px solid #f59e0b !important;
+  background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%) !important;
+}
+
+/* Family Accounts card (Conturi pe scurt) */
+.section-family-accounts {
+  border-left: 6px solid #3b82f6 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f5fc 100%) !important;
+}
+.section-family-accounts .metric-card-net-balance {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%) !important;
+  border: 1.5px solid #cffafe !important;
+  border-left: 4px solid #06b6d4 !important;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.05) !important;
+}
+.section-family-accounts .metric-card-overdraft-available {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-left: 4px solid #64748b !important;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.05) !important;
+}
+
+/* ==========================================================================
+   KIDS ZONE MODE PREMIUM & FRIENDLY CARDS
+   ========================================================================== */
+.kid-mode-overlay {
+  background: linear-gradient(180deg, #faf7f2 0%, #f7f1e7 100%) !important;
+}
+
+/* Wallet card in child mode (Galben cald/Portocaliu) */
+.kid-wallet-card {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+  border: 2px solid #fde68a !important;
+  box-shadow: 0 8px 30px rgba(245, 158, 11, 0.15) !important;
+  border-radius: 24px !important;
+  transition: transform 0.2s ease !important;
+}
+.kid-wallet-card:hover {
+  transform: translateY(-2px) !important;
+}
+
+/* Tasks card & section (Teal/Verde salvie) */
+.kid-tasks-section .kid-section-title {
+  color: #0f766e !important;
+  font-weight: 900 !important;
+}
+.kid-task-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%) !important;
+  border: 1.5px solid #bbf7d0 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.05) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+.kid-task-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.1) !important;
+}
+.kid-task-btn {
+  background: linear-gradient(135deg, #0d9488, #115e59) !important;
+  color: #fff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 10px rgba(13, 148, 136, 0.2) !important;
+}
+.kid-task-btn:hover:not(:disabled) {
+  background: #115e59 !important;
+}
+
+/* Rewards card & section (Mov pastel/Coral) */
+.kid-rewards-section .kid-section-title {
+  color: #6b21a8 !important;
+  font-weight: 900 !important;
+}
+.kid-reward-card {
+  background: #ffffff !important;
+  border: 1.5px solid #f3e8ff !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 16px rgba(107, 33, 168, 0.03) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+.kid-reward-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px rgba(107, 33, 168, 0.08) !important;
+}
+.kid-reward-card.can-afford {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%) !important;
+  border: 2px solid #d8b4fe !important;
+  box-shadow: 0 6px 20px rgba(168, 85, 247, 0.12) !important;
+}
+.kid-reward-btn {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+  color: #fff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 10px rgba(124, 58, 237, 0.2) !important;
+}
+.kid-reward-btn:hover:not(:disabled) {
+  background: #6d28d9 !important;
+}
+
+/* Chat section in child mode (Albastru pal) */
+.kid-chat-section .kid-section-title {
+  color: #1d4ed8 !important;
+  font-weight: 900 !important;
+}
+.kid-chat-messages-container {
+  background: #f0f7ff !important;
+  border: 1.5px solid #dbeafe !important;
+  border-radius: 16px !important;
+}
+.kid-chat-bubble {
+  border-radius: 14px !important;
+  padding: 0.65rem 0.9rem !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+}
+.is-kid-sender .kid-chat-bubble {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.15) !important;
+}
+.is-other-sender .kid-chat-bubble {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Kid requests section & status badges */
+.kid-requests-section .kid-section-title {
+  color: #b45309 !important;
+  font-weight: 900 !important;
+}
+.kid-request-card {
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+}
+.kid-request-card.kid-request-pending {
+  background: #fffbeb !important;
+  border: 1.5px solid #fef08a !important;
+  color: #854d0e !important;
+}
+.kid-request-card.kid-request-approved {
+  background: #f0fdf4 !important;
+  border: 1.5px solid #bbf7d0 !important;
+  color: #166534 !important;
+}
+.kid-request-card.kid-request-rejected {
+  background: #fef2f2 !important;
+  border: 1.5px solid #fecaca !important;
+  color: #991b1b !important;
+}
+
+/* ==========================================================================
+   TABBARS & NAVIGATION
+   ========================================================================== */
+.tabbar {
+  background: #faf9f5 !important;
+  border-bottom: 2px solid var(--line) !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.tabbar button {
+  border-radius: 12px !important;
+  background: #eae9e0 !important;
+  color: #374151 !important;
+  font-weight: 700 !important;
+  border: 1.5px solid transparent !important;
+  transition: all 0.2s ease !important;
+  min-height: 40px !important;
+  box-shadow: none !important;
+}
+
+.tabbar button:hover {
+  background: #e1e0d5 !important;
+}
+
+.tabbar button.active {
+  background: var(--green) !important;
+  color: #ffffff !important;
+  border-color: var(--green) !important;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.2) !important;
+}
+
+.tabbar.sub-tabbar {
+  background: var(--surface-soft) !important;
+  border-bottom: 1px solid var(--line) !important;
+  padding: 0.45rem 1.15rem !important;
+  gap: 0.35rem !important;
+}
+
+.tabbar.sub-tabbar button {
+  background: #e3e2d9 !important;
+  border-radius: 10px !important;
+  min-height: 34px !important;
+}
+
+.tabbar.sub-tabbar button.active {
+  background: var(--green) !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   PREFERS REDUCED MOTION SUPPORT
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 

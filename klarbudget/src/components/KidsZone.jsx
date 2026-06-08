@@ -1783,9 +1783,9 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           </div>
         </div>
 
-        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '600px', margin: '0 auto', boxSizing: 'border-box' }}>
+        <div className="kid-mode-content" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '600px', margin: '0 auto', boxSizing: 'border-box' }}>
           {/* Wallet card */}
-          <div style={{
+          <div className="kid-wallet-card" style={{
             background: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
             borderRadius: '20px',
             border: '2px solid #fde68a',
@@ -1807,8 +1807,8 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           </div>
 
           {/* Kid tasks */}
-          <div>
-            <div style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📋 Sarcinile mele</div>
+          <div className="kid-tasks-section">
+            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📋 Sarcinile mele</div>
             {kidTasks.length === 0 ? (
               <div style={{ color: '#9ca3af', fontSize: '0.88rem', textAlign: 'center', padding: '1.5rem', background: '#fff', borderRadius: '12px', border: '1px dashed #d1d5db' }}>
                 Nu ai sarcini active acum. 🎉
@@ -1818,7 +1818,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 {kidTasks.map((task) => {
                   const alreadyPending = requests.some((r) => r.task_id === task.id && r.child_id === wallet.id && r.status === 'pending')
                   return (
-                    <div key={task.id} style={{
+                    <div key={task.id} className="kid-task-card" style={{
                       background: '#fff',
                       borderRadius: '14px',
                       border: '1px solid #e5e7eb',
@@ -1842,6 +1842,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                         type="button"
                         disabled={alreadyPending}
                         onClick={() => childSubmitTaskRequest(task, wallet.id)}
+                        className={`kid-task-btn ${alreadyPending ? 'disabled' : ''}`}
                         style={{
                           minHeight: 'auto',
                           padding: '0.5rem 0.9rem',
@@ -1866,9 +1867,9 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           </div>
 
           {/* Kid rewards */}
-          <div>
-            <div style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>🎁 Recompensele mele</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
+          <div className="kid-rewards-section">
+            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>🎁 Recompensele mele</div>
+            <div className="kid-rewards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
               {kidRewards.map((r) => {
                 const cost = Number(r.cost || 0)
                 const canAfford = balance >= cost
@@ -1876,7 +1877,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 const alreadyPending = requests.some((req) => req.reward_id === r.id && req.child_id === wallet.id && req.status === 'pending')
 
                 return (
-                  <div key={r.id} style={{
+                  <div key={r.id} className={`kid-reward-card ${canAfford ? 'can-afford' : ''}`} style={{
                     background: canAfford ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : '#fff',
                     borderRadius: '14px',
                     border: `1px solid ${canAfford ? '#86efac' : '#e5e7eb'}`,
@@ -1898,6 +1899,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                       type="button"
                       disabled={!canAfford || alreadyPending}
                       onClick={() => childRequestReward(r, wallet.id)}
+                      className={`kid-reward-btn ${(!canAfford || alreadyPending) ? 'disabled' : ''}`}
                       style={{
                         minHeight: 'auto',
                         padding: '0.4rem 0.6rem',
@@ -1919,8 +1921,8 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           </div>
 
           {/* Kid chat */}
-          <div>
-            <div style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>💬 Chat familie</div>
+          <div className="kid-chat-section">
+            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>💬 Chat familie</div>
             {/* Quick buttons */}
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
               {QUICK_MESSAGES.map((qm) => (
@@ -1945,9 +1947,9 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                   </div>
                 )
                 return (
-                  <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isKid ? 'flex-end' : 'flex-start' }}>
+                  <div key={msg.id} className={`kid-chat-msg-row ${isKid ? 'is-kid-sender' : 'is-other-sender'}`} style={{ display: 'flex', flexDirection: 'column', alignItems: isKid ? 'flex-end' : 'flex-start' }}>
                     <div style={{ fontSize: '0.65rem', color: '#9ca3af', marginBottom: '0.1rem', padding: '0 0.4rem' }}>{msg.sender_name}</div>
-                    <div style={{
+                    <div className="kid-chat-bubble" style={{
                       maxWidth: '80%',
                       background: isKid ? 'linear-gradient(135deg, #f97316, #ea580c)' : '#fff',
                       color: isKid ? '#fff' : '#15231f',
@@ -1988,9 +1990,9 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
 
           {/* Kid requests */}
           {kidRequests.length > 0 && (
-            <div>
-              <div style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📬 Cererile mele</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className="kid-requests-section">
+              <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📬 Cererile mele</div>
+              <div className="kid-requests-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {kidRequests.map((r) => {
                   const task = tasks.find((t) => t.id === r.task_id)
                   const reward = rewards.find((rw) => rw.id === r.reward_id)
@@ -1998,7 +2000,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                   const statusLabel = r.status === 'approved' ? '✅ Aprobat' : r.status === 'rejected' ? '❌ Respins' : '⏳ În așteptare'
 
                   return (
-                    <div key={r.id} style={{
+                    <div key={r.id} className={`kid-request-card kid-request-${r.status}`} style={{
                       background: '#fff',
                       borderRadius: '10px',
                       border: '1px solid #e5e7eb',

@@ -51,7 +51,7 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
       <div className="metric-grid">
         {cards.map(([label, value, tone, hint, unit]) => (
           <article
-            className={`metric-card ${tone} ${label === 'journalTodayTotal' ? 'clickable' : ''}`}
+            className={`metric-card ${tone} metric-card-${label} ${label === 'journalTodayTotal' ? 'clickable' : ''}`}
             key={label}
             onClick={label === 'journalTodayTotal' ? () => onNavigate('journal') : undefined}
             role={label === 'journalTodayTotal' ? 'button' : undefined}
