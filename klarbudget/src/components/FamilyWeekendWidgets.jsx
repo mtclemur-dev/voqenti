@@ -17,22 +17,22 @@ const trashTypes = [
   {
     id: 'yellow',
     label: 'Gelbe Tonne',
-    hint: 'folie, plastic, ambalaje',
-    icon: '🟡',
+    hint: 'Folie, plastic, ambalaje',
+    icon: '●',
     className: 'trash-yellow',
   },
   {
     id: 'blue',
     label: 'Blaue Tonne',
-    hint: 'hartie si carton',
-    icon: '🔵',
+    hint: 'Hârtie și carton',
+    icon: '●',
     className: 'trash-blue',
   },
   {
     id: 'black',
     label: 'Schwarze Tonne',
-    hint: 'resturi / Restmull',
-    icon: '⚫',
+    hint: 'Resturi / Restmüll',
+    icon: '●',
     className: 'trash-black',
   },
 ]
@@ -128,6 +128,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
   const [ideas, setIdeas] = useState(() => readJson(WEEKEND_STORAGE_KEY, []))
   const [trashRows, setTrashRows] = useState(() => readJson(TRASH_STORAGE_KEY, defaultTrashRows()))
   const [form, setForm] = useState(() => newWeekendIdea())
+  const [showForm, setShowForm] = useState(false)
   const [showIdeas, setShowIdeas] = useState(false)
   const [showTrashSettings, setShowTrashSettings] = useState(false)
   const [message, setMessage] = useState('')
@@ -156,6 +157,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
       return exists ? current.map((item) => (item.id === form.id ? normalized : item)) : [normalized, ...current]
     })
     setForm(newWeekendIdea())
+    setShowForm(false)
     setShowIdeas(true)
   }
 
@@ -181,7 +183,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
       completedAt: isoDate(new Date()),
       nextDate: nextDate || row.nextDate,
     })
-    setMessage(nextDate ? `Am notat. Urmatoarea data: ${relativeTrashDate(nextDate)}.` : 'Seteaza urmatoarea data manual.')
+    setMessage(nextDate ? `Am notat. Următoarea dată: ${relativeTrashDate(nextDate)}.` : 'Setează următoarea dată manual.')
     window.setTimeout(() => setMessage(''), 3500)
   }
 
@@ -193,13 +195,18 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
             <h2>Plan de weekend</h2>
             <p className="muted">Idei simple pentru familie, casa si copii.</p>
           </div>
-          <button type="button" onClick={() => setShowIdeas((current) => !current)}>
-            {showIdeas ? 'Inchide ideile' : 'Vezi toate ideile'}
-          </button>
+          <div className="button-pair">
+            <button type="button" onClick={() => setShowForm((current) => !current)}>
+              {showForm ? 'Închide' : '+ Adaugă idee'}
+            </button>
+            <button type="button" className="secondary" onClick={() => setShowIdeas((current) => !current)}>
+              {showIdeas ? 'Închide ideile' : 'Vezi toate ideile'}
+            </button>
+          </div>
         </div>
 
         {!mainPlan && !backupPlan && (
-          <div className="notice">Nu ati ales inca un plan pentru weekend. Adauga o idee.</div>
+          <div className="notice">Nu ati ales inca un plan pentru weekend. Adaugă o idee.</div>
         )}
 
         <div className="weekend-summary-grid">
@@ -207,23 +214,25 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
           <WeekendPlanCard title="Plan rezerva" idea={backupPlan} currency={currency} locale={locale} />
         </div>
 
-        <form className="weekend-form" onSubmit={saveIdea}>
-          <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex: Plimbare cu copiii" />
-          <input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descriere scurta optionala" />
-          <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
-            {weekendCategories.map((category) => <option key={category} value={category}>{category}</option>)}
-          </select>
-          <input type="number" min="0" step="0.01" value={form.estimatedCost} onChange={(event) => setForm({ ...form, estimatedCost: event.target.value })} placeholder="Cost estimat" />
-          <input value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })} placeholder="Durata estimata" />
-          <select value={form.proposedBy} onChange={(event) => setForm({ ...form, proposedBy: event.target.value })}>
-            <option>Victor</option>
-            <option>Doina</option>
-          </select>
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
-            {weekendStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-          <button type="submit">{ideas.some((item) => item.id === form.id) ? 'Salveaza ideea' : 'Adauga idee'}</button>
-        </form>
+        {showForm && (
+          <form className="weekend-form" onSubmit={saveIdea}>
+            <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex: Plimbare cu copiii" />
+            <input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descriere scurta optionala" />
+            <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
+              {weekendCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <input type="number" min="0" step="0.01" value={form.estimatedCost} onChange={(event) => setForm({ ...form, estimatedCost: event.target.value })} placeholder="Cost estimat" />
+            <input value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })} placeholder="Durata estimata" />
+            <select value={form.proposedBy} onChange={(event) => setForm({ ...form, proposedBy: event.target.value })}>
+              <option>Victor</option>
+              <option>Doina</option>
+            </select>
+            <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+              {weekendStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <button type="submit">{ideas.some((item) => item.id === form.id) ? 'Salveaza ideea' : 'Adaugă idee'}</button>
+          </form>
+        )}
 
         {showIdeas && (
           <div className="weekend-ideas-list">
@@ -231,7 +240,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
               <article key={idea.id} className="weekend-idea-row">
                 <div>
                   <strong>{idea.title}</strong>
-                  <span>{idea.category} · {idea.proposedBy} · {idea.duration || 'durata nesetata'}</span>
+                  <span>{idea.category} - {idea.proposedBy} - {idea.duration || 'durata nesetata'}</span>
                   {idea.description && <small>{idea.description}</small>}
                 </div>
                 <div className="weekend-actions">
@@ -239,7 +248,10 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
                   <button type="button" className="secondary" onClick={() => updateIdeaStatus(idea, 'main')}>Plan principal</button>
                   <button type="button" className="secondary" onClick={() => updateIdeaStatus(idea, 'backup')}>Rezerva</button>
                   <button type="button" className="secondary" onClick={() => updateIdeaStatus(idea, 'done')}>Finalizat</button>
-                  <button type="button" className="ghost" onClick={() => setForm(idea)}>Editeaza</button>
+                  <button type="button" className="ghost" onClick={() => {
+                    setForm(idea)
+                    setShowForm(true)
+                  }}>Editează</button>
                   <button type="button" className="ghost danger-text" onClick={() => deleteIdea(idea)}>Sterge</button>
                 </div>
               </article>
@@ -255,7 +267,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
             <p className="muted">Gelbe, Blaue si Schwarze Tonne.</p>
           </div>
           <button type="button" className="secondary" onClick={() => setShowTrashSettings((current) => !current)}>
-            {showTrashSettings ? 'Inchide setari' : 'Seteaza date'}
+            {showTrashSettings ? 'Închide setări' : 'Setează date'}
           </button>
         </div>
 
@@ -263,14 +275,15 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
 
         <div className="trash-upcoming-grid">
           {upcomingTrash.length === 0 ? (
-            <div className="notice">Seteaza urmatoarea data manual.</div>
+            <div className="notice">Setează următoarea dată manual.</div>
           ) : upcomingTrash.map((row) => (
             <article key={row.id} className={`trash-next-card ${row.meta.className} ${row.diff <= 1 ? 'urgent' : ''}`}>
               <div className="trash-icon" aria-hidden="true">{row.meta.icon}</div>
-              <div>
-                <span className="trash-date">{relativeTrashDate(row.nextDate)}: {row.meta.label}</span>
-                <strong>{row.meta.hint}</strong>
-                <small>Urmatoarea ridicare: {row.nextDate}</small>
+              <div className="trash-copy">
+                <span className="trash-date">{relativeTrashDate(row.nextDate)}</span>
+                <strong className="trash-title">{row.meta.label}</strong>
+                <span className="trash-description">{row.meta.hint}</span>
+                <small>Următoarea ridicare: {row.nextDate}</small>
               </div>
               <button type="button" onClick={() => markTrashDone(row)}>Am scos gunoiul</button>
             </article>
@@ -313,8 +326,8 @@ function WeekendPlanCard({ title, idea, currency, locale }) {
       {idea ? (
         <>
           <strong>{idea.title}</strong>
-          <small>{idea.proposedBy} · {idea.category}</small>
-          <small>{idea.estimatedCost ? formatMoney(toNumber(idea.estimatedCost), currency, locale) : 'Cost nesetat'} · {idea.duration || 'durata nesetata'}</small>
+          <small>{idea.proposedBy} - {idea.category}</small>
+          <small>{idea.estimatedCost ? formatMoney(toNumber(idea.estimatedCost), currency, locale) : 'Cost nesetat'} - {idea.duration || 'durata nesetata'}</small>
         </>
       ) : (
         <strong>Nesetat</strong>

@@ -771,9 +771,10 @@ h3 {
 
 .trash-next-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.8rem;
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+  gap: 1rem;
   align-items: center;
+  min-width: 0;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
@@ -787,8 +788,56 @@ h3 {
 }
 
 .trash-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
   font-size: 2.1rem;
   line-height: 1;
+}
+
+.trash-yellow .trash-icon {
+  color: #d8a700;
+}
+
+.trash-blue .trash-icon {
+  color: #1976c9;
+}
+
+.trash-black .trash-icon {
+  color: #202b2f;
+}
+
+.trash-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.trash-title {
+  display: block;
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.trash-description {
+  display: block;
+  color: #475a55;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.trash-copy small {
+  display: block;
+  color: #64756f;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.trash-next-card button {
+  white-space: nowrap;
 }
 
 .trash-next-card.urgent .trash-icon {
@@ -851,6 +900,7 @@ h3 {
   .trash-next-card button {
     grid-column: 1 / -1;
     width: 100%;
+    justify-content: center;
   }
 }
 
