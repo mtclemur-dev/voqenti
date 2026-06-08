@@ -375,7 +375,7 @@ function App() {
     delete prepared.priority
     // Normalize person field to match DB constraint: 'family', 'doina', 'victor'
     if (prepared.person) {
-      const personMap = { Familie: 'family', Familie: 'family', Famille: 'family', Victor: 'victor', Doina: 'doina' }
+      const personMap = { Familie: 'family', Famille: 'family', Victor: 'victor', Doina: 'doina' }
       prepared.person = personMap[prepared.person] ?? prepared.person.toLowerCase()
     }
     let query = currentItem
@@ -3253,8 +3253,6 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
             right: '-12px',
             top: '-12px',
             fontSize: '6rem',
-            opacity: 0.15,
-            pointerEvents: 'none',
             lineHeight: 1,
           }}>
             {icon}

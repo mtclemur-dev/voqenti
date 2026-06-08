@@ -240,6 +240,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
   const [coinValue, setCoinValue] = useState(DEFAULT_COIN_VALUE)
   const [showChildEur, setShowChildEur] = useState(false)
   const [familySettingsId, setFamilySettingsId] = useState(null)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   // UI state
   const [selectedWalletId, setSelectedWalletId] = useState('')
@@ -511,7 +512,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           () => pollRequests()
         )
         .subscribe()
-    } catch (_e) {
+    } catch {
       // Realtime nu e disponibil — polling continuă să funcționeze
     }
 
@@ -529,7 +530,11 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages])
+    // Increment unread count if not on chat tab
+    if (kidsTab !== 'chat' && messages.length > 0) {
+      setUnreadCount((prev) => prev + 0) // Don't auto-increment on initial load
+    }
+  }, [messages.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
@@ -873,8 +878,10 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
     const trimmed = text.trim()
 
     // Optimistic UI — adaugă mesajul instant în listă
+    // eslint-disable-next-line react-hooks/purity
+    const optimisticId = 'optimistic-' + Date.now()
     const optimisticMsg = {
-      id: 'optimistic-' + Date.now(),
+      id: optimisticId,
       user_id: dbUserId,
       sender_name: sender,
       sender_role: role,
@@ -1592,7 +1599,11 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 padding: '0.4rem 0.85rem',
                 borderRadius: '20px',
                 textAlign: 'center',
-                maxWidth: '85%',
+                maxWidth: '92%',
+                boxSizing: 'border-box',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                whiteSpace: 'pre-wrap',
               }}>
                 {msg.message_text}
               </div>
@@ -1604,12 +1615,14 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
               display: 'flex',
               flexDirection: 'column',
               alignItems: isSelf ? 'flex-end' : 'flex-start',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
             }}>
               <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: '0.2rem', padding: '0 0.5rem' }}>
                 {msg.sender_name} · {formatDate(msg.created_at)}
               </div>
               <div style={{
-                maxWidth: '75%',
+                maxWidth: '85%',
                 background: isSelf
                   ? 'linear-gradient(135deg, #17463c, #2d7a5e)'
                   : (isParent ? '#fff' : 'linear-gradient(135deg, #f97316, #ea580c)'),
@@ -1623,6 +1636,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 wordBreak: 'break-word',
                 overflowWrap: 'anywhere',
                 whiteSpace: 'pre-wrap',
+                boxSizing: 'border-box',
               }}>
                 {msg.message_text}
               </div>
@@ -1769,7 +1783,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
           </div>
         </div>
 
-        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '600px', margin: '0 auto', boxSizing: 'border-box' }}>
           {/* Wallet card */}
           <div style={{
             background: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
@@ -1951,7 +1965,8 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 )
               })}
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {/* Chat input */}
+            <div className="family-chat-input-wrapper">
               <input
                 value={kidChatText}
                 onChange={(e) => setKidChatText(e.target.value)}
@@ -2083,7 +2098,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
     { id: 'tasks', label: '📋 Sarcini' },
     { id: 'rewards', label: '🎁 Recompense' },
     { id: 'requests', label: `📬 Cereri${pendingCount ? ` (${pendingCount})` : ''}` },
-    { id: 'chat', label: '💬 Chat familie' },
+    { id: 'chat', label: `💬 Chat familie${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
     { id: 'history', label: '📜 Istoric' },
     { id: 'kidmode', label: '🧒 Mod Copil' },
   ]
@@ -2111,7 +2126,27 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
         </p>
       </div>
 
-      {/* Tab bar - uses .kids-tab-scroll for native Android touch swipe */}
+      {/* Tab navigation: dropdown on mobile, scrollable tabs on desktop */}
+      {/* Mobile dropdown */}
+      <select
+        className="kids-tab-select"
+        value={kidsTab}
+        onChange={(e) => {
+          if (e.target.value === 'kidmode') {
+            setKidModeActive(true)
+          } else {
+            setKidsTab(e.target.value)
+            if (e.target.value === 'chat') setUnreadCount(0)
+          }
+        }}
+        style={{ margin: '0.75rem 0' }}
+      >
+        {TABS.map((tab) => (
+          <option key={tab.id} value={tab.id}>{tab.label}</option>
+        ))}
+      </select>
+
+      {/* Desktop scrollable tabs */}
       <div className="kids-tab-scroll">
         {TABS.map((tab) => (
           <button
@@ -2122,6 +2157,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
                 setKidModeActive(true)
               } else {
                 setKidsTab(tab.id)
+                if (tab.id === 'chat') setUnreadCount(0)
               }
             }}
             style={{

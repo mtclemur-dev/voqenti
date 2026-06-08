@@ -28,6 +28,9 @@ html {
   margin: 0;
   padding: 0;
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 body {
@@ -36,11 +39,22 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: linear-gradient(180deg, #f6f7f1 0%, #eef4ee 100%);
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .app-shell {
   min-height: 100vh;
   width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   position: relative;
 }
 
@@ -1611,11 +1625,15 @@ h3 {
   height: 600px;
   max-height: 70vh;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .family-chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem;
   background: #f9fafb;
   border-radius: 14px;
@@ -1625,12 +1643,24 @@ h3 {
   gap: 0.75rem;
   margin-bottom: 0.75rem;
   -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .family-chat-input-wrapper {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Chat message bubble constraints */
+.family-chat-messages > div {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .family-chat-input {
@@ -1676,11 +1706,15 @@ h3 {
   height: 320px;
   max-height: 40vh;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 0.6rem;
   -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .kid-chat-input {
@@ -1736,14 +1770,32 @@ h3 {
   .family-chat-messages {
     padding: 0.75rem;
   }
+
+  .family-chat-input-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .family-chat-send-btn {
+    width: 100%;
+    justify-content: center;
+  }
   
   .kid-chat-messages-container {
     height: 240px;
     max-height: 35vh;
   }
+
+  .kid-chat-input {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  .family-chat-input {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
 }
 
-/* Kids tab bar - touch horizontal scroll on Android */
+/* Kids tab bar - dropdown on mobile, scroll on desktop */
 .kids-tab-scroll {
   display: flex;
   gap: 0.25rem;
@@ -1753,8 +1805,42 @@ h3 {
   padding: 0.75rem 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* touch-action: pan-x allows horizontal swipe without blocking vertical scroll */
   touch-action: pan-x;
+  /* Constrain to page width - no horizontal page overflow */
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Mobile tab dropdown selector - shown only on small screens */
+.kids-tab-select {
+  display: none;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #17463c;
+  border-radius: 12px;
+  background: #fff;
+  color: #15231f;
+  font-size: 1rem;
+  font-weight: 700;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2317463c' stroke-width='2.5'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 1.1rem;
+  padding-right: 2.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(23,70,60,0.1);
+}
+
+@media (max-width: 768px) {
+  .kids-tab-select {
+    display: block;
+  }
+  .kids-tab-scroll {
+    display: none;
+  }
 }
 
 .kids-tab-scroll::-webkit-scrollbar {
