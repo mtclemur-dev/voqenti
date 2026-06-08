@@ -1658,7 +1658,18 @@ function SmartShopping({
   getPriceAnalytics,
   onImportOffer
 }) {
-  const activeOffers = offers.filter((offer) => !offer.valid_until || offer.valid_until >= isoDate(new Date()))
+  const [showExpiredOffers, setShowExpiredOffers] = useState(false)
+  const offersWithValidity = useMemo(
+    () => offers.map((offer) => ({ ...offer, validityStatus: getOfferValidityStatus(offer) })),
+    [offers],
+  )
+  const activeOffers = useMemo(
+    () => offersWithValidity.filter((offer) => offer.validityStatus === 'active'),
+    [offersWithValidity],
+  )
+  const visibleSavedOffers = showExpiredOffers
+    ? offersWithValidity
+    : activeOffers
   const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
   const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
   const priceHistory = buildShoppingHistory(journalEntries)
@@ -1694,12 +1705,26 @@ function SmartShopping({
       {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
       {tab === 'receipts' && <ReceiptsTab currency={currency} locale={locale} receiptItems={receiptItems} receipts={receipts} onSaveReceipt={onSaveReceipt} />}
       {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
-      {tab === 'offers' && <OfferPreviewTab currency={currency} language={language} locale={locale} preview={offerPreview} savedOffers={offers} t={t} onConfirmPreview={onConfirmPreview} onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)} onPreviewChange={onPreviewChange} />}
-      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} currency={currency} locale={locale} t={t} />}
+      {tab === 'offers' && (
+        <OfferPreviewTab
+          currency={currency}
+          language={language}
+          locale={locale}
+          preview={offerPreview}
+          savedOffers={visibleSavedOffers}
+          t={t}
+          showExpiredOffers={showExpiredOffers}
+          onConfirmPreview={onConfirmPreview}
+          onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)}
+          onPreviewChange={onPreviewChange}
+          onToggleExpiredOffers={setShowExpiredOffers}
+        />
+      )}
+      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
       {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
       {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
       {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
-      {tab === 'search' && <SearchOffersTab offers={searchableOffers} currency={currency} locale={locale} t={t} />}
+      {tab === 'search' && <SearchOffersTab activeOffers={searchableOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
     </>
   )
 }
@@ -1983,11 +2008,11 @@ function ExtractedProductsTab({ currency, locale, preview, savedOffers, t, onCon
   )
 }
 
-function SearchOffersTab({ offers, currency, locale, t }) {
+function SearchOffersTab({ activeOffers, allOffers, currency, locale, t }) {
   const [query, setQuery] = useState('')
   const trimmed = query.trim()
   const results = trimmed
-    ? offers
+    ? activeOffers
       .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
       .filter((item) => item.match)
       .sort((a, b) => {
@@ -1995,6 +2020,12 @@ function SearchOffersTab({ offers, currency, locale, t }) {
         if (diff !== 0) return diff
         return toNumber(b.offer.confidence) - toNumber(a.offer.confidence)
       })
+    : []
+  const expiredResults = trimmed
+    ? allOffers
+      .filter((offer) => offer.validityStatus === 'expired')
+      .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
+      .filter((item) => item.match)
     : []
 
   const best = results[0]?.offer || null
@@ -2015,6 +2046,7 @@ function SearchOffersTab({ offers, currency, locale, t }) {
       </div>
       {!trimmed && <div className="notice">{t('searchOffersPlaceholder')}</div>}
       {trimmed && results.length === 0 && <div className="notice">{t('noSearchResults')}</div>}
+      {trimmed && results.length === 0 && expiredResults.length > 0 && <div className="notice">{t('onlyExpiredOffersForProduct')}</div>}
       {best && (
         <article className="list-item highlighted">
           <div>
@@ -2072,7 +2104,7 @@ function OfferRows({ rows, currency, editable = false, locale, t, onChange }) {
   )
 }
 
-function BestPricesTab({ bestPrices, offers, currency, locale, t }) {
+function BestPricesTab({ bestPrices, offers, allOffers, currency, locale, t }) {
   const [query, setQuery] = useState('')
 
   const searchResults = query.trim()
@@ -2080,6 +2112,12 @@ function BestPricesTab({ bestPrices, offers, currency, locale, t }) {
       .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
       .filter((item) => item.match)
       .sort((a, b) => offerCompareValue(a.offer) - offerCompareValue(b.offer))
+    : []
+  const expiredResults = query.trim()
+    ? allOffers
+      .filter((offer) => offer.validityStatus === 'expired')
+      .map((offer) => ({ offer, ...productMatch(query, offer.product_name) }))
+      .filter((item) => item.match)
     : []
 
   const bestMatch = searchResults[0]?.offer || null
@@ -2094,7 +2132,10 @@ function BestPricesTab({ bestPrices, offers, currency, locale, t }) {
       {query.trim() ? (
         <>
           {searchResults.length === 0 ? (
-            <div className="notice">{t('noSearchResults')}</div>
+            <div className="notice">
+              {t('noSearchResults')}
+              {expiredResults.length > 0 ? <span className="block-note">{t('onlyExpiredOffersForProduct')}</span> : null}
+            </div>
           ) : (
             <>
               <article className="list-item highlighted">
@@ -4594,6 +4635,45 @@ function offerCompareValue(offer) {
   return toNumber(offer.unit_price) || toNumber(offer.price)
 }
 
+function offerDayValue(value) {
+  if (!value) return null
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) {
+    return Number(`${match[1]}${match[2]}${match[3]}`)
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return Number(`${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`)
+}
+
+function getOfferValidityStatus(offer, today = new Date()) {
+  const todayValue = offerDayValue(today)
+  const validUntil = offerDayValue(offer.valid_until || offer.end_date)
+  if (!validUntil) return 'unknown'
+  if (todayValue > validUntil) return 'expired'
+  const validFrom = offerDayValue(offer.valid_from || offer.start_date)
+  if (validFrom && todayValue < validFrom) return 'unknown'
+  return 'active'
+}
+
+function formatOfferDate(value, locale = 'ro-RO') {
+  if (!value) return '-'
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) {
+    return `${match[3]}.${match[2]}.${match[1]}`
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return new Intl.DateTimeFormat(locale).format(date)
+}
+
+function offerValidityText(offer, t, locale) {
+  if (offer.valid_until || offer.end_date) {
+    return `${t('validUntil')}: ${formatOfferDate(offer.valid_until || offer.end_date, locale)}`
+  }
+  return t('offerValidityUnknown')
+}
+
 // === RESTORED FUNCTIONS ===
 
 function ShoppingListTab({ currency, items, language, t, getRecommendations, getRoute, notifications, onDelete, onSave }) {
@@ -4665,7 +4745,7 @@ function ShoppingListTab({ currency, items, language, t, getRecommendations, get
   )
 }
 
-function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, onConfirmPreview, onDeleteOffer, onPreviewChange }) {
+function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, showExpiredOffers, onConfirmPreview, onDeleteOffer, onPreviewChange, onToggleExpiredOffers }) {
   return (
     <>
       <section className="section">
@@ -4685,10 +4765,23 @@ function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, 
         currency={currency}
         language={language}
         emptyText={t('noData')}
-        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${item.valid_until || '-'} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
+        renderMeta={(item) => `${item.quantity || ''}${item.unit || ''} - ${offerValidityText(item, t, locale)} - ${item.status}${item.app_price ? ` - ${t('appPrice')}` : ''}`}
         onEdit={() => {}}
         onDelete={onDeleteOffer}
+        renderActions={(item) => (
+          <div className="badge-row">
+            <span className={`badge ${item.validityStatus === 'expired' ? 'danger' : item.validityStatus === 'unknown' ? 'muted-badge' : ''}`}>
+              {t(`offerStatus_${item.validityStatus || getOfferValidityStatus(item)}`)}
+            </span>
+          </div>
+        )}
       />
+      <section className="section compact-section">
+        <label className="checkbox">
+          <input type="checkbox" checked={showExpiredOffers} onChange={(event) => onToggleExpiredOffers(event.target.checked)} />
+          {t('showExpiredOffers')}
+        </label>
+      </section>
     </>
   )
 }
