@@ -39,7 +39,7 @@ const defaultSettings = {
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
 const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
-const BUILD_LABEL = 'KlarBudget build 2026-06-06 20:40 stable-inputs'
+const BUILD_LABEL = 'KlarBudget build 2026-06-08 19:09 fix-priority-journal'
 
 function App() {
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
