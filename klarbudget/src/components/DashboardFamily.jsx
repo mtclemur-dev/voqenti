@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { formatMoney, toNumber, variableBudgetStats, expenseKind } from '../lib/finance'
+import { FamilyWeekendWidgets } from './FamilyWeekendWidgets'
 
 export function DashboardFamily({
   t,
@@ -96,6 +97,8 @@ export function DashboardFamily({
       </button>
 
       {/* Cât putem cheltui azi */}
+      <FamilyWeekendWidgets currency={currency} language={language} />
+
       <section className="section section-daily-budget">
         <h2>💰 {t('dailyBudget')}</h2>
         <p style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--green)' }}>

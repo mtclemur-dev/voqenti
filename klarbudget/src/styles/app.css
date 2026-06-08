@@ -655,6 +655,205 @@ h3 {
   margin-top: 0.35rem;
 }
 
+.family-weekend-widgets {
+  display: grid;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.family-weekend-card,
+.trash-home-card {
+  background: #fffdf7;
+}
+
+.weekend-summary-grid,
+.trash-upcoming-grid,
+.trash-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.weekend-plan-card,
+.weekend-idea-row,
+.trash-next-card,
+.trash-settings-card {
+  border: 1px solid #dfe7df;
+  border-radius: 12px;
+  background: #fbfff8;
+  padding: 0.9rem;
+}
+
+.weekend-plan-card {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 112px;
+}
+
+.weekend-plan-card span,
+.trash-date {
+  color: #4f625d;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.weekend-plan-card strong,
+.trash-next-card strong {
+  color: #092822;
+  font-size: 1.05rem;
+}
+
+.weekend-plan-card small,
+.trash-next-card small,
+.weekend-idea-row small {
+  color: #64756f;
+}
+
+.weekend-plan-card.empty-plan {
+  background: #f8f4e8;
+  color: #5f6c64;
+}
+
+.weekend-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.weekend-form input,
+.weekend-form select,
+.trash-settings-card input,
+.trash-settings-card select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #cbd8d4;
+  border-radius: 8px;
+  background: white;
+  padding: 0.65rem 0.75rem;
+  color: #05252b;
+  font: inherit;
+}
+
+.weekend-form button {
+  grid-column: span 2;
+}
+
+.weekend-ideas-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.weekend-idea-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.weekend-idea-row > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.weekend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.weekend-actions button {
+  min-height: 36px;
+  padding: 0.45rem 0.65rem;
+}
+
+.trash-next-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.trash-next-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 22px rgba(21, 58, 51, 0.1);
+}
+
+.trash-next-card.urgent {
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.24), 0 12px 22px rgba(21, 58, 51, 0.1);
+}
+
+.trash-icon {
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.trash-next-card.urgent .trash-icon {
+  animation: trashNudge 1.6s ease-in-out infinite;
+}
+
+.trash-yellow {
+  background: #fff8d8;
+  border-color: #f4d35e;
+}
+
+.trash-blue {
+  background: #eaf5ff;
+  border-color: #8bc5ff;
+}
+
+.trash-black {
+  background: #eef1f2;
+  border-color: #9aa4a6;
+}
+
+.trash-settings-card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.trash-settings-card label {
+  display: grid;
+  gap: 0.3rem;
+  color: #53645f;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+@keyframes trashNudge {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-4deg); }
+}
+
+@media (max-width: 820px) {
+  .weekend-summary-grid,
+  .trash-upcoming-grid,
+  .trash-settings-grid,
+  .weekend-idea-row {
+    grid-template-columns: 1fr;
+  }
+
+  .weekend-form {
+    grid-template-columns: 1fr;
+  }
+
+  .weekend-form button {
+    grid-column: auto;
+  }
+
+  .trash-next-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .trash-next-card button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
 .calendar-group {
   display: grid;
   gap: 0.55rem;

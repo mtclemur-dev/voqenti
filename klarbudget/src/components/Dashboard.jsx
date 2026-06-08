@@ -1,4 +1,5 @@
 import { formatMoney } from '../lib/finance'
+import { FamilyWeekendWidgets } from './FamilyWeekendWidgets'
 
 export function Dashboard({ t, language, currency, summary, onNavigate }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
@@ -48,6 +49,7 @@ export function Dashboard({ t, language, currency, summary, onNavigate }) {
       {summary.accounts.overdraftUsed > 0 && (
         <div className="notice danger">{t('overdraftUsedWarning').replace('{amount}', formatMoney(summary.accounts.overdraftUsed, currency, locale))}</div>
       )}
+      <FamilyWeekendWidgets currency={currency} language={language} />
       <div className="metric-grid">
         {cards.map(([label, value, tone, hint, unit]) => (
           <article
