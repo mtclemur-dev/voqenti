@@ -959,6 +959,7 @@ function App() {
             expenses={expenses}
             journalEntries={journalEntries}
             accounts={accounts}
+            dbUserId={dbUserId}
             onOpenQuickSpend={(initialValues = {}) => {
               setQuickSpendForm({
                 amount: '',
@@ -1008,6 +1009,7 @@ function App() {
             language={language}
             currency={currency}
             summary={summary}
+            dbUserId={dbUserId}
             onNavigate={(nextView) => setView(nextView)}
           />
         )}

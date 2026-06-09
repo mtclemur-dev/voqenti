@@ -12,6 +12,7 @@ export function DashboardFamily({
   onOpenQuickSpend,
   onNavigate,
   pantryStats = null,
+  dbUserId,
 }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
 
@@ -98,7 +99,7 @@ export function DashboardFamily({
       </button>
 
       {/* Cât putem cheltui azi */}
-      <FamilyWeekendWidgets currency={currency} language={language} />
+      <FamilyWeekendWidgets currency={currency} language={language} dbUserId={dbUserId} />
 
       <section className="section section-daily-budget">
         <h2>💰 {t('dailyBudget')}</h2>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatMoney, isoDate, toNumber } from '../lib/finance'
+import { supabase } from '../supabaseClient'
 
 const WEEKEND_STORAGE_KEY = 'klarbudget-family-weekend-ideas'
 const TRASH_STORAGE_KEY = 'klarbudget-family-trash-schedule'
@@ -90,13 +91,14 @@ function daysUntil(dateValue) {
   return Math.round((target.getTime() - today.getTime()) / 86400000)
 }
 
-function relativeTrashDate(dateValue) {
+function relativeTrashDate(dateValue, label = '') {
   const diff = daysUntil(dateValue)
-  if (diff === null) return 'Data nesetata'
-  if (diff < 0) return `Intarziat cu ${Math.abs(diff)} zile`
-  if (diff === 0) return 'Azi'
-  if (diff === 1) return 'Maine'
-  return `Peste ${diff} zile`
+  const prefix = diff === null ? 'Data nesetată' :
+                 diff < 0 ? `Întârziat cu ${Math.abs(diff)} zile` :
+                 diff === 0 ? 'Azi' :
+                 diff === 1 ? 'Mâine' :
+                 `Peste ${diff} zile`
+  return label ? `${prefix}: ${label}` : prefix
 }
 
 function trashMeta(row) {
@@ -108,6 +110,18 @@ function nextDateForFrequency(dateValue, frequency) {
   if (frequency === 'biweekly') return addDays(dateValue, 14)
   if (frequency === 'monthly') return addMonths(dateValue, 1)
   return ''
+}
+
+function formatToDDMMYYYY(dateStr) {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  return `${parts[2]}.${parts[1]}.${parts[0]}`
+}
+
+function getAvailabilityDateText(nextDate) {
+  const dayBefore = addDays(nextDate, -1)
+  return `Poți marca scos pe ${formatToDDMMYYYY(dayBefore)}`
 }
 
 function newWeekendIdea() {
@@ -123,7 +137,7 @@ function newWeekendIdea() {
   }
 }
 
-export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
+export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro', dbUserId }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   const [ideas, setIdeas] = useState(() => readJson(WEEKEND_STORAGE_KEY, []))
   const [trashRows, setTrashRows] = useState(() => readJson(TRASH_STORAGE_KEY, defaultTrashRows()))
@@ -133,8 +147,60 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
   const [showTrashSettings, setShowTrashSettings] = useState(false)
   const [message, setMessage] = useState('')
 
-  useEffect(() => writeJson(WEEKEND_STORAGE_KEY, ideas), [ideas])
-  useEffect(() => writeJson(TRASH_STORAGE_KEY, trashRows), [trashRows])
+  // Sync Supabase settings on mount / user change
+  useEffect(() => {
+    if (!dbUserId) return
+    let active = true
+    supabase
+      .from('kb_settings')
+      .select('trash_schedule, weekend_ideas')
+      .eq('user_id', dbUserId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          console.log('Supabase fetch error for trash/ideas, using localStorage', error)
+          return
+        }
+        if (data) {
+          if (data.trash_schedule && Array.isArray(data.trash_schedule)) {
+            setTrashRows(data.trash_schedule)
+          }
+          if (data.weekend_ideas && Array.isArray(data.weekend_ideas)) {
+            setIdeas(data.weekend_ideas)
+          }
+        }
+      })
+    return () => { active = false }
+  }, [dbUserId])
+
+  const saveTrashRows = (newRows) => {
+    setTrashRows(newRows)
+    writeJson(TRASH_STORAGE_KEY, newRows)
+    if (dbUserId) {
+      supabase
+        .from('kb_settings')
+        .update({ trash_schedule: newRows })
+        .eq('user_id', dbUserId)
+        .then(({ error }) => {
+          if (error) console.log('Supabase settings update error for trash', error)
+        })
+    }
+  }
+
+  const saveIdeas = (newIdeas) => {
+    setIdeas(newIdeas)
+    writeJson(WEEKEND_STORAGE_KEY, newIdeas)
+    if (dbUserId) {
+      supabase
+        .from('kb_settings')
+        .update({ weekend_ideas: newIdeas })
+        .eq('user_id', dbUserId)
+        .then(({ error }) => {
+          if (error) console.log('Supabase settings update error for ideas', error)
+        })
+    }
+  }
 
   const mainPlan = ideas.find((idea) => idea.status === 'main')
   const backupPlan = ideas.find((idea) => idea.status === 'backup')
@@ -151,40 +217,52 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
   const saveIdea = (event) => {
     event.preventDefault()
     if (!form.title.trim()) return
-    setIdeas((current) => {
-      const exists = current.some((item) => item.id === form.id)
-      const normalized = { ...form, title: form.title.trim() }
-      return exists ? current.map((item) => (item.id === form.id ? normalized : item)) : [normalized, ...current]
-    })
+    const exists = ideas.some((item) => item.id === form.id)
+    const normalized = { ...form, title: form.title.trim() }
+    const updated = exists 
+      ? ideas.map((item) => (item.id === form.id ? normalized : item)) 
+      : [normalized, ...ideas]
+    saveIdeas(updated)
     setForm(newWeekendIdea())
     setShowForm(false)
     setShowIdeas(true)
   }
 
   const updateIdeaStatus = (idea, status) => {
-    setIdeas((current) => current.map((item) => {
+    const updated = ideas.map((item) => {
       if (status === 'main' && item.status === 'main') return { ...item, status: 'idea' }
       if (status === 'backup' && item.status === 'backup') return { ...item, status: 'idea' }
       return item.id === idea.id ? { ...item, status } : item
-    }))
+    })
+    saveIdeas(updated)
   }
 
   const deleteIdea = (idea) => {
-    setIdeas((current) => current.filter((item) => item.id !== idea.id))
+    const updated = ideas.filter((item) => item.id !== idea.id)
+    saveIdeas(updated)
   }
 
   const updateTrashRow = (id, patch) => {
-    setTrashRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+    const updated = trashRows.map((row) => (row.id === id ? { ...row, ...patch } : row))
+    saveTrashRows(updated)
   }
 
   const markTrashDone = (row) => {
     const nextDate = nextDateForFrequency(row.nextDate || isoDate(new Date()), row.frequency)
-    updateTrashRow(row.id, {
+    const updated = trashRows.map((item) => (item.id === row.id ? {
+      ...item,
       completedAt: isoDate(new Date()),
-      nextDate: nextDate || row.nextDate,
-    })
-    setMessage(nextDate ? `Am notat. Următoarea dată: ${relativeTrashDate(nextDate)}.` : 'Setează următoarea dată manual.')
-    window.setTimeout(() => setMessage(''), 3500)
+      nextDate: nextDate || '', // Empty if manual
+    } : item))
+
+    saveTrashRows(updated)
+
+    if (row.frequency === 'manual') {
+      setMessage('Gunoiul a fost marcat ca scos. Setează următoarea dată manual.')
+    } else {
+      setMessage(nextDate ? `Am notat. Următoarea dată: ${relativeTrashDate(nextDate)}.` : 'Setează următoarea dată manual.')
+    }
+    window.setTimeout(() => setMessage(''), 4500)
   }
 
   return (
@@ -280,12 +358,23 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro' }) {
             <article key={row.id} className={`trash-next-card ${row.meta.className} ${row.diff <= 1 ? 'urgent' : ''}`}>
               <div className="trash-icon" aria-hidden="true">{row.meta.icon}</div>
               <div className="trash-copy">
-                <span className="trash-date">{relativeTrashDate(row.nextDate)}</span>
+                <span className="trash-date">{relativeTrashDate(row.nextDate, row.meta.label)}</span>
                 <strong className="trash-title">{row.meta.label}</strong>
                 <span className="trash-description">{row.meta.hint}</span>
-                <small>Următoarea ridicare: {row.nextDate}</small>
+                <small>Următoarea ridicare: {formatToDDMMYYYY(row.nextDate)}</small>
+                {row.diff > 1 && (
+                  <small style={{ color: '#ef4444', display: 'block', marginTop: '0.25rem', fontWeight: 'bold' }}>
+                    {getAvailabilityDateText(row.nextDate)}
+                  </small>
+                )}
               </div>
-              <button type="button" onClick={() => markTrashDone(row)}>Am scos gunoiul</button>
+              <button 
+                type="button" 
+                disabled={row.diff > 1}
+                onClick={() => markTrashDone(row)}
+              >
+                {row.diff > 1 ? 'Disponibil cu o zi înainte' : row.diff === 1 ? 'Pregătit pentru mâine' : 'Am scos gunoiul'}
+              </button>
             </article>
           ))}
         </div>
