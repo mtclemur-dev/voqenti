@@ -7,7 +7,6 @@ import { DebtPlan } from './components/DebtPlan'
 import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
-import { FamilyTokenEconomy } from './components/FamilyTokenEconomy'
 import { KidsZone } from './components/KidsZone'
 import { DashboardFamily } from './components/DashboardFamily'
 import { FamilyPayments } from './components/FamilyPayments'
@@ -908,7 +907,7 @@ function App() {
             </button>
             <button
               type="button"
-              className={['incomes', 'expenses', 'debts', 'accounts'].includes(view) ? 'active' : ''}
+              className={['incomes', 'expenses', 'debts', 'plan', 'accounts'].includes(view) ? 'active' : ''}
               onClick={() => setView('incomes')}
             >
               💰 {t('navGroup_budget')}
@@ -930,8 +929,8 @@ function App() {
                 </button>
               ))
             }
-            {['incomes', 'expenses', 'debts', 'accounts'].includes(view) &&
-              ['incomes', 'expenses', 'debts', 'accounts'].map((item) => (
+            {['incomes', 'expenses', 'debts', 'plan', 'accounts'].includes(view) &&
+              ['incomes', 'expenses', 'debts', 'plan', 'accounts'].map((item) => (
                 <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
                   {t(item)}
                 </button>

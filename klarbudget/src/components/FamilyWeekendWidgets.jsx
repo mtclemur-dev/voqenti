@@ -146,6 +146,17 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro', dbUser
   const [showIdeas, setShowIdeas] = useState(false)
   const [showTrashSettings, setShowTrashSettings] = useState(false)
   const [message, setMessage] = useState('')
+  const [syncNotice, setSyncNotice] = useState('')
+
+  const showSyncError = (action, error) => {
+    const detail = error?.message || 'Eroare necunoscută'
+    const migrationHint = /trash_schedule|weekend_ideas|column/i.test(detail)
+      ? ' Rulează în Supabase: KB_MIGRATION_TRASH_WEEKEND.sql.'
+      : ''
+    setSyncNotice(
+      `${action} nu s-a salvat în cloud (${detail}). Datele rămân doar pe acest dispozitiv.${migrationHint}`,
+    )
+  }
 
   // Sync Supabase settings on mount / user change
   useEffect(() => {
@@ -159,15 +170,18 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro', dbUser
       .then(({ data, error }) => {
         if (!active) return
         if (error) {
-          console.log('Supabase fetch error for trash/ideas, using localStorage', error)
+          showSyncError('Încărcarea gunoi/weekend', error)
           return
         }
+        setSyncNotice('')
         if (data) {
           if (data.trash_schedule && Array.isArray(data.trash_schedule)) {
             setTrashRows(data.trash_schedule)
+            writeJson(TRASH_STORAGE_KEY, data.trash_schedule)
           }
           if (data.weekend_ideas && Array.isArray(data.weekend_ideas)) {
             setIdeas(data.weekend_ideas)
+            writeJson(WEEKEND_STORAGE_KEY, data.weekend_ideas)
           }
         }
       })
@@ -177,29 +191,34 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro', dbUser
   const saveTrashRows = (newRows) => {
     setTrashRows(newRows)
     writeJson(TRASH_STORAGE_KEY, newRows)
-    if (dbUserId) {
-      supabase
-        .from('kb_settings')
-        .update({ trash_schedule: newRows })
-        .eq('user_id', dbUserId)
-        .then(({ error }) => {
-          if (error) console.log('Supabase settings update error for trash', error)
-        })
-    }
+    if (!dbUserId) return
+    supabase
+      .from('kb_settings')
+      .update({ trash_schedule: newRows })
+      .eq('user_id', dbUserId)
+      .then(({ error }) => {
+        if (error) {
+          showSyncError('Salvarea programului de gunoi', error)
+          return
+        }
+        setSyncNotice('')
+      })
   }
 
   const saveIdeas = (newIdeas) => {
     setIdeas(newIdeas)
     writeJson(WEEKEND_STORAGE_KEY, newIdeas)
-    if (dbUserId) {
-      supabase
-        .from('kb_settings')
-        .update({ weekend_ideas: newIdeas })
-        .eq('user_id', dbUserId)
-        .then(({ error }) => {
-          if (error) console.log('Supabase settings update error for ideas', error)
-        })
-    }
+    if (!dbUserId) return
+    supabase
+      .from('kb_settings')
+      .update({ weekend_ideas: newIdeas })
+      .then(({ error }) => {
+        if (error) {
+          showSyncError('Salvarea planului de weekend', error)
+          return
+        }
+        setSyncNotice('')
+      })
   }
 
   const mainPlan = ideas.find((idea) => idea.status === 'main')
@@ -267,6 +286,7 @@ export function FamilyWeekendWidgets({ currency = 'EUR', language = 'ro', dbUser
 
   return (
     <div className="family-weekend-widgets">
+      {syncNotice && <div className="notice danger">{syncNotice}</div>}
       <section className="section family-weekend-card">
         <div className="section-title">
           <div>
