@@ -1693,6 +1693,13 @@ function SmartShopping({
     return [...seen.values()]
   }, [offerPreview, activeOffers])
 
+  // ── Navigare nouă: 4 taburi principale ────────────────────────
+  const SHOPPING_ADMIN_TABS = ['receipts', 'import', 'offers', 'stores', 'history', 'sources']
+  const activeMainShoppingTab =
+    SHOPPING_ADMIN_TABS.includes(tab) ? 'admin' :
+    (tab === 'best' || tab === 'search') ? 'smart' :
+    tab
+
   return (
     <>
       <section className="section">
@@ -1703,37 +1710,111 @@ function SmartShopping({
           </div>
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
-        <div className="tabbar inline-tabs">
-          {['list', 'kaufda', 'receipts', 'import', 'offers', 'best', 'stores', 'history', 'sources', 'search'].map((item) => (
-            <button type="button" key={item} className={tab === item ? 'active' : ''} onClick={() => onTabChange(item)}>{t(`shopping_${item}`)}</button>
+        <div className="tabbar inline-tabs" style={{ flexWrap: 'wrap' }}>
+          {[
+            { key: 'list',   label: '🛒 Lista mea' },
+            { key: 'kaufda', label: '🏷️ Oferte KaufDA' },
+            { key: 'smart',  label: '⭐ Merită acum' },
+            { key: 'admin',  label: '⚙️ Import / Admin' },
+          ].map(({ key, label }) => (
+            <button
+              type="button"
+              key={key}
+              className={activeMainShoppingTab === key ? 'active' : ''}
+              onClick={() => onTabChange(key === 'admin' ? 'import' : key)}
+            >
+              {label}
+            </button>
           ))}
         </div>
       </section>
 
+      {/* Tab 1: Lista mea */}
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
+
+      {/* Tab 2: Oferte KaufDA */}
       {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
-      {tab === 'receipts' && <ReceiptsTab currency={currency} locale={locale} receiptItems={receiptItems} receipts={receipts} onSaveReceipt={onSaveReceipt} />}
-      {tab === 'import' && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
-      {tab === 'offers' && (
-        <OfferPreviewTab
-          currency={currency}
-          language={language}
-          locale={locale}
-          preview={offerPreview}
-          savedOffers={visibleSavedOffers}
-          t={t}
-          showExpiredOffers={showExpiredOffers}
-          onConfirmPreview={onConfirmPreview}
-          onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)}
-          onPreviewChange={onPreviewChange}
-          onToggleExpiredOffers={setShowExpiredOffers}
-        />
+
+      {/* Tab 3: Merită acum (unifică: best + search) */}
+      {(tab === 'smart' || tab === 'best' || tab === 'search') && (
+        <>
+          <section className="section">
+            <div className="section-title">
+              <div>
+                <h2>⭐ Merită cumpărat acum</h2>
+                <p className="muted">Caută un produs şi compară-l cu ofertele active şi istoricul de prețuri.</p>
+              </div>
+            </div>
+            {bestPrices.length === 0 && (
+              <div className="notice">
+                💡 Adaugă produse în lista ta şi importă oferte KaufDA pentru a vedea recomandări personalizate.
+              </div>
+            )}
+            <div className="notice" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+              🔮 În viitor, KlarBudget va putea compara produse urmărite cu oferte active şi prețuri online.
+            </div>
+          </section>
+          <SearchOffersTab activeOffers={searchableOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />
+          {bestPrices.length > 0 && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
+        </>
       )}
-      {tab === 'best' && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
-      {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
-      {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
-      {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
-      {tab === 'search' && <SearchOffersTab activeOffers={searchableOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
+
+      {/* Tab 4: Import / Administrare (unifică: receipts, import, offers, stores, history, sources) */}
+      {(tab === 'admin' || SHOPPING_ADMIN_TABS.includes(tab)) && (
+        <>
+          <section className="section">
+            <div className="section-title">
+              <div>
+                <h2>⚙️ Import / Administrare</h2>
+                <p className="muted">Instrumente tehnice pentru importul de oferte şi gestionarea surselor.</p>
+              </div>
+            </div>
+            <div className="notice" style={{ fontSize: '0.85rem' }}>
+              ⚠️ Importul PDF este experimental. Dacă prospectul nu este citit corect, foloseşte import text manual.
+            </div>
+            <div className="tabbar inline-tabs" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
+              {[
+                { key: 'import',   label: '📥 Import prospecte' },
+                { key: 'offers',   label: '📋 Oferte extrase' },
+                { key: 'receipts', label: '🧾 Bonuri / CEC-uri' },
+                { key: 'stores',   label: '🏦 Magazine' },
+                { key: 'history',  label: '📊 Istoric prețuri' },
+                { key: 'sources',  label: '🔗 Surse' },
+              ].map(({ key, label }) => (
+                <button
+                  type="button"
+                  key={key}
+                  className={tab === key || (tab === 'admin' && key === 'import') ? 'active' : 'secondary'}
+                  onClick={() => onTabChange(key)}
+                  style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', minHeight: 'auto', borderRadius: '8px' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
+          {(tab === 'import' || tab === 'admin') && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
+          {tab === 'offers' && (
+            <OfferPreviewTab
+              currency={currency}
+              language={language}
+              locale={locale}
+              preview={offerPreview}
+              savedOffers={visibleSavedOffers}
+              t={t}
+              showExpiredOffers={showExpiredOffers}
+              onConfirmPreview={onConfirmPreview}
+              onDeleteOffer={(item) => onDelete('kb_weekly_offers', item)}
+              onPreviewChange={onPreviewChange}
+              onToggleExpiredOffers={setShowExpiredOffers}
+            />
+          )}
+          {tab === 'receipts' && <ReceiptsTab currency={currency} locale={locale} receiptItems={receiptItems} receipts={receipts} onSaveReceipt={onSaveReceipt} />}
+          {tab === 'stores' && <StoreRecommendationsTab currency={currency} locale={locale} recommendations={storeRecommendations} stores={stores} t={t} onSaveStore={onSaveStore} />}
+          {tab === 'history' && <ShoppingHistoryTab currency={currency} history={priceHistory} locale={locale} analytics={getPriceAnalytics()} t={t} />}
+          {tab === 'sources' && <OfferSourcesTab sources={sources} t={t} onDelete={(item) => onDelete('kb_offer_sources', item)} onSave={onSaveStore} />}
+        </>
+      )}
     </>
   )
 }
