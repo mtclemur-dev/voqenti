@@ -2564,6 +2564,467 @@ h3 {
 }
 
 /* ==========================================================================
+   DEBARA / REZERVĂ MODULE
+   ========================================================================== */
+
+.pantry-wrapper {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 1120px);
+  margin: 0 auto;
+}
+
+/* Toast notificare */
+.pantry-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #065f46;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  z-index: 9999;
+  box-shadow: 0 8px 24px rgba(6, 95, 70, 0.3);
+  animation: pantry-toast-in 0.25s ease;
+}
+
+@keyframes pantry-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Summary cards 4 col */
+.pantry-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .pantry-summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pantry-summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 1rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pantry-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.1);
+}
+
+.pantry-summary-card.pantry-alert {
+  animation: pantry-pulse-border 2.5s ease-in-out infinite;
+}
+
+@keyframes pantry-pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(194, 65, 12, 0); }
+  50%       { box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.15); }
+}
+
+.pantry-summary-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.pantry-summary-card strong {
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.pantry-summary-card span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* Card culori */
+.pantry-card-total    { background: #f8fffe; border-color: #b2f0e8; }
+.pantry-card-below    { background: #fff7f3; border-color: #fcd9b0; }
+.pantry-card-expiring { background: #fffdf0; border-color: #fde68a; }
+.pantry-card-offer    { background: #f0f9ff; border-color: #bae6fd; }
+
+/* Filtre bar */
+.pantry-filters {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pantry-filters input,
+.pantry-filters select {
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+/* Grid produse */
+.pantry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 0;
+}
+
+@media (max-width: 480px) {
+  .pantry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Card produs */
+.pantry-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffefa;
+  padding: 1rem;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.pantry-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(15, 118, 110, 0.1);
+}
+
+.pantry-card-animate {
+  animation: pantry-fade-in 0.3s ease both;
+}
+
+@keyframes pantry-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Card header */
+.pantry-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.pantry-cat-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.pantry-card:hover .pantry-cat-icon {
+  transform: scale(1.12);
+}
+
+.pantry-card-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.pantry-card-title strong {
+  font-size: 0.97rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status badge */
+.pantry-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.pantry-badge-pulse {
+  animation: pantry-badge-glow 2s ease-in-out infinite;
+}
+
+@keyframes pantry-badge-glow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+/* Progress bar */
+.pantry-card-qty {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.87rem;
+}
+
+.pantry-progress-bar {
+  height: 6px;
+  background: #e8eee4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pantry-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* Meta info */
+.pantry-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.pantry-meta-warn {
+  color: #92400e;
+  font-weight: 700;
+}
+
+.pantry-offer-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+/* Acțiuni card */
+.pantry-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+  margin-top: 0.1rem;
+}
+
+.pantry-qty-btn {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0.3rem 0.7rem;
+  font-size: 1.1rem;
+  font-weight: 900;
+  border-radius: 8px;
+  background: #e6f4ea;
+  color: #065f46;
+  border: 1px solid #bbf7d0;
+  box-shadow: none;
+}
+
+.pantry-qty-btn:hover {
+  background: #d1fae5;
+}
+
+.pantry-qty-btn.pantry-qty-plus {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+.pantry-qty-btn.pantry-qty-plus:hover {
+  background: #0d9488;
+}
+
+.pantry-action-btn {
+  min-height: 36px;
+  padding: 0.3rem 0.55rem;
+  font-size: 1rem;
+}
+
+/* Modal overlay */
+.pantry-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 30, 25, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  animation: pantry-overlay-in 0.2s ease;
+}
+
+@keyframes pantry-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.pantry-modal {
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 1.5rem;
+  width: min(100%, 520px);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(10, 30, 25, 0.22);
+  animation: pantry-modal-in 0.25s ease;
+}
+
+.pantry-modal-sm {
+  width: min(100%, 340px);
+}
+
+.pantry-modal-lg {
+  width: min(100%, 660px);
+}
+
+@keyframes pantry-modal-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.pantry-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.pantry-modal-header h2 {
+  font-size: 1.1rem;
+}
+
+/* Formular modal */
+.pantry-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.pantry-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 400px) {
+  .pantry-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pantry-form-checks {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Produse recomandate */
+.pantry-recommended-list {
+  display: grid;
+  gap: 1rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.pantry-recommended-category {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pantry-recommended-cat-title {
+  font-weight: 900;
+  font-size: 0.88rem;
+  color: var(--green);
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pantry-recommended-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--ink);
+  padding: 0.25rem 0;
+}
+
+.pantry-recommended-item input {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.pantry-recommended-item small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+/* Card Debara în DashboardFamily */
+.pantry-family-card {
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.pantry-family-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(15, 118, 110, 0.12);
+}
+
+.pantry-family-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.pantry-family-stat {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pantry-family-stat.warn {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.pantry-family-stat.alert {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.pantry-family-stat.offer {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+/* Section styling */
+.pantry-section {
+  background: linear-gradient(135deg, #fffdf7 0%, #f0fdf9 100%);
+  border-color: #d1fae5;
+}
+
+/* ==========================================================================
    PREFERS REDUCED MOTION SUPPORT
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
@@ -2574,6 +3035,3 @@ h3 {
     scroll-behavior: auto !important;
   }
 }
-
-
-

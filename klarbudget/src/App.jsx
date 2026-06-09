@@ -12,6 +12,7 @@ import { KidsZone } from './components/KidsZone'
 import { DashboardFamily } from './components/DashboardFamily'
 import { FamilyPayments } from './components/FamilyPayments'
 import { FamilyFood } from './components/FamilyFood'
+import { Pantry } from './components/Pantry'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
 import { buildInsights } from './lib/insights'
@@ -884,6 +885,13 @@ function App() {
           >
             📅 {t('calendar')}
           </button>
+          <button
+            type="button"
+            className={view === 'pantry' ? 'active' : ''}
+            onClick={() => setView('pantry')}
+          >
+            🏺 Debara
+          </button>
         </nav>
       ) : (
         <>
@@ -904,7 +912,7 @@ function App() {
             </button>
             <button
               type="button"
-              className={['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) ? 'active' : ''}
+              className={['journal', 'shopping', 'workAbsence', 'calendar', 'pantry'].includes(view) ? 'active' : ''}
               onClick={() => setView('journal')}
             >
               📋 {t('navGroup_activity')}
@@ -926,10 +934,10 @@ function App() {
                 </button>
               ))
             }
-            {['journal', 'shopping', 'workAbsence', 'calendar'].includes(view) &&
-              ['journal', 'shopping', 'workAbsence', 'calendar'].map((item) => (
+            {['journal', 'shopping', 'workAbsence', 'calendar', 'pantry'].includes(view) &&
+              ['journal', 'shopping', 'workAbsence', 'calendar', 'pantry'].map((item) => (
                 <button type="button" className={view === item ? 'active' : ''} onClick={() => setView(item)} key={item}>
-                  {t(item)}
+                  {item === 'pantry' ? '🏺 Debara' : t(item)}
                 </button>
               ))
             }
@@ -1360,6 +1368,7 @@ function App() {
           />
         )}
         {view === 'kids' && <KidsZone user={user} familyOwnerId={familyOwnerId} />}
+        {view === 'pantry' && <Pantry dbUserId={dbUserId} />}
       </main>
 
       {/* Quick Spend Modal for Mod Familie */}

@@ -11,6 +11,7 @@ export function DashboardFamily({
   journalEntries = [],
   onOpenQuickSpend,
   onNavigate,
+  pantryStats = null,
 }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
 
@@ -201,6 +202,34 @@ export function DashboardFamily({
           ℹ️ {t('dispoExplanation')}
         </p>
       </section>
+
+      {/* Card Debara / Rezervă (opțional — apare doar dacă pantryStats e furnizat) */}
+      {pantryStats && (
+        <section
+          className="section pantry-family-card"
+          onClick={() => onNavigate('pantry')}
+          style={{ background: 'linear-gradient(135deg, #fffdf7 0%, #f0fdf9 100%)', borderColor: '#d1fae5' }}
+        >
+          <div className="section-title">
+            <h2>🏺 Debara / Rezervă</h2>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--green)' }}>→ Vezi tot</span>
+          </div>
+          <div className="pantry-family-stats">
+            {pantryStats.belowMin > 0 && (
+              <span className="pantry-family-stat warn">⚠️ {pantryStats.belowMin} sub minim</span>
+            )}
+            {pantryStats.expiringSoon > 0 && (
+              <span className="pantry-family-stat alert">⏳ {pantryStats.expiringSoon} expiră curând</span>
+            )}
+            {pantryStats.buyOnOffer > 0 && (
+              <span className="pantry-family-stat offer">🏷️ {pantryStats.buyOnOffer} la ofertă</span>
+            )}
+            {pantryStats.belowMin === 0 && pantryStats.expiringSoon === 0 && (
+              <span className="pantry-family-stat" style={{ color: 'var(--green)' }}>✅ Totul e în ordine</span>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
