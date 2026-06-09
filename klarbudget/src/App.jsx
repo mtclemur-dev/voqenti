@@ -86,6 +86,7 @@ function App() {
   const [shoppingSchemaReady, setShoppingSchemaReady] = useState(true)
   const [utilityReadings, setUtilityReadings] = useState([])
   const [utilitySchemaReady, setUtilitySchemaReady] = useState(true)
+  const [pantryItems, setPantryItems] = useState([])
   const [settings, setSettings] = useState(defaultSettings)
   const [settingsDraft, setSettingsDraft] = useState(defaultSettings)
   const [currency, setCurrency] = useState('EUR')
@@ -180,7 +181,7 @@ function App() {
     if (!user || !familyOwnerId) return
     setLoading(true)
 
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes, pantryRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
@@ -200,6 +201,7 @@ function App() {
       supabase.from('kb_receipts').select('*').eq('user_id', familyOwnerId).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('kb_receipt_items').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
       supabase.from('kb_utility_readings').select('*').eq('user_id', familyOwnerId).order('reading_date', { ascending: false }),
+      supabase.from('kb_pantry_items').select('*').eq('user_id', familyOwnerId).eq('active', true).order('created_at', { ascending: false }),
     ])
 
     const metadataRole = user.user_metadata?.account_role === 'child' ? 'child' : 'parent'
@@ -258,6 +260,7 @@ function App() {
     setShoppingSchemaReady(!shoppingListRes.error && !offersRes.error && !storesRes.error && !sourcesRes.error && !receiptsRes.error && !receiptItemsRes.error)
     setUtilityReadings(utilityReadingsRes.data || [])
     setUtilitySchemaReady(!utilityReadingsRes.error)
+    setPantryItems(pantryRes?.data || [])
     setLoading(false)
   }, [language, user, familyOwnerId])
 
@@ -1049,6 +1052,7 @@ function App() {
             shoppingList={shoppingList}
             stores={stores}
             sources={offerSources}
+            pantryItems={pantryItems}
             tab={shoppingTab}
             t={t}
             onConfirmPreview={confirmOfferPreview}
@@ -1651,6 +1655,7 @@ function SmartShopping({
   shoppingList,
   stores,
   sources,
+  pantryItems = [],
   tab,
   t,
   onConfirmPreview,
@@ -1668,6 +1673,7 @@ function SmartShopping({
   onImportOffer
 }) {
   const [showExpiredOffers, setShowExpiredOffers] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const offersWithValidity = useMemo(
     () => offers.map((offer) => ({ ...offer, validityStatus: getOfferValidityStatus(offer) })),
     [offers],
@@ -1682,6 +1688,117 @@ function SmartShopping({
   const bestPrices = bestShoppingMatches(shoppingList, activeOffers, journalEntries)
   const storeRecommendations = buildStoreRecommendations(bestPrices, stores)
   const priceHistory = buildShoppingHistory(journalEntries)
+
+  const recommendations = useMemo(() => {
+    const list = []
+    const seenKeys = new Set()
+
+    // 1. Compute product frequencies from history
+    const counts = {}
+    const addCount = (name) => {
+      if (!name) return
+      const n = name.trim().toLowerCase()
+      if (n.length < 3 || n.includes('bon ') || n === 'bon' || n.includes('cumparaturi') || n === 'diverse') return
+      counts[n] = (counts[n] || 0) + 1
+    }
+
+    if (receiptItems) receiptItems.forEach(item => addCount(item.product_name))
+    if (priceHistory) priceHistory.forEach(item => addCount(item.product))
+    if (journalEntries) {
+      journalEntries.forEach(item => {
+        if (item.product_name && item.product_name !== 'Bon cumparaturi') {
+          addCount(item.product_name)
+        }
+      })
+    }
+
+    // 2. Map active offers to match list/pantry/frequent
+    activeOffers.forEach((offer) => {
+      const offerKey = `${offer.product_name.toLowerCase()}|${offer.store_name.toLowerCase()}|${offer.price}`
+      if (seenKeys.has(offerKey)) return
+
+      // A. Shopping List match
+      const listMatch = shoppingList.find((item) => productMatch(item.product_name, offer.product_name).match)
+      if (listMatch) {
+        list.push({
+          offer,
+          product: offer.product_name,
+          store: offer.store_name,
+          price: offer.price,
+          unit_price: offer.unit_price,
+          unit: offer.unit,
+          valid_until: offer.valid_until,
+          reason: 'Este în Lista mea'
+        })
+        seenKeys.add(offerKey)
+        return
+      }
+
+      // B. Pantry match
+      const pantryMatch = pantryItems.find((item) => productMatch(item.name, offer.product_name).match)
+      if (pantryMatch) {
+        const isSubMin = (Number(pantryMatch.quantity) || 0) < (Number(pantryMatch.min_quantity) || 1)
+        if (isSubMin) {
+          list.push({
+            offer,
+            product: offer.product_name,
+            store: offer.store_name,
+            price: offer.price,
+            unit_price: offer.unit_price,
+            unit: offer.unit,
+            valid_until: offer.valid_until,
+            reason: 'Este sub minim în Debara'
+          })
+          seenKeys.add(offerKey)
+          return
+        }
+
+        if (pantryMatch.buy_on_offer) {
+          list.push({
+            offer,
+            product: offer.product_name,
+            store: offer.store_name,
+            price: offer.price,
+            unit_price: offer.unit_price,
+            unit: offer.unit,
+            valid_until: offer.valid_until,
+            reason: 'Cumpără când este ofertă'
+          })
+          seenKeys.add(offerKey)
+          return
+        }
+      }
+
+      // C. Frequent product match
+      const frequentMatch = Object.keys(counts).find(n => counts[n] >= 2 && productMatch(n, offer.product_name).match)
+      if (frequentMatch) {
+        list.push({
+          offer,
+          product: offer.product_name,
+          store: offer.store_name,
+          price: offer.price,
+          unit_price: offer.unit_price,
+          unit: offer.unit,
+          valid_until: offer.valid_until,
+          reason: 'Produs frecvent'
+        })
+        seenKeys.add(offerKey)
+        return
+      }
+    })
+
+    return list
+  }, [activeOffers, shoppingList, pantryItems, receiptItems, priceHistory, journalEntries])
+
+  const filteredRecs = useMemo(() => {
+    if (!searchQuery.trim()) return recommendations
+    const q = searchQuery.toLowerCase()
+    return recommendations.filter((item) =>
+      item.product.toLowerCase().includes(q) ||
+      item.store.toLowerCase().includes(q) ||
+      item.reason.toLowerCase().includes(q)
+    )
+  }, [recommendations, searchQuery])
 
   const searchableOffers = useMemo(() => {
     const combined = [...offerPreview, ...activeOffers]
@@ -1735,27 +1852,171 @@ function SmartShopping({
       {/* Tab 2: Oferte KaufDA */}
       {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
 
-      {/* Tab 3: Merită acum (unifică: best + search) */}
+      {/* Tab 3: Merită acum */}
       {(tab === 'smart' || tab === 'best' || tab === 'search') && (
         <>
           <section className="section">
             <div className="section-title">
               <div>
                 <h2>⭐ Merită cumpărat acum</h2>
-                <p className="muted">Caută un produs şi compară-l cu ofertele active şi istoricul de prețuri.</p>
+                <p className="muted">Recomandări pe baza listei, Debarei și ofertelor active.</p>
               </div>
             </div>
-            {bestPrices.length === 0 && (
-              <div className="notice">
-                💡 Adaugă produse în lista ta şi importă oferte KaufDA pentru a vedea recomandări personalizate.
+
+            <div className="pantry-notice-card" style={{ background: '#f0fdfa', border: '1px solid #b2f0e8', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '1.25rem' }}>🔮</span>
+                <span style={{ fontWeight: '500', color: '#0f766e', fontSize: '0.92rem' }}>
+                  În viitor, KlarBudget va putea compara produsele din Debara și lista de cumpărături cu oferte active și prețuri online.
+                </span>
+              </div>
+              {pantryItems.length === 0 && (
+                <div style={{ marginTop: '0.5rem', color: '#6b7280', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', borderTop: '1px dashed #b2f0e8', paddingTop: '0.5rem' }}>
+                  <span>💡</span>
+                  <span>Adaugă produse în Debara ca să primești recomandări mai bune.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="search-box-container" style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#374151' }}>
+                Caută produs
+              </label>
+              <input
+                type="search"
+                className="full-width-search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Scrie numele unui produs (de ex. Lapte, Apă, Orez...)"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.85rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '0.95rem'
+                }}
+              />
+            </div>
+
+            <div className="section-title" style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
+              <h3>📋 Recomandări active</h3>
+            </div>
+
+            {filteredRecs.length === 0 ? (
+              <div className="notice" style={{ padding: '2rem', textAlign: 'center', background: '#f9fafb', borderRadius: '12px', color: '#6b7280' }}>
+                {searchQuery.trim() ? (
+                  <>🔍 Nu s-au găsit recomandări potrivite pentru „<strong>{searchQuery}</strong>”.</>
+                ) : (
+                  <>💡 Nu există recomandări momentan. Adaugă produse în Debara, Lista mea sau încarcă oferte active.</>
+                )}
+              </div>
+            ) : (
+              <div className="recommendations-grid" style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '1rem',
+                marginBottom: '2rem'
+              }}>
+                {filteredRecs.map((rec, index) => {
+                  const hasValidUntil = !!rec.valid_until
+                  return (
+                    <article className="recommendation-card" key={`${rec.product}-${rec.store}-${index}`} style={{
+                      background: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      transition: 'transform 0.2s, box-shadow 0.2s'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                          <span className="badge" style={{
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '20px',
+                            background: rec.reason === 'Este în Lista mea' ? '#f0fdf4' :
+                                        rec.reason === 'Este sub minim în Debara' ? '#fff7ed' :
+                                        rec.reason === 'Cumpără când este ofertă' ? '#eff6ff' : '#f5f3ff',
+                            color: rec.reason === 'Este în Lista mea' ? '#166534' :
+                                   rec.reason === 'Este sub minim în Debara' ? '#c2410c' :
+                                   rec.reason === 'Cumpără când este ofertă' ? '#1d4ed8' : '#6d28d9',
+                            border: '1px solid currentColor'
+                          }}>
+                            {rec.reason}
+                          </span>
+                          <span style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>⭐ Recomandat</span>
+                        </div>
+                        <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1.05rem', fontWeight: '700', color: '#111827' }}>
+                          {rec.product}
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.88rem', color: '#4b5563' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: '#9ca3af' }}>🏪 Magazin:</span>
+                            <strong style={{ color: '#1f2937' }}>{rec.store}</strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <span style={{ color: '#9ca3af' }}>💰 Preț:</span>
+                            <span style={{ color: '#059669', fontWeight: '700', fontSize: '1.05rem' }}>
+                              {formatMoney(rec.price, currency, locale)}
+                              {rec.unit_price ? (
+                                <small style={{ fontWeight: 'normal', color: '#6b7280', fontSize: '0.78rem', marginLeft: '0.25rem' }}>
+                                  ({formatMoney(rec.unit_price, currency, locale)}/{normalizedUnitLabel(rec.unit)})
+                                </small>
+                              ) : null}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {hasValidUntil && (
+                        <div style={{
+                          marginTop: '0.75rem',
+                          paddingTop: '0.75rem',
+                          borderTop: '1px dashed #e5e7eb',
+                          fontSize: '0.78rem',
+                          color: '#ef4444',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          fontWeight: '600'
+                        }}>
+                          <span>⏳ Valabil până la:</span>
+                          <span>{rec.valid_until}</span>
+                        </div>
+                      )}
+                    </article>
+                  )
+                })}
               </div>
             )}
-            <div className="notice" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              🔮 În viitor, KlarBudget va putea compara produse urmărite cu oferte active şi prețuri online.
-            </div>
+
+            {/* Secțiune collapsible pentru funcții vechi */}
+            <details style={{
+              background: '#f9fafb',
+              border: '1px solid #e5e7eb',
+              borderRadius: '12px',
+              padding: '0.75rem 1rem',
+              marginTop: '2rem'
+            }}>
+              <summary style={{
+                cursor: 'pointer',
+                fontWeight: '600',
+                color: '#4b5563',
+                fontSize: '0.9rem',
+                outline: 'none',
+                userSelect: 'none'
+              }}>
+                ⚙️ Funcții vechi / experimental (Caută preț / Cele mai bune prețuri)
+              </summary>
+              <div style={{ marginTop: '1rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+                <SearchOffersTab activeOffers={searchableOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />
+                {bestPrices.length > 0 && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
+              </div>
+            </details>
           </section>
-          <SearchOffersTab activeOffers={searchableOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />
-          {bestPrices.length > 0 && <BestPricesTab bestPrices={bestPrices} offers={activeOffers} allOffers={offersWithValidity} currency={currency} locale={locale} t={t} />}
         </>
       )}
 
