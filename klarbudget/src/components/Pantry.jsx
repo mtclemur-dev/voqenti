@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
+import { productMatch, getOfferValidityStatus } from '../lib/shoppingHelpers'
 
 // ============================================================
 // Constante
@@ -123,6 +124,8 @@ const EMPTY_FORM = {
   preferred_store: '',
   notes: '',
   buy_on_offer: false,
+  important_for_reserve: false,
+  search_keywords: '',
   active: true,
 }
 
@@ -130,7 +133,7 @@ const EMPTY_FORM = {
 // Componentă principală
 // ============================================================
 
-export function Pantry({ dbUserId }) {
+export function Pantry({ dbUserId, activeOffers = [] }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [schemaError, setSchemaError] = useState(false)
@@ -203,6 +206,8 @@ export function Pantry({ dbUserId }) {
       preferred_store: item.preferred_store || '',
       notes: item.notes || '',
       buy_on_offer: Boolean(item.buy_on_offer),
+      important_for_reserve: Boolean(item.important_for_reserve),
+      search_keywords: item.search_keywords || '',
       active: item.active !== false,
     })
     setFormError('')
@@ -227,6 +232,8 @@ export function Pantry({ dbUserId }) {
       preferred_store: formData.preferred_store.trim() || null,
       notes: formData.notes.trim() || null,
       buy_on_offer: Boolean(formData.buy_on_offer),
+      important_for_reserve: Boolean(formData.important_for_reserve),
+      search_keywords: formData.search_keywords.trim() || null,
       active: Boolean(formData.active),
     }
 
@@ -367,6 +374,20 @@ export function Pantry({ dbUserId }) {
     buyOnOffer: items.filter((i) => i.buy_on_offer).length,
   }), [items])
 
+  // Compute active offers per pantry item (for badge display)
+  const activeOffersByItemId = useMemo(() => {
+    const map = {}
+    if (!activeOffers || !activeOffers.length) return map
+    items.forEach((item) => {
+      const found = activeOffers.find((offer) => {
+        if (getOfferValidityStatus(offer) !== 'active') return false
+        return productMatch(item.name, offer.product_name, item.search_keywords || '').match
+      })
+      if (found) map[item.id] = found
+    })
+    return map
+  }, [items, activeOffers])
+
   // ── Randare ────────────────────────────────────────────────
 
   if (schemaError) {
@@ -444,9 +465,16 @@ export function Pantry({ dbUserId }) {
           </div>
         </div>
 
-        {/* KaufDA info */}
+        {/* Info oferte active azi */}
         <div className="notice" style={{ fontSize: '0.82rem', padding: '0.65rem 0.85rem' }}>
-          💡 În viitor, KlarBudget va putea compara aceste produse cu ofertele active din KaufDA.
+          🏷️ Bifeșază „Cumpără când este ofertă” pentru produsele pe care vrei să le urmărești.
+          {activeOffers.length > 0 && (
+            <span style={{ marginLeft: '0.5rem', color: '#065f46', fontWeight: 600 }}>
+              {Object.keys(activeOffersByItemId).length > 0
+                ? `· ${Object.keys(activeOffersByItemId).length} produs(e) cu ofertă activă azi 💡`
+                : '· Niciun produs din Debară nu are ofertă activă azi.'}
+            </span>
+          )}
         </div>
       </section>
 
@@ -497,6 +525,7 @@ export function Pantry({ dbUserId }) {
             <PantryCard
               key={item.id}
               item={item}
+              activeOffer={activeOffersByItemId[item.id] || null}
               onEdit={openEdit}
               onDelete={handleDelete}
               onChangeQty={handleChangeQty}
@@ -611,12 +640,30 @@ export function Pantry({ dbUserId }) {
                 <label className="checkbox">
                   <input
                     type="checkbox"
+                    checked={formData.important_for_reserve}
+                    onChange={(e) => setFormData((p) => ({ ...p, important_for_reserve: e.target.checked }))}
+                  />
+                  ⭐ Important pentru rezervă
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
                     checked={formData.active}
                     onChange={(e) => setFormData((p) => ({ ...p, active: e.target.checked }))}
                   />
                   ✅ Activ
                 </label>
               </div>
+
+              <label>
+                Cuvinte cheie (opțional, ex: cafea, Kaffee)
+                <input
+                  type="text"
+                  value={formData.search_keywords}
+                  onChange={(e) => setFormData((p) => ({ ...p, search_keywords: e.target.value }))}
+                  placeholder="ex: cafea, Kaffee · lapte, Milch · detergent, Waschmittel"
+                />
+              </label>
 
               {formError && <div className="notice danger">{formError}</div>}
 
@@ -720,7 +767,7 @@ export function Pantry({ dbUserId }) {
 // Card produs
 // ============================================================
 
-function PantryCard({ item, onEdit, onDelete, onChangeQty, onPurchase }) {
+function PantryCard({ item, activeOffer = null, onEdit, onDelete, onChangeQty, onPurchase }) {
   const status = getItemStatus(item)
   const statusCfg = STATUS_CONFIG[status]
   const icon = getCategoryIcon(item.category)
@@ -780,6 +827,16 @@ function PantryCard({ item, onEdit, onDelete, onChangeQty, onPurchase }) {
         )}
         {item.buy_on_offer && (
           <span className="pantry-offer-badge">🏷️ Cumpără la ofertă</span>
+        )}
+        {item.important_for_reserve && (
+          <span style={{ fontSize: '0.75rem', background: '#fef3c7', color: '#92400e', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
+            ⭐ Rezervă importantă
+          </span>
+        )}
+        {activeOffer && (
+          <span style={{ fontSize: '0.75rem', background: '#d1fae5', color: '#065f46', padding: '0.15rem 0.5rem', borderRadius: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            💡 Ofertă activă — {activeOffer.store_name} {activeOffer.price ? `${activeOffer.price.toFixed ? activeOffer.price.toFixed(2) : activeOffer.price}€` : ''}
+          </span>
         )}
         {item.notes && (
           <span className="muted" style={{ fontSize: '0.78rem', fontStyle: 'italic' }}>📝 {item.notes}</span>

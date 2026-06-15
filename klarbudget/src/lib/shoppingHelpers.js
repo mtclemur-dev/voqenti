@@ -26,7 +26,7 @@ export function findProductSynonym(value = '') {
   )?.[0] || ''
 }
 
-export function productMatch(needle = '', haystack = '') {
+export function productMatch(needle = '', haystack = '', keywords = '') {
   const a = findProductSynonym(needle) || normalizeSearchTerm(needle)
   const b = findProductSynonym(haystack) || normalizeSearchTerm(haystack)
   if (!a || !b) return { match: false, approx: false }
@@ -34,7 +34,29 @@ export function productMatch(needle = '', haystack = '') {
   const tokensA = a.split(' ').filter((token) => token.length > 2)
   const tokensB = b.split(' ')
   const common = tokensA.filter((token) => tokensB.includes(token)).length
-  return { match: common > 0, approx: common > 0 }
+  if (common > 0) return { match: true, approx: true }
+
+  // Extra: check comma-separated keywords from pantry item
+  if (keywords) {
+    const kwList = String(keywords).split(',').map((k) => normalizeSearchTerm(k.trim())).filter(Boolean)
+    for (const kw of kwList) {
+      if (kw && (b.includes(kw) || kw.includes(b))) return { match: true, approx: true }
+      const kwTokens = kw.split(' ').filter((token) => token.length > 2)
+      if (kwTokens.some((token) => tokensB.includes(token))) return { match: true, approx: true }
+    }
+  }
+
+  return { match: false, approx: false }
+}
+
+// Returns a human-readable label + color for offer validity status
+export function getOfferValidityStatusLabel(status) {
+  switch (status) {
+    case 'active':  return { label: 'Activă',                 color: '#065f46', bg: '#d1fae5' }
+    case 'expired': return { label: 'Expirată',               color: '#b91c1c', bg: '#fee2e2' }
+    case 'future':  return { label: 'Viitoare',               color: '#1d4ed8', bg: '#dbeafe' }
+    default:        return { label: 'Verifică valabilitatea', color: '#92400e', bg: '#fef3c7' }
+  }
 }
 
 export function parseOfferText(text, meta = {}) {

@@ -275,6 +275,39 @@ function App() {
     [summary, incomes, expenses, debts, settings, paymentStatuses, t, language, currency],
   )
 
+  // Active offers today (for Pantry badge and recommendations)
+  const activeOffers = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return weeklyOffers.filter((o) => {
+      if (!o.valid_from && !o.valid_until) return false
+      const from = o.valid_from ? new Date(o.valid_from) : null
+      const until = o.valid_until ? new Date(o.valid_until) : null
+      if (from) { from.setHours(0,0,0,0); if (today < from) return false }
+      if (until) { until.setHours(0,0,0,0); if (today > until) return false }
+      return true
+    })
+  }, [weeklyOffers])
+
+  // Pantry stats for DashboardFamily card
+  const pantryStats = useMemo(() => {
+    if (!pantryItems.length) return null
+    const today = new Date(); today.setHours(0,0,0,0)
+    const in30 = new Date(today); in30.setDate(in30.getDate() + 30)
+    let belowMin = 0, expiringSoon = 0, buyOnOffer = 0
+    pantryItems.forEach((item) => {
+      const qty = Number(item.quantity) || 0
+      const minQty = Number(item.min_quantity) || 1
+      if (qty < minQty) belowMin++
+      if (item.expiry_date) {
+        const ex = new Date(item.expiry_date); ex.setHours(0,0,0,0)
+        if (ex >= today && ex <= in30) expiringSoon++
+      }
+      if (item.buy_on_offer) buyOnOffer++
+    })
+    return { belowMin, expiringSoon, buyOnOffer, total: pantryItems.length }
+  }, [pantryItems])
+
   const signIn = async () => {
     setAuthError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -955,6 +988,7 @@ function App() {
             journalEntries={journalEntries}
             accounts={accounts}
             dbUserId={dbUserId}
+            pantryStats={pantryStats}
             onOpenQuickSpend={(initialValues = {}) => {
               setQuickSpendForm({
                 amount: '',
@@ -1369,7 +1403,7 @@ function App() {
           />
         )}
         {view === 'kids' && <KidsZone user={user} familyOwnerId={familyOwnerId} />}
-        {view === 'pantry' && <Pantry dbUserId={dbUserId} />}
+        {view === 'pantry' && <Pantry dbUserId={dbUserId} activeOffers={activeOffers} />}
       </main>
 
       {/* Quick Spend Modal for Mod Familie */}

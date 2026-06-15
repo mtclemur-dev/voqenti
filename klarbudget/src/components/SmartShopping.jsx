@@ -18,6 +18,7 @@ import {
   buildShoppingHistory,
   bestShoppingMatches,
   buildStoreRecommendations,
+  getOfferValidityStatusLabel,
 } from '../lib/shoppingHelpers'
 
 function SmartShopping({
@@ -90,83 +91,79 @@ function SmartShopping({
       })
     }
 
-    // 2. Map active offers to match list/pantry/frequent
-    activeOffers.forEach((offer) => {
+    // Helper to add a recommendation
+    const addRec = (offer, pantryMatch, reason, priority, approx = false) => {
       const offerKey = `${offer.product_name.toLowerCase()}|${offer.store_name.toLowerCase()}|${offer.price}`
       if (seenKeys.has(offerKey)) return
+      list.push({
+        offer,
+        product: offer.product_name,
+        store: offer.store_name,
+        price: offer.price,
+        unit_price: offer.unit_price,
+        unit: offer.unit,
+        valid_until: offer.valid_until,
+        reason,
+        priority,
+        approx,
+        source: offer.source || 'manual',
+      })
+      seenKeys.add(offerKey)
+    }
 
-      // A. Shopping List match
+    // 2. Map active offers to match list/pantry/frequent (in priority order)
+    activeOffers.forEach((offer) => {
+      // A. Pantry: sub minim (priority 1)
+      const pantrySubMin = pantryItems.find((item) => {
+        const m = productMatch(item.name, offer.product_name, item.search_keywords || '')
+        return m.match && (Number(item.quantity) || 0) < (Number(item.min_quantity) || 1)
+      })
+      if (pantrySubMin) {
+        const approx = productMatch(pantrySubMin.name, offer.product_name, pantrySubMin.search_keywords || '').approx
+        addRec(offer, pantrySubMin, 'Sub minim în Debară', 1, approx)
+        return
+      }
+
+      // B. Pantry: cumpără când e ofertă (priority 2)
+      const pantryBuyOnOffer = pantryItems.find((item) => {
+        const m = productMatch(item.name, offer.product_name, item.search_keywords || '')
+        return m.match && item.buy_on_offer
+      })
+      if (pantryBuyOnOffer) {
+        const approx = productMatch(pantryBuyOnOffer.name, offer.product_name, pantryBuyOnOffer.search_keywords || '').approx
+        addRec(offer, pantryBuyOnOffer, 'Cumpără când este ofertă', 2, approx)
+        return
+      }
+
+      // C. Pantry: important pentru rezervă (priority 3)
+      const pantryImportant = pantryItems.find((item) => {
+        const m = productMatch(item.name, offer.product_name, item.search_keywords || '')
+        return m.match && item.important_for_reserve
+      })
+      if (pantryImportant) {
+        const approx = productMatch(pantryImportant.name, offer.product_name, pantryImportant.search_keywords || '').approx
+        addRec(offer, pantryImportant, 'Important pentru rezervă', 3, approx)
+        return
+      }
+
+      // D. Shopping List match (priority 4)
       const listMatch = shoppingList.find((item) => productMatch(item.product_name, offer.product_name).match)
       if (listMatch) {
-        list.push({
-          offer,
-          product: offer.product_name,
-          store: offer.store_name,
-          price: offer.price,
-          unit_price: offer.unit_price,
-          unit: offer.unit,
-          valid_until: offer.valid_until,
-          reason: 'Este în Lista mea'
-        })
-        seenKeys.add(offerKey)
+        addRec(offer, null, 'Este în Lista mea', 4, productMatch(listMatch.product_name, offer.product_name).approx)
         return
       }
 
-      // B. Pantry match
-      const pantryMatch = pantryItems.find((item) => productMatch(item.name, offer.product_name).match)
-      if (pantryMatch) {
-        const isSubMin = (Number(pantryMatch.quantity) || 0) < (Number(pantryMatch.min_quantity) || 1)
-        if (isSubMin) {
-          list.push({
-            offer,
-            product: offer.product_name,
-            store: offer.store_name,
-            price: offer.price,
-            unit_price: offer.unit_price,
-            unit: offer.unit,
-            valid_until: offer.valid_until,
-            reason: 'Este sub minim în Debara'
-          })
-          seenKeys.add(offerKey)
-          return
-        }
-
-        if (pantryMatch.buy_on_offer) {
-          list.push({
-            offer,
-            product: offer.product_name,
-            store: offer.store_name,
-            price: offer.price,
-            unit_price: offer.unit_price,
-            unit: offer.unit,
-            valid_until: offer.valid_until,
-            reason: 'Cumpără când este ofertă'
-          })
-          seenKeys.add(offerKey)
-          return
-        }
-      }
-
-      // C. Frequent product match
+      // E. Frequent product match (priority 5)
       const frequentMatch = Object.keys(counts).find(n => counts[n] >= 2 && productMatch(n, offer.product_name).match)
       if (frequentMatch) {
-        list.push({
-          offer,
-          product: offer.product_name,
-          store: offer.store_name,
-          price: offer.price,
-          unit_price: offer.unit_price,
-          unit: offer.unit,
-          valid_until: offer.valid_until,
-          reason: 'Produs frecvent'
-        })
-        seenKeys.add(offerKey)
-        return
+        addRec(offer, null, 'Produs frecvent', 5, productMatch(frequentMatch, offer.product_name).approx)
       }
     })
 
-    return list
+    // Sort by priority, then limit to 15
+    return list.sort((a, b) => a.priority - b.priority).slice(0, 15)
   }, [activeOffers, shoppingList, pantryItems, receiptItems, priceHistory, journalEntries])
+
 
   const filteredRecs = useMemo(() => {
     if (!searchQuery.trim()) return recommendations
@@ -207,10 +204,11 @@ function SmartShopping({
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs" style={{ flexWrap: 'wrap' }}>
           {[
-            { key: 'list',   label: '🛒 Lista mea' },
-            { key: 'kaufda', label: '🏷️ Oferte KaufDA' },
-            { key: 'smart',  label: '⭐ Merită acum' },
-            { key: 'admin',  label: '⚙️ Import / Admin' },
+            { key: 'list',         label: '🛒 Lista mea' },
+            { key: 'kaufda',       label: '🏷️ Oferte KaufDA' },
+            { key: 'smart',        label: '⭐ Merită acum' },
+            { key: 'storejournal', label: '📓 Jurnal magazine' },
+            { key: 'admin',        label: '⚙️ Import / Admin' },
           ].map(({ key, label }) => (
             <button
               type="button"
@@ -230,6 +228,13 @@ function SmartShopping({
       {/* Tab 2: Oferte KaufDA */}
       {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
 
+      {/* Tab 3b: Jurnal oferte magazine */}
+      {tab === 'storejournal' && (
+        <StoreJournalTab
+          offers={offersWithValidity}
+        />
+      )}
+
       {/* Tab 3: Merită acum */}
       {(tab === 'smart' || tab === 'best' || tab === 'search') && (
         <>
@@ -237,24 +242,33 @@ function SmartShopping({
             <div className="section-title">
               <div>
                 <h2>⭐ Merită cumpărat acum</h2>
-                <p className="muted">Recomandări pe baza listei, Debarei și ofertelor active.</p>
+                <p className="muted">Recomandări pe baza listei, Debării și ofertelor active.</p>
               </div>
             </div>
 
-            <div className="pantry-notice-card" style={{ background: '#f0fdfa', border: '1px solid #b2f0e8', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <span style={{ fontSize: '1.25rem' }}>🔮</span>
-                <span style={{ fontWeight: '500', color: '#0f766e', fontSize: '0.92rem' }}>
-                  În viitor, KlarBudget va putea compara produsele din Debara și lista de cumpărături cu oferte active și prețuri online.
-                </span>
+            {/* Sumar rapid */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+              <div style={{ background: '#f0fdfa', border: '1px solid #b2f0e8', borderRadius: '10px', padding: '0.65rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#065f46' }}>
+                💡 {recommendations.length} recomandări active
               </div>
-              {pantryItems.length === 0 && (
-                <div style={{ marginTop: '0.5rem', color: '#6b7280', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', borderTop: '1px dashed #b2f0e8', paddingTop: '0.5rem' }}>
-                  <span>💡</span>
-                  <span>Adaugă produse în Debara ca să primești recomandări mai bune.</span>
-                </div>
-              )}
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', padding: '0.65rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#c2410c' }}>
+                ⚠️ {pantryItems.filter(i => (Number(i.quantity)||0) < (Number(i.min_quantity)||1)).length} sub minim
+              </div>
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '0.65rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#1d4ed8' }}>
+                🏷️ {activeOffers.length} oferte active azi
+              </div>
             </div>
+
+            {activeOffers.length === 0 && (
+              <div className="notice" style={{ marginBottom: '1rem', background: '#fef3c7', borderColor: '#fbbf24', color: '#92400e' }}>
+                ⚠️ Nicio ofertă activă azi. Adaugă oferte din Import sau KaufDA.
+              </div>
+            )}
+            {pantryItems.length === 0 && (
+              <div className="notice" style={{ marginBottom: '1rem' }}>
+                💡 Adaugă produse în Debară pentru recomandări mai bune.
+              </div>
+            )}
 
             <div className="search-box-container" style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#374151' }}>
@@ -297,10 +311,18 @@ function SmartShopping({
               }}>
                 {filteredRecs.map((rec, index) => {
                   const hasValidUntil = !!rec.valid_until
+                  const reasonColors = {
+                    'Sub minim în Debară': { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+                    'Cumpără când este ofertă': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+                    'Important pentru rezervă': { bg: '#fef3c7', color: '#92400e', border: '#fde68a' },
+                    'Este în Lista mea': { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+                    'Produs frecvent': { bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe' },
+                  }
+                  const rc = reasonColors[rec.reason] || { bg: '#f9fafb', color: '#374151', border: '#e5e7eb' }
                   return (
                     <article className="recommendation-card" key={`${rec.product}-${rec.store}-${index}`} style={{
                       background: '#ffffff',
-                      border: '1px solid #e5e7eb',
+                      border: `1px solid ${rc.border}`,
                       borderRadius: '12px',
                       padding: '1rem',
                       display: 'flex',
@@ -316,17 +338,15 @@ function SmartShopping({
                             fontWeight: '600',
                             padding: '0.25rem 0.6rem',
                             borderRadius: '20px',
-                            background: rec.reason === 'Este în Lista mea' ? '#f0fdf4' :
-                                        rec.reason === 'Este sub minim în Debara' ? '#fff7ed' :
-                                        rec.reason === 'Cumpără când este ofertă' ? '#eff6ff' : '#f5f3ff',
-                            color: rec.reason === 'Este în Lista mea' ? '#166534' :
-                                   rec.reason === 'Este sub minim în Debara' ? '#c2410c' :
-                                   rec.reason === 'Cumpără când este ofertă' ? '#1d4ed8' : '#6d28d9',
-                            border: '1px solid currentColor'
+                            background: rc.bg,
+                            color: rc.color,
+                            border: `1px solid ${rc.border}`
                           }}>
                             {rec.reason}
                           </span>
-                          <span style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>⭐ Recomandat</span>
+                          {rec.approx && (
+                            <span style={{ fontSize: '0.7rem', color: '#9ca3af', background: '#f3f4f6', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>potrivire aproximativă</span>
+                          )}
                         </div>
                         <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1.05rem', fontWeight: '700', color: '#111827' }}>
                           {rec.product}
@@ -352,7 +372,7 @@ function SmartShopping({
                       {hasValidUntil && (
                         <div style={{
                           marginTop: '0.75rem',
-                          paddingTop: '0.75rem',
+                          paddingTop: '0.5rem',
                           borderTop: '1px dashed #e5e7eb',
                           fontSize: '0.78rem',
                           color: '#ef4444',
@@ -365,6 +385,30 @@ function SmartShopping({
                           <span>{rec.valid_until}</span>
                         </div>
                       )}
+                      <button
+                        type="button"
+                        style={{
+                          marginTop: '0.75rem',
+                          padding: '0.45rem 0.85rem',
+                          background: '#17463c',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          width: '100%'
+                        }}
+                        onClick={() => onSaveItem({
+                          product_name: rec.product,
+                          preferred_store: rec.store,
+                          category: 'mâncare',
+                          priority: rec.priority <= 2 ? 'important' : 'normal',
+                          notes: `Ofertă ${rec.store} — ${rec.price}€ (${rec.reason})`,
+                        })}
+                      >
+                        🛒 Adaugă în Lista mea
+                      </button>
                     </article>
                   )
                 })}
@@ -1952,3 +1996,155 @@ function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, 
 }
 
 export { SmartShopping }
+
+// ============================================================
+// Tab: Jurnal oferte magazine
+// ============================================================
+
+function StoreJournalTab({ offers = [] }) {
+  const [showExpired, setShowExpired] = useState(false)
+
+  // Combine all offers with validity status computed
+  const allOffers = useMemo(() => {
+    return offers.map(o => ({ ...o, _status: getOfferValidityStatus(o) }))
+  }, [offers])
+
+  const visibleOffers = useMemo(() => {
+    if (showExpired) return allOffers
+    return allOffers.filter(o => o._status !== 'expired')
+  }, [allOffers, showExpired])
+
+  // Group by store
+  const byStore = useMemo(() => {
+    const groups = {}
+    visibleOffers.forEach((offer) => {
+      const store = (offer.store_name || 'Necunoscut').trim()
+      if (!groups[store]) groups[store] = []
+      groups[store].push(offer)
+    })
+    // Sort stores alphabetically
+    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'ro'))
+  }, [visibleOffers])
+
+  const activeCount = allOffers.filter(o => o._status === 'active').length
+  const expiredCount = allOffers.filter(o => o._status === 'expired').length
+
+  const statusStyle = (status) => {
+    const sl = getOfferValidityStatusLabel(status)
+    return { background: sl.bg, color: sl.color, fontSize: '0.72rem', padding: '0.1rem 0.45rem', borderRadius: '5px', fontWeight: 700 }
+  }
+
+  const storeColors = {
+    lidl: '#2861a8', aldi: '#002f6c', netto: '#d30000', norma: '#d35400',
+    rewe: '#cc0022', kaufland: '#e30613', edeka: '#339933'
+  }
+
+  return (
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>📓 Jurnal oferte magazine</h2>
+          <p className="muted">Toate ofertele grupate pe magazine — azi și viitoare.</p>
+        </div>
+      </div>
+
+      {/* Sumar */}
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div style={{ background: '#d1fae5', color: '#065f46', borderRadius: '8px', padding: '0.5rem 0.85rem', fontSize: '0.85rem', fontWeight: 700 }}>
+          ✅ {activeCount} oferte active
+        </div>
+        <div style={{ background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', padding: '0.5rem 0.85rem', fontSize: '0.85rem', fontWeight: 700 }}>
+          ❌ {expiredCount} expirate
+        </div>
+        <label className="checkbox" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: '0.85rem', fontWeight: 500 }}>
+          <input
+            type="checkbox"
+            checked={showExpired}
+            onChange={(e) => setShowExpired(e.target.checked)}
+          />
+          Arată și expirate
+        </label>
+      </div>
+
+      {byStore.length === 0 ? (
+        <div className="notice" style={{ textAlign: 'center', padding: '2.5rem' }}>
+          📋 Nicio ofertă de afișat. Importă prospecte sau adaugă oferte manual.
+        </div>
+      ) : (
+        byStore.map(([store, storeOffers]) => {
+          const storeColor = storeColors[store.toLowerCase()] || '#63746e'
+          const storeActive = storeOffers.filter(o => o._status === 'active').length
+          return (
+            <div key={store} style={{ marginBottom: '1.5rem' }}>
+              {/* Store header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                borderLeft: `4px solid ${storeColor}`,
+                paddingLeft: '0.75rem', marginBottom: '0.75rem'
+              }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: storeColor }}>{store}</h3>
+                <span style={{ fontSize: '0.78rem', background: '#d1fae5', color: '#065f46', borderRadius: '5px', padding: '0.1rem 0.4rem', fontWeight: 700 }}>
+                  {storeActive} active
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{storeOffers.length} total</span>
+              </div>
+
+              {/* Offers table */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#374151' }}>Produs</th>
+                      <th style={{ textAlign: 'right', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#374151' }}>Preț</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#374151' }}>Cantitate</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#374151' }}>Valabil până la</th>
+                      <th style={{ textAlign: 'center', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#374151' }}>Status</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.6rem', fontWeight: 700, color: '#9ca3af' }}>Sursă</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {storeOffers.map((offer, idx) => {
+                      const sl = getOfferValidityStatusLabel(offer._status)
+                      const source = offer.source || (offer._isKaufda ? 'KaufDA' : 'manual')
+                      return (
+                        <tr key={idx} style={{
+                          borderBottom: '1px solid #f3f4f6',
+                          background: offer._status === 'expired' ? '#fafafa' : offer._status === 'active' ? '#f0fdf4' : '#fff'
+                        }}>
+                          <td style={{ padding: '0.45rem 0.6rem', fontWeight: 600 }}>
+                            {offer.product_name}
+                            {offer.brand && <small style={{ color: '#9ca3af', marginLeft: '0.35rem' }}>{offer.brand}</small>}
+                          </td>
+                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
+                            {offer.price ? `${typeof offer.price.toFixed === 'function' ? offer.price.toFixed(2) : offer.price}€` : '–'}
+                            {offer.old_price && (
+                              <small style={{ textDecoration: 'line-through', color: '#ef4444', marginLeft: '0.3rem' }}>
+                                {typeof offer.old_price.toFixed === 'function' ? offer.old_price.toFixed(2) : offer.old_price}€
+                              </small>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#6b7280' }}>
+                            {offer.quantity ? `${offer.quantity} ${offer.unit || ''}` : '–'}
+                          </td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                            {offer.valid_until || '–'}
+                          </td>
+                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center' }}>
+                            <span style={statusStyle(offer._status)}>{sl.label}</span>
+                          </td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#9ca3af', fontSize: '0.75rem' }}>
+                            {source}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })
+      )}
+    </section>
+  )
+}
