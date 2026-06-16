@@ -1,17 +1,27 @@
 import { toNumber } from './finance'
+import { encodeOfferNotes, normalizeOfferSource, toDbSourceColumn } from './offerSources'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
-export const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'dm', 'Rossmann', 'Globus']
+export const storeNames = ['Netto', 'Norma', 'Lidl', 'Aldi', 'Rewe', 'Kaufland', 'Edeka', 'Penny', 'dm', 'Rossmann', 'Globus', 'Amazon', 'eBay', 'Altele']
 
 const offerSearchSynonyms = {
   lapte: ['milch', 'h-milch', 'frische milch', 'h milch'],
   cafea: ['kaffee', 'kaffeebohnen', 'instantkaffee'],
   unt: ['butter', 'weidebutter', 'weide butter'],
+  apa: ['wasser', 'mineralwasser', 'wasser still'],
+  detergent: ['waschmittel', 'spülmittel', 'reiniger', 'waschmittel'],
+  ulei: ['öl', 'olivenöl', 'sonnenblumenöl', 'rapsöl'],
+  faina: ['mehl', 'weizenmehl', 'dinkelmehl'],
+  zahar: ['zucker', 'rohrzucker'],
+  'hartie igienica': ['toilettenpapier', 'klopapier', 'toiletten papier'],
+  paste: ['nudeln', 'pasta', 'spaghetti', 'penne'],
+  orez: ['reis', 'basmati', 'langkornreis'],
+  oua: ['eier', 'freiland eier'],
   carne: ['fleisch', 'hackfleisch', 'hähnchen', 'hahnchen', 'pute', 'schwein'],
-  detergent: ['waschmittel', 'spülmittel', 'reiniger'],
+  cascaval: ['käse', 'kaese', 'gouda', 'emmentaler'],
 }
 
 export function normalizeSearchTerm(value = '') {
@@ -55,7 +65,7 @@ export function getOfferValidityStatusLabel(status) {
     case 'active':  return { label: 'Activă',                 color: '#065f46', bg: '#d1fae5' }
     case 'expired': return { label: 'Expirată',               color: '#b91c1c', bg: '#fee2e2' }
     case 'future':  return { label: 'Viitoare',               color: '#1d4ed8', bg: '#dbeafe' }
-    default:        return { label: 'Verifică valabilitatea', color: '#92400e', bg: '#fef3c7' }
+    case 'unknown': return { label: 'Valabilitate necunoscută', color: '#92400e', bg: '#fef3c7' }
   }
 }
 
@@ -238,6 +248,9 @@ export function parseOfferLine(line, meta) {
 }
 
 export function normalizeOfferPayload(item) {
+  const offerSource = normalizeOfferSource(item.offer_source || item.source)
+  const dbSource = toDbSourceColumn(offerSource)
+  const userNotes = item.notes || null
   return {
     store_name: item.store_name || 'Unbekannt',
     product_name: item.product_name,
@@ -251,13 +264,18 @@ export function normalizeOfferPayload(item) {
     unit_price: item.unit_price ? toNumber(item.unit_price) : null,
     valid_from: item.valid_from || null,
     valid_until: item.valid_until || null,
-    source: item.source || 'manual_text',
+    source: dbSource,
     source_file_name: item.source_file_name || null,
     source_page: item.source_page ? Number(item.source_page) : null,
     app_price: Boolean(item.app_price),
     confidence: toNumber(item.confidence) || 0.7,
     status: item.status || 'confirmed',
-    notes: item.notes || null,
+    notes: encodeOfferNotes({
+      offer_source: offerSource,
+      source_url: item.source_url || null,
+      barcode: item.barcode || null,
+      open_food_facts_id: item.open_food_facts_id || null,
+    }, userNotes && !String(userNotes).startsWith('__KB_META__') ? userNotes : ''),
   }
 }
 
@@ -345,7 +363,7 @@ export function getOfferValidityStatus(offer, today = new Date()) {
   if (!validUntil) return 'unknown'
   if (todayValue > validUntil) return 'expired'
   const validFrom = offerDayValue(offer.valid_from || offer.start_date)
-  if (validFrom && todayValue < validFrom) return 'unknown'
+  if (validFrom && todayValue < validFrom) return 'future'
   return 'active'
 }
 

@@ -620,6 +620,26 @@ function App() {
     loadData()
   }
 
+  const saveManualOffer = async (payload) => {
+    const prepared = normalizeOfferPayload({ ...payload, status: 'confirmed' })
+    const { error } = await supabase.from('kb_weekly_offers').insert({ ...prepared, user_id: dbUserId })
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      throw new Error(error.message)
+    }
+    setNotice(t('savedSuccess'))
+    loadData()
+  }
+
+  const importKaufdaOffer = async (offer) => {
+    await saveManualOffer({
+      ...offer,
+      offer_source: 'kaufda',
+      status: 'confirmed',
+    })
+  }
+
   const confirmOfferPreview = async (mode = 'safe', previewRows = null) => {
     const sourceRows = previewRows || offerPreview
     const rows = sourceRows
@@ -1093,6 +1113,8 @@ function App() {
             onSaveReceipt={saveReceipt}
             onSaveStore={saveStore}
             onTabChange={setShoppingTab}
+            onSaveManualOffer={saveManualOffer}
+            onImportOffer={importKaufdaOffer}
           />
         )}
         {view === 'workAbsence' && (

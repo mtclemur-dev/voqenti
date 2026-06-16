@@ -20,6 +20,15 @@ import {
   buildStoreRecommendations,
   getOfferValidityStatusLabel,
 } from '../lib/shoppingHelpers'
+import {
+  OFFER_SOURCE_FILTER_OPTIONS,
+  OFFER_SOURCE_OPTIONS,
+  SHOPPING_STORES,
+  buildManualOfferPayload,
+  getOfferSourceLabel,
+  hydrateOffer,
+  offerMatchesSourceFilter,
+} from '../lib/offerSources'
 
 function SmartShopping({
   currency,
@@ -49,12 +58,17 @@ function SmartShopping({
   priceNotifications,
   user,
   getPriceAnalytics,
-  onImportOffer
+  onImportOffer,
+  onSaveManualOffer,
 }) {
+  const normalizedTab = tab === 'kaufda' || tab === 'storejournal' ? 'offers' : tab
   const [showExpiredOffers, setShowExpiredOffers] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const offersWithValidity = useMemo(
-    () => offers.map((offer) => ({ ...offer, validityStatus: getOfferValidityStatus(offer) })),
+    () => offers.map((offer) => {
+      const hydrated = hydrateOffer(offer)
+      return { ...hydrated, validityStatus: getOfferValidityStatus(hydrated) }
+    }),
     [offers],
   )
   const activeOffers = useMemo(
@@ -106,7 +120,8 @@ function SmartShopping({
         reason,
         priority,
         approx,
-        source: offer.source || 'manual',
+        source: getOfferSourceLabel(offer.offer_source || offer.source),
+        offer_source: offer.offer_source || offer.source,
       })
       seenKeys.add(offerKey)
     }
@@ -188,9 +203,9 @@ function SmartShopping({
   // ── Navigare nouă: 4 taburi principale ────────────────────────
   const SHOPPING_ADMIN_TABS = ['receipts', 'import', 'offers', 'stores', 'history', 'sources']
   const activeMainShoppingTab =
-    SHOPPING_ADMIN_TABS.includes(tab) ? 'admin' :
-    (tab === 'best' || tab === 'search') ? 'smart' :
-    tab
+    SHOPPING_ADMIN_TABS.includes(normalizedTab) ? 'admin' :
+    (normalizedTab === 'best' || normalizedTab === 'search') ? 'smart' :
+    normalizedTab
 
   return (
     <>
@@ -198,17 +213,16 @@ function SmartShopping({
         <div className="section-title">
           <div>
             <h2>{t('shopping')}</h2>
-            <p className="muted">{t('shoppingHint')}</p>
+            <p className="muted">Lista familiei, oferte active și cumpărături inteligente.</p>
           </div>
         </div>
         {!schemaReady && <div className="notice danger">{t('shoppingMigrationMissing')}</div>}
         <div className="tabbar inline-tabs" style={{ flexWrap: 'wrap' }}>
           {[
-            { key: 'list',         label: '🛒 Lista mea' },
-            { key: 'kaufda',       label: '🏷️ Oferte KaufDA' },
-            { key: 'smart',        label: '⭐ Merită acum' },
-            { key: 'storejournal', label: '📓 Jurnal magazine' },
-            { key: 'admin',        label: '⚙️ Import / Admin' },
+            { key: 'list',  label: '🛒 Lista mea' },
+            { key: 'offers', label: '🏷️ Oferte' },
+            { key: 'smart', label: '⭐ Merită acum' },
+            { key: 'admin', label: '⚙️ Import / Admin' },
           ].map(({ key, label }) => (
             <button
               type="button"
@@ -225,18 +239,18 @@ function SmartShopping({
       {/* Tab 1: Lista mea */}
       {tab === 'list' && <ShoppingListTab currency={currency} language={language} items={shoppingList} t={t} getRecommendations={getProductRecommendations} getRoute={calculateOptimalRoute} notifications={priceNotifications} user={user} onDelete={(item) => onDelete('kb_shopping_list', item)} onSave={onSaveItem} />}
 
-      {/* Tab 2: Oferte KaufDA */}
-      {tab === 'kaufda' && <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />}
-
-      {/* Tab 3b: Jurnal oferte magazine */}
-      {tab === 'storejournal' && (
-        <StoreJournalTab
+      {(normalizedTab === 'offers' || tab === 'kaufda' || tab === 'storejournal') && (
+        <OffersTab
           offers={offersWithValidity}
+          currency={currency}
+          locale={locale}
+          t={t}
+          shoppingList={shoppingList}
+          onImportOffer={onImportOffer}
         />
       )}
 
-      {/* Tab 3: Merită acum */}
-      {(tab === 'smart' || tab === 'best' || tab === 'search') && (
+      {(normalizedTab === 'smart' || tab === 'best' || tab === 'search') && (
         <>
           <section className="section">
             <div className="section-title">
@@ -261,7 +275,7 @@ function SmartShopping({
 
             {activeOffers.length === 0 && (
               <div className="notice" style={{ marginBottom: '1rem', background: '#fef3c7', borderColor: '#fbbf24', color: '#92400e' }}>
-                ⚠️ Nicio ofertă activă azi. Adaugă oferte din Import sau KaufDA.
+                ⚠️ Nicio ofertă activă azi. Adaugă oferte din Import / Ofertă manuală sau feed KaufDA.
               </div>
             )}
             {pantryItems.length === 0 && (
@@ -353,6 +367,10 @@ function SmartShopping({
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.88rem', color: '#4b5563' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: '#9ca3af' }}>🏷️ Sursă:</span>
+                            <strong style={{ color: '#1f2937' }}>{rec.source}</strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ color: '#9ca3af' }}>🏪 Magazin:</span>
                             <strong style={{ color: '#1f2937' }}>{rec.store}</strong>
                           </div>
@@ -443,7 +461,7 @@ function SmartShopping({
       )}
 
       {/* Tab 4: Import / Administrare (unifică: receipts, import, offers, stores, history, sources) */}
-      {(tab === 'admin' || SHOPPING_ADMIN_TABS.includes(tab)) && (
+      {(normalizedTab === 'admin' || SHOPPING_ADMIN_TABS.includes(tab)) && (
         <>
           <section className="section">
             <div className="section-title">
@@ -458,6 +476,7 @@ function SmartShopping({
             <div className="tabbar inline-tabs" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
               {[
                 { key: 'import',   label: '📥 Import prospecte' },
+                { key: 'manual',   label: '✏️ Ofertă manuală' },
                 { key: 'offers',   label: '📋 Oferte extrase' },
                 { key: 'receipts', label: '🧾 Bonuri / CEC-uri' },
                 { key: 'stores',   label: '🏦 Magazine' },
@@ -477,6 +496,13 @@ function SmartShopping({
             </div>
           </section>
           {(tab === 'import' || tab === 'admin') && <OfferImportTab preview={offerPreview} t={t} onPreviewChange={onPreviewChange} onSaveSource={onSaveStore} onConfirmPreview={onConfirmPreview} onTabChange={onTabChange} />}
+          {tab === 'manual' && (
+            <ManualOfferForm
+              currency={currency}
+              locale={locale}
+              onSave={onSaveManualOffer}
+            />
+          )}
           {tab === 'offers' && (
             <OfferPreviewTab
               currency={currency}
@@ -1067,6 +1093,9 @@ function OfferSourcesTab({ sources, t, onDelete, onSave }) {
       <section className="section">
         <h2>{t('offerSources')}</h2>
         <div className="notice">{t('onlineImportFuture')}</div>
+        <div className="notice" style={{ fontSize: '0.85rem' }}>
+          Open Prices va putea fi folosit mai târziu pentru prețuri comunitare și produse cu cod de bare. Fără apel API în acest moment.
+        </div>
         <form className="form-grid" onSubmit={(event) => {
           event.preventDefault()
           onSave(form)
@@ -1997,24 +2026,191 @@ function OfferPreviewTab({ currency, language, locale, preview, savedOffers, t, 
 
 export { SmartShopping }
 
-// ============================================================
-// Tab: Jurnal oferte magazine
-// ============================================================
+function ManualOfferForm({ currency, locale, onSave }) {
+  const [form, setForm] = useState(() => {
+    const today = isoDate(new Date())
+    const next = new Date()
+    next.setDate(next.getDate() + 7)
+    return {
+      offer_source: 'manual',
+      store_name: '',
+      product_name: '',
+      price: '',
+      quantity: '',
+      unit: '',
+      valid_from: today,
+      valid_until: isoDate(next),
+      source_url: '',
+      barcode: '',
+      notes: '',
+    }
+  })
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
 
-function StoreJournalTab({ offers = [] }) {
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!form.product_name.trim() || !form.store_name.trim() || !form.price) {
+      setNotice('Completează magazinul, produsul și prețul.')
+      return
+    }
+    setSaving(true)
+    setNotice('')
+    try {
+      await onSave(buildManualOfferPayload(form))
+      setForm((current) => ({
+        ...current,
+        product_name: '',
+        price: '',
+        quantity: '',
+        unit: '',
+        source_url: '',
+        barcode: '',
+        notes: '',
+      }))
+      setNotice('Oferta manuală a fost salvată.')
+    } catch (error) {
+      setNotice(error?.message || 'Nu s-a putut salva oferta.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="section">
+      <div className="section-title">
+        <div>
+          <h2>✏️ Ofertă manuală</h2>
+          <p className="muted">Adaugă o ofertă din orice sursă — KaufDA, Marktguru, MeinProspekt, manual, Open Prices (etichetă).</p>
+        </div>
+      </div>
+      {notice && <div className="notice">{notice}</div>}
+      <form className="form-grid" onSubmit={submit}>
+        <label>Sursă ofertă
+          <select value={form.offer_source} onChange={(event) => setForm({ ...form, offer_source: event.target.value })}>
+            {OFFER_SOURCE_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <label>Magazin
+          <select value={form.store_name} onChange={(event) => setForm({ ...form, store_name: event.target.value })} required>
+            <option value="">Alege magazin</option>
+            {SHOPPING_STORES.map((store) => <option key={store} value={store}>{store}</option>)}
+          </select>
+        </label>
+        <Input label="Produs" value={form.product_name} onChange={(value) => setForm({ ...form, product_name: value })} required />
+        <Input label="Preț (EUR)" type="number" min="0" step="0.01" value={form.price} onChange={(value) => setForm({ ...form, price: value })} required />
+        <Input label="Cantitate" type="number" min="0" step="0.001" value={form.quantity} onChange={(value) => setForm({ ...form, quantity: value })} />
+        <Input label="Unitate" value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} placeholder="L, kg, buc..." />
+        <label>Valabil de la<input type="date" value={form.valid_from} onChange={(event) => setForm({ ...form, valid_from: event.target.value })} /></label>
+        <label>Valabil până la<input type="date" value={form.valid_until} onChange={(event) => setForm({ ...form, valid_until: event.target.value })} /></label>
+        <Input label="Link sursă (opțional)" value={form.source_url} onChange={(value) => setForm({ ...form, source_url: value })} />
+        <Input label="Cod de bare / EAN (opțional)" value={form.barcode} onChange={(value) => setForm({ ...form, barcode: value })} />
+        <Input label="Notițe (opțional)" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+        {(form.offer_source === 'open_prices' || form.offer_source === 'online') && (
+          <div className="notice" style={{ gridColumn: '1 / -1', fontSize: '0.85rem' }}>
+            {form.offer_source === 'open_prices'
+              ? 'Open Prices va putea fi folosit mai târziu pentru prețuri comunitare și produse cu cod de bare.'
+              : 'Verificarea online de prețuri va fi disponibilă mai târziu. Acum se salvează doar ca referință manuală.'}
+          </div>
+        )}
+        <div className="form-actions">
+          <button type="submit" disabled={saving}>{saving ? 'Se salvează...' : 'Salvează oferta'}</button>
+        </div>
+      </form>
+      <p className="muted" style={{ fontSize: '0.82rem', marginTop: '0.5rem' }}>
+        Preț estimativ salvat: {form.price ? formatMoney(Number(form.price) || 0, currency, locale) : '—'}
+      </p>
+    </section>
+  )
+}
+
+function OffersTab({ offers = [], currency, locale, t, shoppingList = [], onImportOffer }) {
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [showExpired, setShowExpired] = useState(false)
+  const [viewMode, setViewMode] = useState('journal')
 
-  // Combine all offers with validity status computed
-  const allOffers = useMemo(() => {
-    return offers.map(o => ({ ...o, _status: getOfferValidityStatus(o) }))
-  }, [offers])
+  const filteredOffers = useMemo(() => {
+    return offers
+      .filter((offer) => offerMatchesSourceFilter(offer, sourceFilter))
+      .filter((offer) => showExpired || offer.validityStatus !== 'expired')
+  }, [offers, sourceFilter, showExpired])
+
+  const sortedOffers = useMemo(() => {
+    const rank = { active: 0, future: 1, unknown: 2, expired: 3 }
+    return [...filteredOffers].sort((a, b) => {
+      const diff = (rank[a.validityStatus] ?? 9) - (rank[b.validityStatus] ?? 9)
+      if (diff !== 0) return diff
+      return String(a.store_name || '').localeCompare(String(b.store_name || ''), 'ro')
+    })
+  }, [filteredOffers])
+
+  const showKaufdaFeed = sourceFilter === 'all' || sourceFilter === 'kaufda'
+
+  return (
+    <>
+      <section className="section compact-section">
+        <div className="section-title">
+          <div>
+            <h2>🏷️ Oferte</h2>
+            <p className="muted">Oferte active din toate sursele — jurnal pe magazine și feed KaufDA (demo).</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          {OFFER_SOURCE_FILTER_OPTIONS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={sourceFilter === item.id ? 'active' : 'secondary'}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem', minHeight: 'auto', borderRadius: '999px' }}
+              onClick={() => setSourceFilter(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+          <div className="tabbar inline-tabs" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className={viewMode === 'journal' ? 'active' : 'secondary'} onClick={() => setViewMode('journal')}>📓 Jurnal oferte</button>
+            {showKaufdaFeed && (
+              <button type="button" className={viewMode === 'kaufda' ? 'active' : 'secondary'} onClick={() => setViewMode('kaufda')}>KaufDA (demo)</button>
+            )}
+          </div>
+          <label className="checkbox" style={{ marginLeft: 'auto', fontSize: '0.85rem' }}>
+            <input type="checkbox" checked={showExpired} onChange={(event) => setShowExpired(event.target.checked)} />
+            Arată și expirate
+          </label>
+        </div>
+      </section>
+
+      {viewMode === 'journal' && (
+        <StoreJournalTab offers={sortedOffers} currency={currency} locale={locale} showExpired={showExpired} />
+      )}
+      {viewMode === 'kaufda' && showKaufdaFeed && (
+        <KaufdaFeedTab shoppingList={shoppingList} t={t} onImportOffer={onImportOffer} />
+      )}
+    </>
+  )
+}
+
+// ============================================================
+// Tab: Jurnal oferte
+// ============================================================
+
+function StoreJournalTab({ offers = [], currency, locale, showExpired = false }) {
+
+  const allOffers = useMemo(
+    () => offers.map((o) => ({ ...o, _status: o.validityStatus || getOfferValidityStatus(o) })),
+    [offers],
+  )
 
   const visibleOffers = useMemo(() => {
-    if (showExpired) return allOffers
-    return allOffers.filter(o => o._status !== 'expired')
-  }, [allOffers, showExpired])
-
-  // Group by store
+    const activeFirst = [...allOffers].sort((a, b) => {
+      if (a._status === 'expired' && b._status !== 'expired') return 1
+      if (b._status === 'expired' && a._status !== 'expired') return -1
+      return 0
+    })
+    return activeFirst
+  }, [allOffers])
   const byStore = useMemo(() => {
     const groups = {}
     visibleOffers.forEach((offer) => {
@@ -2022,12 +2218,11 @@ function StoreJournalTab({ offers = [] }) {
       if (!groups[store]) groups[store] = []
       groups[store].push(offer)
     })
-    // Sort stores alphabetically
     return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'ro'))
   }, [visibleOffers])
-
-  const activeCount = allOffers.filter(o => o._status === 'active').length
-  const expiredCount = allOffers.filter(o => o._status === 'expired').length
+  const activeCount = allOffers.filter((o) => o._status === 'active').length
+  const expiredCount = allOffers.filter((o) => o._status === 'expired').length
+  const futureCount = allOffers.filter((o) => o._status === 'future').length
 
   const statusStyle = (status) => {
     const sl = getOfferValidityStatusLabel(status)
@@ -2043,8 +2238,8 @@ function StoreJournalTab({ offers = [] }) {
     <section className="section">
       <div className="section-title">
         <div>
-          <h2>📓 Jurnal oferte magazine</h2>
-          <p className="muted">Toate ofertele grupate pe magazine — azi și viitoare.</p>
+          <h2>📓 Jurnal oferte</h2>
+          <p className="muted">Oferte grupate pe magazine — sursă, preț și valabilitate.</p>
         </div>
       </div>
 
@@ -2056,14 +2251,14 @@ function StoreJournalTab({ offers = [] }) {
         <div style={{ background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', padding: '0.5rem 0.85rem', fontSize: '0.85rem', fontWeight: 700 }}>
           ❌ {expiredCount} expirate
         </div>
-        <label className="checkbox" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: '0.85rem', fontWeight: 500 }}>
-          <input
-            type="checkbox"
-            checked={showExpired}
-            onChange={(e) => setShowExpired(e.target.checked)}
-          />
-          Arată și expirate
-        </label>
+        <div style={{ background: '#dbeafe', color: '#1d4ed8', borderRadius: '8px', padding: '0.5rem 0.85rem', fontSize: '0.85rem', fontWeight: 700 }}>
+          🔜 {futureCount} viitoare
+        </div>
+        {!showExpired && expiredCount > 0 && (
+          <div style={{ background: '#f3f4f6', color: '#6b7280', borderRadius: '8px', padding: '0.5rem 0.85rem', fontSize: '0.85rem' }}>
+            {expiredCount} expirate ascunse
+          </div>
+        )}
       </div>
 
       {byStore.length === 0 ? (
@@ -2105,7 +2300,6 @@ function StoreJournalTab({ offers = [] }) {
                   <tbody>
                     {storeOffers.map((offer, idx) => {
                       const sl = getOfferValidityStatusLabel(offer._status)
-                      const source = offer.source || (offer._isKaufda ? 'KaufDA' : 'manual')
                       return (
                         <tr key={idx} style={{
                           borderBottom: '1px solid #f3f4f6',
@@ -2116,7 +2310,7 @@ function StoreJournalTab({ offers = [] }) {
                             {offer.brand && <small style={{ color: '#9ca3af', marginLeft: '0.35rem' }}>{offer.brand}</small>}
                           </td>
                           <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
-                            {offer.price ? `${typeof offer.price.toFixed === 'function' ? offer.price.toFixed(2) : offer.price}€` : '–'}
+                            {offer.price != null ? formatMoney(toNumber(offer.price), currency, locale) : '–'}
                             {offer.old_price && (
                               <small style={{ textDecoration: 'line-through', color: '#ef4444', marginLeft: '0.3rem' }}>
                                 {typeof offer.old_price.toFixed === 'function' ? offer.old_price.toFixed(2) : offer.old_price}€
@@ -2133,7 +2327,7 @@ function StoreJournalTab({ offers = [] }) {
                             <span style={statusStyle(offer._status)}>{sl.label}</span>
                           </td>
                           <td style={{ padding: '0.45rem 0.6rem', color: '#9ca3af', fontSize: '0.75rem' }}>
-                            {source}
+                            {getOfferSourceLabel(offer.offer_source || offer.source)}
                           </td>
                         </tr>
                       )
