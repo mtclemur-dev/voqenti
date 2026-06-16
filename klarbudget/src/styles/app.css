@@ -3311,3 +3311,119 @@ h3 {
     padding: 0.75rem;
   }
 }
+
+/* ============================================================
+   Price Finder (experimental)
+   ============================================================ */
+
+.pf-section {
+  border-top: 2px dashed #e5e7eb;
+  margin-top: 1.5rem;
+}
+
+.pf-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.pf-result-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pf-result-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pf-item-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #111827;
+}
+
+.pf-found-name {
+  font-size: 0.82rem;
+}
+
+.pf-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pf-price {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.pf-store {
+  font-size: 0.82rem;
+}
+
+.pf-result-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.pf-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  background: #f3f4f6;
+  color: #374151;
+  font-weight: 500;
+}
+
+.pf-badge-stale {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pf-badge-date {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pf-badge-community {
+  background: #f3f4f6;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.pf-result-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+.pf-not-mapped {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .pf-result-card {
+    padding: 0.6rem 0.75rem;
+  }
+  .pf-price {
+    font-size: 1rem;
+  }
+}

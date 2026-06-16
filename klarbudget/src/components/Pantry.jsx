@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import { productMatch, getOfferValidityStatus } from '../lib/shoppingHelpers'
+import { PriceFinder } from './PriceFinder'
 
 // ============================================================
 // Constante
@@ -533,6 +534,11 @@ export function Pantry({ dbUserId, activeOffers = [] }) {
             />
           ))}
         </div>
+      )}
+
+      {/* Price Finder */}
+      {!loading && items.length > 0 && (
+        <PriceFinder pantryItems={items} dbUserId={dbUserId} />
       )}
 
       {/* Modal Add/Edit */}
