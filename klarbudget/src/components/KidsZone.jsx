@@ -2111,20 +2111,24 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
 
       {/* Page header */}
       <div style={{
-        background: 'linear-gradient(135deg, #17463c 0%, #1e5945 50%, #2d7a5e 100%)',
+        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 35%, #ec4899 70%, #f97316 100%)',
         borderRadius: '20px',
         padding: '1.5rem 2rem 2rem',
         marginBottom: '0',
-        boxShadow: '0 8px 32px rgba(23,70,60,0.2)',
+        boxShadow: '0 8px 32px rgba(139,92,246,0.28)',
         position: 'relative',
         overflow: 'hidden',
       }}>
-        <div style={{ position: 'absolute', right: '-20px', top: '-20px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', right: '-20px', top: '-20px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', left: '-30px', bottom: '-30px', width: '140px', height: '140px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+        <p style={{ color: 'rgba(255,255,255,0.75)', margin: '0 0 0.25rem', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          ⭐ KlarBudget Kids
+        </p>
         <h1 style={{ color: '#fff', margin: '0 0 0.25rem', fontSize: '1.7rem', fontWeight: 900 }}>
-          🧸 Monede și recompense copii
+          🧸 Monede și recompense
         </h1>
-        <p style={{ color: 'rgba(255,255,255,0.65)', margin: 0, fontSize: '0.88rem' }}>
-          Monede virtuale pentru sarcini, obiceiuri bune, educație financiară și recompense.
+        <p style={{ color: 'rgba(255,255,255,0.72)', margin: 0, fontSize: '0.88rem' }}>
+          Sarcini, obiceiuri bune, educație financiară și recompense pentru copii.
         </p>
       </div>
 

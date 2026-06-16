@@ -1,0 +1,750 @@
+/*
+ * KlarBudget — Design Upgrade
+ * Overrides & enhancements ONLY — does not remove base styles.
+ * Motion control:  html.motion-full | html.motion-reduced | html.motion-none
+ */
+
+/* ═══════════════════════════════════════════════════════════
+   1. PALETTE — warmer, brighter, more elegant
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  /* Primary green: brighter emerald instead of dark teal */
+  --green:       #059669;
+  --green-dark:  #047857;
+  --green-soft:  #ecfdf5;
+  --green-mid:   #d1fae5;
+
+  /* Warm cream backgrounds */
+  --bg-warm:     #faf8f3;
+  --bg-card:     #ffffff;
+  --surface-soft: #f8f6f0;
+
+  /* Accent palette */
+  --accent-mint:   #6ee7b7;
+  --accent-teal:   #2dd4bf;
+  --accent-gold:   #f59e0b;
+  --accent-amber:  #fbbf24;
+  --accent-orange: #fb923c;
+  --accent-blue:   #60a5fa;
+  --accent-purple: #a78bfa;
+  --accent-pink:   #f9a8d4;
+
+  /* Text */
+  --ink:   #1a2e2a;
+  --muted: #5d7168;
+
+  /* Shadows */
+  --shadow-sm:  0 1px 3px rgba(5,150,105,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:  0 4px 12px rgba(5,150,105,.08), 0 2px 6px rgba(0,0,0,.04);
+  --shadow-lg:  0 8px 24px rgba(5,150,105,.10), 0 4px 10px rgba(0,0,0,.05);
+  --shadow-card:0 2px 8px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.03);
+
+  /* Border radius */
+  --radius-sm:  8px;
+  --radius-md:  12px;
+  --radius-lg:  16px;
+  --radius-xl:  20px;
+
+  /* Animation speeds */
+  --dur-fast:   0.15s;
+  --dur-base:   0.25s;
+  --dur-slow:   0.4s;
+  --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+  --ease-smooth: cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   2. KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+
+/* Nature: leaf floating gently */
+@keyframes floatLeaf {
+  0%,100% { transform: translateY(0) rotate(-2deg); }
+  33%      { transform: translateY(-6px) rotate(1deg); }
+  66%      { transform: translateY(-3px) rotate(-1deg); }
+}
+
+/* Nature: grass/plant swaying */
+@keyframes swayGrass {
+  0%,100% { transform: rotate(0deg); transform-origin: bottom center; }
+  25%     { transform: rotate(3deg); transform-origin: bottom center; }
+  75%     { transform: rotate(-3deg); transform-origin: bottom center; }
+}
+
+/* Nature: soft pulse glow */
+@keyframes softPulse {
+  0%,100% { opacity: .7; transform: scale(1); }
+  50%     { opacity: 1; transform: scale(1.04); }
+}
+
+/* UI: card/section entrance */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* UI: fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* UI: pop in (badges, chips) */
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.88); }
+  70%  { transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Kids: sparkle */
+@keyframes sparkle {
+  0%,100% { transform: scale(1) rotate(0deg);   opacity: .8; }
+  50%     { transform: scale(1.25) rotate(15deg); opacity: 1; }
+}
+
+/* Kids: confetti float */
+@keyframes confettiFloat {
+  0%   { transform: translateY(0) rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(-30px) rotate(360deg); opacity: 0; }
+}
+
+/* Blob drift */
+@keyframes blobDrift {
+  0%,100% { border-radius: 60% 40% 54% 46% / 48% 58% 42% 52%; }
+  33%     { border-radius: 44% 56% 42% 58% / 56% 44% 60% 40%; }
+  66%     { border-radius: 52% 48% 60% 40% / 40% 60% 50% 50%; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   3. BODY & BACKGROUND
+   ═══════════════════════════════════════════════════════════ */
+
+body {
+  background: linear-gradient(160deg, #f5fbf6 0%, #faf8f0 50%, #f0f8f4 100%) !important;
+  min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   4. TOPBAR — warmer, with subtle leaf decorations
+   ═══════════════════════════════════════════════════════════ */
+
+.topbar {
+  background: linear-gradient(135deg, #fefffe 0%, #f5fdf8 100%) !important;
+  border-bottom: 1px solid rgba(5,150,105,.12) !important;
+  box-shadow: 0 2px 12px rgba(5,150,105,.06) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Soft decorative blob behind topbar content */
+.topbar::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -20px;
+  width: 160px; height: 120px;
+  background: radial-gradient(ellipse, rgba(5,150,105,.07) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.topbar h1 {
+  background: linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   5. TABBAR — softer active state, smoother transitions
+   ═══════════════════════════════════════════════════════════ */
+
+.tabbar {
+  background: rgba(246,247,241,.95) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.tabbar button {
+  border-radius: var(--radius-md) !important;
+  transition: background var(--dur-base) var(--ease-smooth),
+              color var(--dur-base) var(--ease-smooth),
+              box-shadow var(--dur-base) var(--ease-smooth),
+              transform var(--dur-fast) !important;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.tabbar button:not(.active):hover {
+  background: #d4ede5 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(5,150,105,.10) !important;
+}
+
+.tabbar button.active {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+  box-shadow: 0 3px 10px rgba(5,150,105,.25) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   6. SECTIONS — softer cards with better shadow
+   ═══════════════════════════════════════════════════════════ */
+
+.section {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid rgba(5,150,105,.10) !important;
+  box-shadow: var(--shadow-card) !important;
+  animation: fadeInUp var(--dur-slow) var(--ease-smooth) both;
+}
+
+.section + .section {
+  animation-delay: 0.06s;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   7. BUTTONS — better contrast, warmer hover
+   ═══════════════════════════════════════════════════════════ */
+
+button:not(.ghost):not(.secondary):not(.danger):not(.danger-ghost):not(.warning-btn):not([class*="pantry"]):not([class*="pf-"]):not([class*="metric"]) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+  box-shadow: 0 3px 10px rgba(5,150,105,.20) !important;
+  transition: transform var(--dur-fast), box-shadow var(--dur-base), background var(--dur-base), filter var(--dur-base) !important;
+}
+
+button:not(.ghost):not(.secondary):not(.danger):not(.danger-ghost):not(.warning-btn):not([class*="pantry"]):not([class*="pf-"]):not([class*="metric"]):hover {
+  filter: brightness(1.08);
+  box-shadow: 0 5px 16px rgba(5,150,105,.28) !important;
+  transform: translateY(-1px) !important;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.97) translateY(0) !important;
+}
+
+.secondary {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
+  border: 1px solid rgba(5,150,105,.20) !important;
+  color: #047857 !important;
+  transition: transform var(--dur-fast), box-shadow var(--dur-base), filter var(--dur-base) !important;
+}
+
+.secondary:hover {
+  filter: brightness(0.97) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(5,150,105,.12) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   8. METRIC CARDS — dashboard cards more polished
+   ═══════════════════════════════════════════════════════════ */
+
+.metric-card {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid rgba(0,0,0,.05) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base) var(--ease-smooth),
+              box-shadow var(--dur-base) var(--ease-smooth) !important;
+  animation: popIn 0.35s var(--ease-smooth) both;
+}
+
+.metric-card:not([class*="metric-card-daysUntilSalary"]):hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.metric-card.positive {
+  background: linear-gradient(135deg, #f0fdf7 0%, #ecfdf5 100%) !important;
+  border-color: rgba(5,150,105,.12) !important;
+}
+
+.metric-card.warning {
+  background: linear-gradient(135deg, #fffdf0 0%, #fef9c3 100%) !important;
+  border-color: rgba(245,158,11,.14) !important;
+}
+
+.metric-card.danger {
+  background: linear-gradient(135deg, #fff5f5 0%, #fee2e2 100%) !important;
+  border-color: rgba(185,28,28,.10) !important;
+}
+
+.metric-card.neutral {
+  background: linear-gradient(135deg, #fafaf8 0%, #f5f4ef 100%) !important;
+  border-color: rgba(0,0,0,.06) !important;
+}
+
+.metric-card strong {
+  font-size: 1.35rem !important;
+  letter-spacing: -0.02em;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   9. STATUS BANNER — dashboard hero banner
+   ═══════════════════════════════════════════════════════════ */
+
+.status-banner {
+  border-radius: var(--radius-md) !important;
+  padding: 1.1rem 1.25rem !important;
+  background: linear-gradient(135deg, #f0fdf7 0%, #d1fae5 100%) !important;
+  border: 1px solid rgba(5,150,105,.15) !important;
+  box-shadow: 0 2px 8px rgba(5,150,105,.08) !important;
+  position: relative;
+  overflow: hidden;
+  animation: fadeIn var(--dur-slow) var(--ease-smooth);
+}
+
+.status-banner::after {
+  content: '🌿';
+  position: absolute;
+  right: 1rem; top: 50%;
+  transform: translateY(-50%);
+  font-size: 2.5rem;
+  opacity: 0.12;
+  pointer-events: none;
+  animation: floatLeaf 6s ease-in-out infinite;
+}
+
+.status-banner.riskNegative::after { content: '⚡'; }
+.status-banner.largePaymentsSoon::after { content: '📅'; }
+
+.status-banner strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   10. NATURE BACKGROUND DECORATIONS
+   ═══════════════════════════════════════════════════════════ */
+
+/* Floating leaf badge — add class .leaf-deco to any container */
+.leaf-deco::before {
+  content: '';
+  position: absolute;
+  width: 48px; height: 48px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M24 4 C14 4 6 14 6 24 C6 34 14 42 24 42 C34 42 42 34 42 24 C42 14 34 4 24 4Z' fill='%23059669' opacity='0.08'/%3E%3Cpath d='M12 36 C18 24 30 20 40 14 C34 28 22 32 12 36Z' fill='%23059669' opacity='0.15'/%3E%3C/svg%3E") center/contain no-repeat;
+  pointer-events: none;
+  animation: floatLeaf 8s ease-in-out infinite;
+  z-index: 0;
+}
+
+/* Section hero banner — decorative nature header strip */
+.section-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f0fdf7 0%, #fef9f0 100%);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 1.25rem 1.25rem 0.85rem;
+  border-bottom: 1px solid rgba(5,150,105,.10);
+}
+
+.section-hero::before {
+  content: '';
+  position: absolute;
+  bottom: -8px; right: -16px;
+  width: 200px; height: 80px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 80'%3E%3Cpath d='M20 80 C25 50 35 30 50 20 L52 22 C38 32 28 52 26 80Z' fill='%23059669' opacity='0.07'/%3E%3Cpath d='M60 80 C65 45 80 25 100 15 L102 17 C83 27 68 47 66 80Z' fill='%23059669' opacity='0.05'/%3E%3Cpath d='M110 80 C112 55 122 35 140 22 L142 24 C124 37 116 57 114 80Z' fill='%23059669' opacity='0.06'/%3E%3Cpath d='M155 80 C157 58 165 42 180 30 L182 32 C167 44 161 60 159 80Z' fill='%23059669' opacity='0.04'/%3E%3C/svg%3E") right bottom/contain no-repeat;
+  pointer-events: none;
+}
+
+.section-hero::after {
+  content: '';
+  position: absolute;
+  top: -20px; left: -10px;
+  width: 140px; height: 100px;
+  background: radial-gradient(ellipse at 30% 50%, rgba(5,150,105,.06) 0%, transparent 70%);
+  pointer-events: none;
+  border-radius: 50%;
+  animation: blobDrift 12s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   11. NOTICE / ALERTS — softer look
+   ═══════════════════════════════════════════════════════════ */
+
+.notice {
+  border-radius: var(--radius-md) !important;
+  border-left: 3px solid rgba(245,158,11,.5) !important;
+}
+
+.notice.danger {
+  border-left-color: rgba(185,28,28,.4) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   12. LIST ITEMS — slightly lifted cards
+   ═══════════════════════════════════════════════════════════ */
+
+.list-item,
+.payment-row {
+  border-radius: var(--radius-md) !important;
+  transition: box-shadow var(--dur-base) var(--ease-smooth),
+              transform var(--dur-base) var(--ease-smooth) !important;
+}
+
+.list-item:hover,
+.payment-row:hover {
+  box-shadow: var(--shadow-md) !important;
+  transform: translateX(2px) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   13. PANTRY / DEBARA — friendlier cards
+   ═══════════════════════════════════════════════════════════ */
+
+.pantry-card {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid rgba(5,150,105,.10) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base) var(--ease-smooth),
+              box-shadow var(--dur-base) var(--ease-smooth) !important;
+  animation: fadeInUp 0.35s var(--ease-smooth) both;
+}
+
+.pantry-card:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.pantry-summary-card {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base), box-shadow var(--dur-base) !important;
+}
+
+.pantry-summary-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Pantry badge — pulsing when alert */
+.pantry-badge-pulse {
+  animation: softPulse 2s ease-in-out infinite !important;
+}
+
+/* Pantry section hero */
+.pantry-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.pantry-section::before {
+  content: '🏺';
+  position: absolute;
+  right: 1rem; top: 1rem;
+  font-size: 3.5rem;
+  opacity: 0.06;
+  pointer-events: none;
+  animation: floatLeaf 10s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   14. KIDS ZONE — more playful and colorful
+   ═══════════════════════════════════════════════════════════ */
+
+.kids-section,
+[class*="kids"],
+[class*="kid-"] {
+  --kid-green:  #34d399;
+  --kid-yellow: #fbbf24;
+  --kid-pink:   #f472b6;
+  --kid-blue:   #60a5fa;
+  --kid-orange: #fb923c;
+  --kid-purple: #a78bfa;
+}
+
+/* Kids token / coin cards */
+.kids-coin-card,
+.token-card,
+.kid-reward-card {
+  border-radius: var(--radius-xl) !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,.08) !important;
+  transition: transform var(--dur-base) var(--ease-spring),
+              box-shadow var(--dur-base) !important;
+  animation: popIn 0.4s var(--ease-spring) both;
+}
+
+.kids-coin-card:hover,
+.token-card:hover,
+.kid-reward-card:hover {
+  transform: translateY(-4px) rotate(0.5deg) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.10) !important;
+}
+
+/* Sparkle on kids scores */
+.kids-score-value,
+.token-count {
+  position: relative;
+  display: inline-block;
+}
+
+/* Kids section background */
+.kids-bg {
+  background: linear-gradient(135deg, #fdf4ff 0%, #eff6ff 50%, #f0fdf4 100%) !important;
+}
+
+/* Stars decoration in kids section */
+.kids-stars::before {
+  content: '⭐✨🌟';
+  display: block;
+  font-size: 1.2rem;
+  letter-spacing: 0.25rem;
+  opacity: 0.6;
+  animation: sparkle 3s ease-in-out infinite;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   15. UTILITIES / CONTOARE — gentle glows
+   ═══════════════════════════════════════════════════════════ */
+
+.utility-reading-card,
+.counter-card,
+.savings-card {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base), box-shadow var(--dur-base) !important;
+}
+
+.utility-reading-card:hover,
+.counter-card:hover,
+.savings-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Utility progress bars — softer */
+progress,
+.progress-bar {
+  border-radius: 999px !important;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   16. INPUT / FORM — warmer
+   ═══════════════════════════════════════════════════════════ */
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 3px rgba(5,150,105,.12) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   17. BADGE / CHIP — pop in
+   ═══════════════════════════════════════════════════════════ */
+
+.badge {
+  animation: popIn 0.3s var(--ease-smooth) both;
+  border-radius: 999px !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   18. RECOMMENDATION CARDS (Shopping)
+   ═══════════════════════════════════════════════════════════ */
+
+.recommendation-card {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base) var(--ease-smooth),
+              box-shadow var(--dur-base) !important;
+}
+
+.recommendation-card:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   19. PANTRY PROGRESS BAR — colored fill
+   ═══════════════════════════════════════════════════════════ */
+
+.pantry-progress-bar {
+  border-radius: 999px !important;
+  overflow: hidden;
+  background: #e5e7eb !important;
+}
+
+.pantry-progress-fill {
+  border-radius: 999px !important;
+  transition: width 0.5s var(--ease-smooth) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   19b. KIDS EXISTING CSS CLASSES — enhancements
+   ═══════════════════════════════════════════════════════════ */
+
+/* Wallet card — richer gradient, more playful */
+.kid-wallet-card {
+  border-radius: 28px !important;
+  background: linear-gradient(150deg, #fff7f0 0%, #fffbe8 50%, #f0fff8 100%) !important;
+  box-shadow: 0 16px 48px rgba(139,92,246,.14), 0 4px 16px rgba(0,0,0,.06) !important;
+  border: 1.5px solid rgba(139,92,246,.12) !important;
+}
+
+/* Reward card — cheerful */
+.kid-reward-card {
+  border-radius: 20px !important;
+  transition: transform 0.22s var(--ease-spring), box-shadow 0.22s !important;
+}
+
+.kid-reward-card:hover {
+  transform: translateY(-4px) rotate(0.4deg) !important;
+  box-shadow: 0 12px 32px rgba(139,92,246,.18) !important;
+}
+
+/* Child picker active — purple gradient */
+.kid-child-picker button.active {
+  background: linear-gradient(135deg, #a78bfa 0%, #818cf8 50%, #38bdf8 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 20px rgba(139,92,246,.25) !important;
+}
+
+/* Kid mode shell — warmer background */
+.kid-mode-shell {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(251,191,36,.40), transparent 28%),
+    radial-gradient(circle at 86% 18%, rgba(167,139,250,.35), transparent 30%),
+    radial-gradient(circle at 80% 90%, rgba(249,168,212,.30), transparent 34%),
+    linear-gradient(135deg, #fff8e8 0%, #f0f4ff 50%, #f8fce8 100%) !important;
+}
+
+/* Kid section tab buttons — from KidsZone inline styles, need !important overrides via attribute */
+[class*="kids-tab-scroll"] button,
+.kids-tab-scroll button {
+  border-radius: 12px !important;
+  transition: all 0.18s var(--ease-smooth) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   20. MOTION CONTROL — three levels
+   ═══════════════════════════════════════════════════════════ */
+
+/* motion-none: NO animations at all */
+html.motion-none *,
+html.motion-none *::before,
+html.motion-none *::after {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+/* motion-reduced: only functional micro-interactions, no decorative loops */
+html.motion-reduced .pantry-section::before,
+html.motion-reduced .topbar::before,
+html.motion-reduced .status-banner::after,
+html.motion-reduced .section-hero::after,
+html.motion-reduced .leaf-deco::before {
+  animation: none !important;
+}
+
+html.motion-reduced * {
+  animation-duration: 0.01s !important;
+  animation-iteration-count: 1 !important;
+}
+
+html.motion-reduced .pantry-badge-pulse,
+html.motion-reduced .kids-stars::before {
+  animation: none !important;
+}
+
+/* prefers-reduced-motion: browser-level — always respected */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   21. ANIMATION SETTING TOGGLE BUTTON
+   ═══════════════════════════════════════════════════════════ */
+
+.motion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent !important;
+  border: 1px solid var(--line) !important;
+  color: var(--muted) !important;
+  font-size: 0.76rem !important;
+  font-weight: 600 !important;
+  padding: 0.3rem 0.65rem !important;
+  min-height: 32px !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.motion-toggle:hover {
+  background: var(--surface-soft) !important;
+  transform: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   22. AUTH SCREEN — more welcoming
+   ═══════════════════════════════════════════════════════════ */
+
+.auth-screen {
+  background: linear-gradient(160deg, #f0fdf7 0%, #fef9f0 100%) !important;
+}
+
+.auth-card {
+  border-radius: var(--radius-xl) !important;
+  box-shadow: 0 20px 60px rgba(5,150,105,.12), 0 4px 16px rgba(0,0,0,.06) !important;
+  border: 1px solid rgba(5,150,105,.12) !important;
+  animation: fadeInUp 0.5s var(--ease-smooth) both;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   23. MOBILE refinements
+   ═══════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .section {
+    border-radius: var(--radius-md) !important;
+    animation: none !important; /* avoid jank on scroll */
+  }
+
+  .metric-card {
+    animation: none !important;
+  }
+
+  .pantry-card:hover,
+  .metric-card:hover,
+  .list-item:hover {
+    transform: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   24. PRICE FINDER — consistent with new palette
+   ═══════════════════════════════════════════════════════════ */
+
+.pf-section {
+  border-top: 2px dashed rgba(5,150,105,.20) !important;
+}
+
+.pf-result-card {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: box-shadow var(--dur-base) !important;
+}
+
+.pf-result-card:hover {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   25. HELPERS — utility animation classes
+   ═══════════════════════════════════════════════════════════ */
+
+.anim-fade-up    { animation: fadeInUp 0.35s var(--ease-smooth) both; }
+.anim-fade-in    { animation: fadeIn   0.3s  var(--ease-smooth) both; }
+.anim-pop-in     { animation: popIn    0.35s var(--ease-spring)  both; }
+.anim-float-leaf { animation: floatLeaf 8s ease-in-out infinite; }
+.anim-sway       { animation: swayGrass 4s ease-in-out infinite; }

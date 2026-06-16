@@ -1,5 +1,6 @@
 import { formatMoney } from '../lib/finance'
 import { FamilyWeekendWidgets } from './FamilyWeekendWidgets'
+import { NatureBg } from './NatureBg'
 
 export function Dashboard({ t, language, currency, summary, dbUserId, onNavigate }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
@@ -31,43 +32,47 @@ export function Dashboard({ t, language, currency, summary, dbUserId, onNavigate
     : ''
 
   return (
-    <section className="section">
-      <div className={`status-banner ${summary.status}`}>
-        <strong>{t(summary.status)}</strong>
-        <span>{statusText}</span>
-        {largestText && <span>{largestText}</span>}
-      </div>
-      {summary.accounts.stale && <div className="notice danger">{t('balancesOutdated')}</div>}
-      {(summary.accounts.overdraftUsed > 0 || summary.accounts.netBalance < 0) && (
-        <div className="notice danger">
-          <strong>{t('priorityNow')}</strong>
-          <span>{summary.accounts.overdraftUsed > 0 ? t('reduceOverdraftPriority') : t('accountsNegative')}</span>
+    <section className="section" style={{ position: 'relative', overflow: 'hidden', paddingTop: '1.25rem' }}>
+      <NatureBg variant="minimal" />
+      <div style={{ position: 'relative', zIndex: 1, display: 'contents' }}>
+        <p className="eyebrow" style={{ fontSize: '0.72rem', marginBottom: '0.2rem', opacity: 0.75 }}>📊 Situație financiară</p>
+        <div className={`status-banner ${summary.status}`}>
+          <strong>{t(summary.status)}</strong>
+          <span>{statusText}</span>
+          {largestText && <span>{largestText}</span>}
         </div>
-      )}
-      {summary.accounts.positiveTotal <= 0 && <div className="notice">{t('noPositiveBalanceIncluded')}</div>}
-      {summary.accounts.netBalance < 0 && <div className="notice danger">{t('overdraftPriority')}</div>}
-      {summary.accounts.overdraftUsed > 0 && (
-        <div className="notice danger">{t('overdraftUsedWarning').replace('{amount}', formatMoney(summary.accounts.overdraftUsed, currency, locale))}</div>
-      )}
-      <FamilyWeekendWidgets currency={currency} language={language} dbUserId={dbUserId} />
-      <div className="metric-grid">
-        {cards.map(([label, value, tone, hint, unit]) => (
-          <article
-            className={`metric-card ${tone} metric-card-${label} ${label === 'journalTodayTotal' ? 'clickable' : ''}`}
-            key={label}
-            onClick={label === 'journalTodayTotal' ? () => onNavigate('journal') : undefined}
-            role={label === 'journalTodayTotal' ? 'button' : undefined}
-            tabIndex={label === 'journalTodayTotal' ? 0 : undefined}
-            onKeyDown={label === 'journalTodayTotal' ? (event) => {
-              if (event.key === 'Enter' || event.key === ' ') onNavigate('journal')
-            } : undefined}
-          >
-            <span>{t(label)}</span>
-            <strong>{unit === 'days' ? `${Math.round(value)} ${t('days')}` : formatMoney(value, currency, locale)}</strong>
-            {label === 'journalTodayTotal' && <small>{t('openJournal')}</small>}
-            {hint && <small>{hint}</small>}
-          </article>
-        ))}
+        {summary.accounts.stale && <div className="notice danger">{t('balancesOutdated')}</div>}
+        {(summary.accounts.overdraftUsed > 0 || summary.accounts.netBalance < 0) && (
+          <div className="notice danger">
+            <strong>{t('priorityNow')}</strong>
+            <span>{summary.accounts.overdraftUsed > 0 ? t('reduceOverdraftPriority') : t('accountsNegative')}</span>
+          </div>
+        )}
+        {summary.accounts.positiveTotal <= 0 && <div className="notice">{t('noPositiveBalanceIncluded')}</div>}
+        {summary.accounts.netBalance < 0 && <div className="notice danger">{t('overdraftPriority')}</div>}
+        {summary.accounts.overdraftUsed > 0 && (
+          <div className="notice danger">{t('overdraftUsedWarning').replace('{amount}', formatMoney(summary.accounts.overdraftUsed, currency, locale))}</div>
+        )}
+        <FamilyWeekendWidgets currency={currency} language={language} dbUserId={dbUserId} />
+        <div className="metric-grid">
+          {cards.map(([label, value, tone, hint, unit]) => (
+            <article
+              className={`metric-card ${tone} metric-card-${label} ${label === 'journalTodayTotal' ? 'clickable' : ''}`}
+              key={label}
+              onClick={label === 'journalTodayTotal' ? () => onNavigate('journal') : undefined}
+              role={label === 'journalTodayTotal' ? 'button' : undefined}
+              tabIndex={label === 'journalTodayTotal' ? 0 : undefined}
+              onKeyDown={label === 'journalTodayTotal' ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') onNavigate('journal')
+              } : undefined}
+            >
+              <span>{t(label)}</span>
+              <strong>{unit === 'days' ? `${Math.round(value)} ${t('days')}` : formatMoney(value, currency, locale)}</strong>
+              {label === 'journalTodayTotal' && <small>{t('openJournal')}</small>}
+              {hint && <small>{hint}</small>}
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   )

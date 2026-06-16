@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import './styles/design-upgrade.css'
+import { useMotionSettings, motionLabel } from './lib/motionSettings'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
 import { AccountForm, DebtForm, ExpenseForm, IncomeForm, JournalEntryForm, WorkAbsenceForm, UtilityReadingForm } from './components/Forms'
@@ -38,6 +40,7 @@ const defaultSettings = {
 const BUILD_LABEL = 'KlarBudget build 2026-06-16 — shopping simplificat'
 
 function App() {
+  const { motion, cycleMotion } = useMotionSettings()
   const [language, setLanguage] = useState(localStorage.getItem('klarbudget-language') || 'ro')
   const [user, setUser] = useState(null)
   const [familyOwnerId, setFamilyOwnerId] = useState(null)
@@ -895,6 +898,15 @@ function App() {
           <select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Language" style={{ width: 'auto', display: 'inline-block', minHeight: '44px' }}>
             {languages.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
           </select>
+          <button
+            type="button"
+            className="motion-toggle"
+            onClick={cycleMotion}
+            title="Schimbă nivelul de animații"
+            aria-label={motionLabel(motion).label}
+          >
+            {motionLabel(motion).icon} <span style={{ display: 'none' }}>{motionLabel(motion).label}</span>
+          </button>
           <button type="button" className="secondary" onClick={() => supabase.auth.signOut()} style={{ minHeight: '44px' }}>{t('signOut')}</button>
         </div>
       </header>
