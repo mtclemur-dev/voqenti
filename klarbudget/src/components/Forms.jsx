@@ -278,7 +278,7 @@ function CheckboxInput({ name, label, checked, onChange }) {
   )
 }
 
-const utilityReadingDefaults = { meter_type: 'electricity', reading_date: isoDate(new Date()), value: '', cost_estimate: '', notes: '' }
+const utilityReadingDefaults = { meter_type: 'electricity', reading_date: isoDate(new Date()), value: '', cost_estimate: '', notes: '', is_meter_reset: false }
 
 export function UtilityReadingForm({ t, initialItem, onSubmit, onCancel }) {
   return (
@@ -289,6 +289,10 @@ export function UtilityReadingForm({ t, initialItem, onSubmit, onCancel }) {
           <TextInput name="reading_date" label={t('readingDate')} type="date" value={values.reading_date} onChange={update} required />
           <TextInput name="value" label={t('meterValue')} type="number" step="0.01" value={values.value} onChange={update} required />
           <TextInput name="cost_estimate" label={t('costEstimateOptional')} type="number" step="0.01" value={values.cost_estimate} onChange={update} />
+          <CheckboxInput name="is_meter_reset" label={t('meterReset')} checked={values.is_meter_reset} onChange={update} />
+          <p className="muted" style={{ margin: '-0.35rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>
+            {t('meterResetHint')}
+          </p>
           <TextInput name="notes" label={t('notes')} value={values.notes} onChange={update} />
         </>
       )}

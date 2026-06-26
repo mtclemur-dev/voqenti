@@ -18,6 +18,7 @@ import { SmartShopping } from './components/SmartShopping'
 import { inferOfferCategory, normalizeOfferPayload, normalizeProduct } from './lib/shoppingHelpers'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
+import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
 const defaultSettings = {
@@ -515,7 +516,11 @@ function App() {
     const { error } = await query
     if (error) {
       setNotice(t('saveError'))
-      window.alert(error.message)
+      if (/is_meter_reset/i.test(error.message)) {
+        window.alert(t('meterResetSchemaMissing'))
+      } else {
+        window.alert(error.message)
+      }
       return
     }
     setEditing((current) => ({ ...current, utilityReading: null }))
@@ -1769,56 +1774,7 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
     }).format(num);
   };
 
-  const getUtilityData = (type) => {
-    const typeReadings = readings
-      .filter((r) => r.meter_type === type)
-      .sort((a, b) => new Date(a.reading_date) - new Date(b.reading_date));
-
-    const unitPrice = Number(settings[`utility_price_${type}`] ?? (type === 'electricity' ? 0.35 : type === 'gas' ? 1.20 : 4.50));
-    const monthlyPayment = Number(settings[`utility_monthly_payment_${type}`] ?? 0);
-
-    if (typeReadings.length < 2) {
-      return {
-        hasEnoughData: false,
-        readings: typeReadings,
-        latest: typeReadings[typeReadings.length - 1] || null
-      };
-    }
-
-    const veche = typeReadings[typeReadings.length - 2];
-    const noua = typeReadings[typeReadings.length - 1];
-
-    const consum = Number(noua.value) - Number(veche.value);
-    const costEstimat = consum * unitPrice;
-
-    const dateNew = new Date(noua.reading_date);
-    const dateOld = new Date(veche.reading_date);
-    const diffTime = dateNew - dateOld;
-    const days = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
-
-    const medieZilnica = consum / days;
-    const costMediuZilnic = costEstimat / days;
-
-    const fractionOfMonth = days / 30.44;
-    const platiEstimate = monthlyPayment * fractionOfMonth;
-    const diferenta = platiEstimate - costEstimat;
-
-    return {
-      hasEnoughData: true,
-      readings: typeReadings,
-      latest: noua,
-      consum,
-      costEstimat,
-      days,
-      medieZilnica,
-      costMediuZilnic,
-      plataLunara: monthlyPayment,
-      platiEstimate,
-      diferenta,
-      isPlus: diferenta >= 0,
-      diffAbs: Math.abs(diferenta)
-    };
-  };
+  const getUtilityData = (type) => computeLatestPeriodStats(readings, type, settings)
 
   const gasData = getUtilityData('gas');
   const electricityData = getUtilityData('electricity');
@@ -1965,6 +1921,18 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
                 fontWeight: '500',
               }}>
                 📅 {data.latest.reading_date}
+                {isMeterReset(data.latest) && (
+                  <span style={{
+                    marginLeft: '0.5rem',
+                    background: 'rgba(255,255,255,0.25)',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '999px',
+                    fontSize: '0.72rem',
+                    fontWeight: '800',
+                  }}>
+                    🔄 {t('meterResetBadge')}
+                  </span>
+                )}
               </div>
             </div>
           ) : (
@@ -1983,7 +1951,45 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
           flexGrow: 1,
           background: cfg.gradientSoft,
         }}>
-          {data.hasEnoughData ? (
+          {data.isError ? (
+            <div style={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1.25rem',
+              background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
+              borderRadius: '14px',
+              border: '1px solid #fcd34d',
+              textAlign: 'center',
+              gap: '0.5rem',
+            }}>
+              <span style={{ fontSize: '2rem' }}>⚠️</span>
+              <span style={{ fontSize: '0.88rem', color: '#92400e', fontWeight: '700', lineHeight: 1.45 }}>
+                {t('meterResetError')}
+              </span>
+            </div>
+          ) : data.isBaseline ? (
+            <div style={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1.25rem',
+              background: 'rgba(255,255,255,0.55)',
+              borderRadius: '14px',
+              border: '1px dashed rgba(0,0,0,0.12)',
+              textAlign: 'center',
+              gap: '0.5rem',
+            }}>
+              <span style={{ fontSize: '2rem' }}>🔄</span>
+              <span style={{ fontSize: '0.88rem', color: '#374151', fontWeight: '700', lineHeight: 1.45 }}>
+                {t('meterResetBaseline')}
+              </span>
+            </div>
+          ) : data.hasEnoughData ? (
             <>
               {/* Stats rows */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
@@ -2139,6 +2145,9 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
                       <span style={{ fontSize: '0.78rem', color: '#6b7280', fontWeight: '500' }}>
                         {reading.reading_date}
+                        {isMeterReset(reading) && (
+                          <span style={{ marginLeft: '0.35rem', color: cfg.accentDark, fontWeight: '800' }}>🔄</span>
+                        )}
                       </span>
                       <strong style={{
                         fontSize: isLatest ? '0.92rem' : '0.82rem',
@@ -2533,7 +2542,12 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
           emptyText={t('noData')}
           editText={t('edit')}
           deleteText={t('delete')}
-          renderMeta={(item) => `${item.reading_date} — ${item.value} ${meterUnits[item.meter_type] || ''} ${item.cost_estimate ? `(Cost: ${item.cost_estimate} ${currency})` : ''} ${item.notes ? `[${item.notes}]` : ''}`}
+          renderMeta={(item) => {
+            const resetTag = isMeterReset(item) ? ` 🔄 ${t('meterResetBadge')}` : ''
+            const costTag = item.cost_estimate ? ` (Cost: ${item.cost_estimate} ${currency})` : ''
+            const notesTag = item.notes ? ` [${item.notes}]` : ''
+            return `${item.reading_date} — ${item.value} ${meterUnits[item.meter_type] || ''}${resetTag}${costTag}${notesTag}`
+          }}
           onEdit={onEdit}
           onDelete={onDelete}
         />
@@ -2721,6 +2735,9 @@ function preparePayload(payload) {
     result.cost_estimate = (rawCost === '' || rawCost === null || rawCost === undefined)
       ? null
       : Number(rawCost)
+    if ('is_meter_reset' in result) {
+      result.is_meter_reset = Boolean(result.is_meter_reset)
+    }
   }
 
   if ('expense_kind' in result) {

@@ -7,6 +7,7 @@ import {
   variableBudgetStats,
   toNumber,
 } from './finance'
+import { computeReadingConsumption } from './utilityHelpers'
 
 export function buildChatGptBudgetSummary({
   currency,
@@ -206,8 +207,8 @@ function formatUtilityReadings(readings = [], settings = {}, currency, locale) {
       const current = meterReadings[i]
       if (new Date(current.reading_date).getFullYear() !== currentYear) continue
 
-      const consumption = toNumber(current.value) - toNumber(previous.value)
-      if (consumption < 0) continue
+      const { consumption, isBaseline, isError } = computeReadingConsumption(current, previous)
+      if (isBaseline || isError) continue
 
       const days = Math.ceil((new Date(current.reading_date) - new Date(previous.reading_date)) / (1000 * 60 * 60 * 24))
       const cost = current.cost_estimate ? toNumber(current.cost_estimate) : consumption * unitPrice
@@ -218,7 +219,7 @@ function formatUtilityReadings(readings = [], settings = {}, currency, locale) {
 
     const latest = meterReadings[meterReadings.length - 1]
     const previous = meterReadings[meterReadings.length - 2]
-    const lastConsumption = toNumber(latest.value) - toNumber(previous.value)
+    const { consumption: lastConsumption } = computeReadingConsumption(latest, previous)
     const paidToDate = monthlyPayment * monthsElapsed
     const difference = paidToDate - currentYearCost
     const projectedAnnualCost = currentYearDays > 0 ? (currentYearCost / currentYearDays) * 365 : 0
