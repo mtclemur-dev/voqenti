@@ -503,6 +503,12 @@ function App() {
 
   const saveUtilityReading = async (payload, currentItem = null) => {
     const prepared = preparePayload(payload)
+    const meterValue = Number(prepared.value)
+    if (!Number.isFinite(meterValue) || meterValue < 0) {
+      window.alert(t('meterValueRequired'))
+      return
+    }
+    prepared.value = meterValue
     const query = currentItem
       ? supabase.from('kb_utility_readings').update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
       : supabase.from('kb_utility_readings').insert({ ...prepared, user_id: dbUserId })
@@ -2709,6 +2715,13 @@ function preparePayload(payload) {
   dateFields.forEach((field) => {
     if (field in result && !result[field]) result[field] = null
   })
+
+  if ('meter_type' in result) {
+    const rawCost = result.cost_estimate
+    result.cost_estimate = (rawCost === '' || rawCost === null || rawCost === undefined)
+      ? null
+      : Number(rawCost)
+  }
 
   if ('expense_kind' in result) {
     if (result.expense_kind === 'variable_budget') {
