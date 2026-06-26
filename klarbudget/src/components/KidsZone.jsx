@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { KidsPlayView } from './KidsPlayView'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -272,6 +273,17 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
   // Kid Mode
   const [kidChatText, setKidChatText] = useState('')
   const [kidExitConfirm, setKidExitConfirm] = useState(false)
+  const [kidViewTab, setKidViewTab] = useState('home')
+  const [celebration, setCelebration] = useState(null)
+
+  const fireCelebration = useCallback((payload) => {
+    setCelebration(payload)
+    window.setTimeout(() => setCelebration(null), 2600)
+  }, [])
+
+  useEffect(() => {
+    if (kidModeActive) setKidViewTab('home')
+  }, [kidModeActive])
 
   // For child accounts: resolve family owner ID from kb_family_members so
   // messages and wallet data go under the parent's user_id (not the child's own id)
@@ -739,6 +751,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
         })
       }
       showNotice(`+${task.coins} monede adăugate automat! ✅`)
+      fireCelebration({ emoji: '🎉', title: `+${task.coins} monede!`, sub: 'Super treabă! Continuă așa!' })
       await loadData()
       return
     }
@@ -763,6 +776,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
       })
     }
     showNotice('Cerere trimisă! Așteptați aprobarea. 🙏')
+    fireCelebration({ emoji: '🚀', title: 'Misiune trimisă!', sub: 'Părinții o vor aproba curând' })
     await loadData()
   }
 
@@ -800,6 +814,7 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
       })
     }
     showNotice('Cerere trimisă! 🎁')
+    fireCelebration({ emoji: '🎁', title: 'Recompensă cerută!', sub: safeIcon(reward.icon, '🎁') + ' ' + reward.title })
     await loadData()
   }
 
@@ -1019,45 +1034,25 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
         </div>
       )}
 
-      {/* Mod Copil button */}
-      <div style={{
-        background: 'linear-gradient(135deg, #fff7ed, #ffedd5)',
-        borderRadius: '16px',
-        border: '1px solid #fed7aa',
-        padding: '1.25rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '0.75rem',
-      }}>
-        <div>
-          <div style={{ fontWeight: 800, color: '#15231f' }}>🧒 Mod Copil</div>
-          <div style={{ fontSize: '0.82rem', color: '#63746e', marginTop: '0.2rem' }}>
-            Deschide interfața simplă pentru Veronica sau Robert.
+      {/* Mod Copil — intrare rapidă pentru copii */}
+      <div className="kid-play-next-reward" style={{ margin: 0, cursor: 'default', borderStyle: 'solid', borderColor: '#fed7aa', background: 'linear-gradient(135deg, #fff7ed, #ffedd5)' }}>
+        <div className="kid-play-next-reward-icon">🧒</div>
+        <div className="kid-play-next-reward-body">
+          <div className="kid-play-next-reward-label">Mod copil — interfață fun</div>
+          <div className="kid-play-next-reward-title">Deschide aplicația ca Veronica sau Robert</div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem', flexWrap: 'wrap' }}>
+            {CHILDREN.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className="kid-play-quick-btn primary"
+                style={{ flex: '1 1 auto', minWidth: '120px' }}
+                onClick={() => { setKidModeChild(name); setKidModeActive(true) }}
+              >
+                {childAvatar(name)} {name}
+              </button>
+            ))}
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: '0.6rem' }}>
-          {CHILDREN.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => { setKidModeChild(name); setKidModeActive(true) }}
-              style={{
-                background: '#f97316',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '0.6rem 1.1rem',
-                fontWeight: 800,
-                fontSize: '0.9rem',
-                minHeight: 'auto',
-                cursor: 'pointer',
-              }}
-            >
-              {childAvatar(name)} {name}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -1714,370 +1709,36 @@ export function KidsZone({ user, familyOwnerId, isChildAccount = false, childAcc
 
   const renderKidMode = () => {
     const wallet = kidWallet || wallets.find((w) => w.member_name === kidModeChild) || wallets[0]
-    if (!wallet) return <div style={{ color: '#9ca3af', padding: '2rem', textAlign: 'center' }}>Nu există portofele. Reîncarcă pagina.</div>
-
-    const balance = Number(wallet.balance || 0)
-    const avatar = childAvatar(wallet.member_name)
-    const kidTasks = tasksForWallet(wallet.id)
-    const kidRewards = rewards.filter((r) => r.is_available !== false)
-    const kidRequests = requests.filter((r) => r.child_id === wallet.id).slice(0, 10)
-
     return (
-      <div className="kid-mode-overlay">
-        {/* Kid mode header */}
-        <div style={{
-          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-          padding: '1.25rem 1.5rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <div style={{ color: '#fff', fontWeight: 900, fontSize: '1.1rem' }}>
-            {avatar} {wallet.member_name}
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {isChildAccount ? (
-              /* Child account: show only sign out */
-              onSignOut && (
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  style={{
-                    minHeight: 'auto',
-                    padding: '0.3rem 0.7rem',
-                    background: 'rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    borderRadius: '20px',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  🚪 Ieșire
-                </button>
-              )
-            ) : (
-              /* Parent: can switch between children */
-              CHILDREN.filter((n) => n !== wallet.member_name).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setKidModeChild(n)}
-                  style={{
-                    minHeight: 'auto',
-                    padding: '0.3rem 0.7rem',
-                    background: 'rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    borderRadius: '20px',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {childAvatar(n)} {n}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="kid-mode-content" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '600px', margin: '0 auto', boxSizing: 'border-box' }}>
-          {/* Wallet card */}
-          <div className="kid-wallet-card" style={{
-            background: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
-            borderRadius: '20px',
-            border: '2px solid #fde68a',
-            padding: '1.5rem',
-            textAlign: 'center',
-            boxShadow: '0 4px 20px rgba(251,191,36,0.2)',
-          }}>
-            <div style={{ fontSize: '3.5rem' }}>{avatar}</div>
-            <div style={{ fontWeight: 900, fontSize: '1.25rem', color: '#78350f', marginTop: '0.25rem' }}>{wallet.member_name}</div>
-            <div style={{ fontWeight: 900, fontSize: '3rem', color: '#92400e', lineHeight: 1, marginTop: '0.25rem' }}>
-              {balance} 🪙
-            </div>
-            {showChildEur && (
-              <div style={{ fontSize: '0.88rem', color: '#a16207', marginTop: '0.25rem' }}>≈ {fmtEur(balance, coinValue)}</div>
-            )}
-            <div style={{ fontSize: '0.82rem', color: '#b45309', marginTop: '0.5rem', fontWeight: 500 }}>
-              Continuă să strângi monede pentru recompense! 💪
-            </div>
-          </div>
-
-          {/* Kid tasks */}
-          <div className="kid-tasks-section">
-            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📋 Sarcinile mele</div>
-            {kidTasks.length === 0 ? (
-              <div style={{ color: '#9ca3af', fontSize: '0.88rem', textAlign: 'center', padding: '1.5rem', background: '#fff', borderRadius: '12px', border: '1px dashed #d1d5db' }}>
-                Nu ai sarcini active acum. 🎉
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {kidTasks.map((task) => {
-                  const alreadyPending = requests.some((r) => r.task_id === task.id && r.child_id === wallet.id && r.status === 'pending')
-                  return (
-                    <div key={task.id} className="kid-task-card" style={{
-                      background: '#fff',
-                      borderRadius: '14px',
-                      border: '1px solid #e5e7eb',
-                      padding: '1rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                    }}>
-                      <div style={{ fontSize: '1.8rem', flexShrink: 0 }}>{safeIcon(task.icon)}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 800, color: '#15231f', fontSize: '0.92rem' }}>{task.title}</div>
-                        <div style={{ fontWeight: 700, color: '#b45309', fontSize: '0.82rem', marginTop: '0.15rem' }}>
-                          +{task.coins} 🪙 ≈ {fmtEur(task.coins, coinValue)}
-                        </div>
-                        {alreadyPending && (
-                          <div style={{ fontSize: '0.75rem', color: '#0369a1', fontWeight: 600, marginTop: '0.2rem' }}>⏳ Cerere trimisă, aștept aprobarea...</div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        disabled={alreadyPending}
-                        onClick={() => childSubmitTaskRequest(task, wallet.id)}
-                        className={`kid-task-btn ${alreadyPending ? 'disabled' : ''}`}
-                        style={{
-                          minHeight: 'auto',
-                          padding: '0.5rem 0.9rem',
-                          background: alreadyPending ? '#e5e7eb' : 'linear-gradient(135deg, #17463c, #2d7a5e)',
-                          color: alreadyPending ? '#9ca3af' : '#fff',
-                          border: 'none',
-                          borderRadius: '10px',
-                          fontWeight: 800,
-                          fontSize: '0.82rem',
-                          cursor: alreadyPending ? 'not-allowed' : 'pointer',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {alreadyPending ? '⏳ Trimis' : '✅ Am făcut!'}
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Kid rewards */}
-          <div className="kid-rewards-section">
-            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>🎁 Recompensele mele</div>
-            <div className="kid-rewards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
-              {kidRewards.map((r) => {
-                const cost = Number(r.cost || 0)
-                const canAfford = balance >= cost
-                const pct = cost > 0 ? Math.min(100, Math.round((balance / cost) * 100)) : 100
-                const alreadyPending = requests.some((req) => req.reward_id === r.id && req.child_id === wallet.id && req.status === 'pending')
-
-                return (
-                  <div key={r.id} className={`kid-reward-card ${canAfford ? 'can-afford' : ''}`} style={{
-                    background: canAfford ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : '#fff',
-                    borderRadius: '14px',
-                    border: `1px solid ${canAfford ? '#86efac' : '#e5e7eb'}`,
-                    padding: '1rem',
-                    textAlign: 'center',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                  }}>
-                    <div style={{ fontSize: '2rem' }}>{safeIcon(r.icon, '🎁')}</div>
-                    <div style={{ fontWeight: 800, fontSize: '0.82rem', color: '#15231f' }}>{r.title}</div>
-                    <div style={{ fontWeight: 900, fontSize: '0.9rem', color: '#7c3aed' }}>{cost} 🪙</div>
-                    {/* Progress bar */}
-                    <div style={{ height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: canAfford ? '#16a34a' : '#f97316', borderRadius: '3px', transition: 'width 0.4s ease' }} />
-                    </div>
-                    {!canAfford && <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Îți mai trebuie {cost - balance} 🪙</div>}
-                    <button
-                      type="button"
-                      disabled={!canAfford || alreadyPending}
-                      onClick={() => childRequestReward(r, wallet.id)}
-                      className={`kid-reward-btn ${(!canAfford || alreadyPending) ? 'disabled' : ''}`}
-                      style={{
-                        minHeight: 'auto',
-                        padding: '0.4rem 0.6rem',
-                        background: (!canAfford || alreadyPending) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #8b5cf6)',
-                        color: (!canAfford || alreadyPending) ? '#9ca3af' : '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontWeight: 800,
-                        fontSize: '0.78rem',
-                        cursor: (!canAfford || alreadyPending) ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {alreadyPending ? '⏳ Trimis' : canAfford ? '🎁 Cere!' : 'Strânge mai multe'}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Kid chat */}
-          <div className="kid-chat-section">
-            <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>💬 Chat familie</div>
-            {/* Quick buttons */}
-            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-              {QUICK_MESSAGES.map((qm) => (
-                <button
-                  key={qm.text}
-                  type="button"
-                  onClick={() => sendMessage(qm.text, wallet.member_name, 'child')}
-                  className="kid-chat-quick-btn"
-                >
-                  {qm.label}
-                </button>
-              ))}
-            </div>
-            {/* Recent messages */}
-            <div className="kid-chat-messages-container">
-              {messages.slice(-10).map((msg) => {
-                const isSystem = msg.message_type !== 'normal'
-                const isKid = msg.sender_name === wallet.member_name
-                if (isSystem) return (
-                  <div key={msg.id} style={{ fontSize: '0.75rem', color: '#0369a1', textAlign: 'center', padding: '0.25rem 0' }}>
-                    {msg.message_text}
-                  </div>
-                )
-                return (
-                  <div key={msg.id} className={`kid-chat-msg-row ${isKid ? 'is-kid-sender' : 'is-other-sender'}`} style={{ display: 'flex', flexDirection: 'column', alignItems: isKid ? 'flex-end' : 'flex-start' }}>
-                    <div style={{ fontSize: '0.65rem', color: '#9ca3af', marginBottom: '0.1rem', padding: '0 0.4rem' }}>{msg.sender_name}</div>
-                    <div className="kid-chat-bubble" style={{
-                      maxWidth: '80%',
-                      background: isKid ? 'linear-gradient(135deg, #f97316, #ea580c)' : '#fff',
-                      color: isKid ? '#fff' : '#15231f',
-                      padding: '0.5rem 0.75rem',
-                      borderRadius: '10px',
-                      fontSize: '0.82rem',
-                      border: isKid ? 'none' : '1px solid #e5e7eb',
-                      wordBreak: 'break-word',
-                      overflowWrap: 'anywhere',
-                      whiteSpace: 'pre-wrap',
-                    }}>
-                      {msg.message_text}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {/* Chat input */}
-            <div className="family-chat-input-wrapper">
-              <input
-                value={kidChatText}
-                onChange={(e) => setKidChatText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(kidChatText, wallet.member_name, 'child') } }}
-                placeholder="Scrie un mesaj..."
-                disabled={!schemaReady.chat}
-                className="kid-chat-input"
-              />
-              <button
-                type="button"
-                onClick={() => sendMessage(kidChatText, wallet.member_name, 'child')}
-                disabled={!kidChatText.trim() || !schemaReady.chat}
-                className="kid-chat-send-btn"
-              >
-                ➤
-              </button>
-            </div>
-          </div>
-
-          {/* Kid requests */}
-          {kidRequests.length > 0 && (
-            <div className="kid-requests-section">
-              <div className="kid-section-title" style={{ fontWeight: 900, fontSize: '1rem', color: '#15231f', marginBottom: '0.75rem' }}>📬 Cererile mele</div>
-              <div className="kid-requests-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {kidRequests.map((r) => {
-                  const task = tasks.find((t) => t.id === r.task_id)
-                  const reward = rewards.find((rw) => rw.id === r.reward_id)
-                  const statusColor = r.status === 'approved' ? '#15803d' : r.status === 'rejected' ? '#991b1b' : '#b45309'
-                  const statusLabel = r.status === 'approved' ? '✅ Aprobat' : r.status === 'rejected' ? '❌ Respins' : '⏳ În așteptare'
-
-                  return (
-                    <div key={r.id} className={`kid-request-card kid-request-${r.status}`} style={{
-                      background: '#fff',
-                      borderRadius: '10px',
-                      border: '1px solid #e5e7eb',
-                      padding: '0.75rem 1rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                    }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#374151' }}>
-                          {task ? `${safeIcon(task.icon)} ${task.title}` : (reward ? `${safeIcon(reward.icon)} ${reward.title}` : '—')}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{formatDate(r.created_at)}</div>
-                      </div>
-                      <div style={{ fontWeight: 800, fontSize: '0.82rem', color: statusColor }}>{statusLabel}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Exit button — only shown for parents, not child accounts */}
-          {!isChildAccount && (
-            <>
-              <div style={{ textAlign: 'center', paddingTop: '0.5rem', paddingBottom: '2rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setKidExitConfirm(true)}
-                  style={{
-                    minHeight: 'auto',
-                    background: 'rgba(0,0,0,0.06)',
-                    color: '#6b7280',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.5rem 1rem',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  🔐 Ieșire părinți
-                </button>
-              </div>
-
-              {/* Exit confirm dialog (replaces window.confirm, blocked in Android WebView) */}
-              {kidExitConfirm && (
-                <div className="kid-exit-confirm-overlay">
-                  <div className="kid-exit-confirm-box">
-                    <h3>🔐 Ieșire Mod Copil</h3>
-                    <p>Ești sigur că vrei să ieși din modul copil?</p>
-                    <div className="kid-exit-confirm-btns">
-                      <button
-                        type="button"
-                        onClick={() => setKidExitConfirm(false)}
-                        style={{ background: '#f3f4f6', color: '#374151' }}
-                      >
-                        Rămân
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setKidExitConfirm(false); setKidModeActive(false) }}
-                        style={{ background: '#17463c', color: '#fff' }}
-                      >
-                        Ieșire
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      <KidsPlayView
+        wallet={wallet}
+        childrenNames={CHILDREN}
+        tasks={tasks}
+        rewards={rewards}
+        requests={requests}
+        messages={messages}
+        transactions={transactions}
+        isChildAccount={isChildAccount}
+        showChildEur={showChildEur}
+        coinValue={coinValue}
+        schemaReady={schemaReady}
+        kidViewTab={kidViewTab}
+        setKidViewTab={setKidViewTab}
+        celebration={celebration}
+        kidChatText={kidChatText}
+        setKidChatText={setKidChatText}
+        kidExitConfirm={kidExitConfirm}
+        setKidExitConfirm={setKidExitConfirm}
+        onSubmitTask={childSubmitTaskRequest}
+        onRequestReward={childRequestReward}
+        onSendMessage={sendMessage}
+        onSignOut={onSignOut}
+        onSwitchChild={setKidModeChild}
+        onExitParent={() => { setKidExitConfirm(false); setKidModeActive(false) }}
+        tasksForWallet={tasksForWallet}
+      />
     )
   }
-
   // ─── Main render ──────────────────────────────────────────────────────────
 
   if (kidModeActive) {
