@@ -7,7 +7,7 @@ const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly
 
 const incomeDefaults = { name: '', amount: '', frequency: 'monthly', occurrence_date: '', active: true, notes: '' }
 const expenseDefaults = { name: '', category: categories[0], amount: '', frequency: 'monthly', due_date: '', expense_type: 'fixed', expense_kind: 'fixed_payment', payment_mode: 'automatic_debit', active: true, notes: '' }
-const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', priority: 3, status: 'active' }
+const debtDefaults = { name: '', debt_category: 'dispo', initial_amount: '', remaining_balance: '', final_payment: '', monthly_payment: '', interest_rate: '', estimated_end_date: '', payment_due_day: '', priority: 3, status: 'active' }
 const accountDefaults = { name: '', account_type: 'checking', current_balance: '0', currency: 'EUR', include_in_safe_balance: true, has_overdraft: false, overdraft_limit: '0', overdraft_interest: '', notes: '' }
 const journalDefaults = { entry_date: isoDate(new Date()), description: '', amount: '', category: categories[1], store: '', person: 'family', product_name: '', quantity: '', unit: '', unit_price: '', entry_mode: 'quick', notes: '' }
 const workAbsenceDefaults = { work_date: isoDate(new Date()), start_time: '07:00', end_time: '16:00', location: '', object_name: '', work_reason: '', kilometers: '', break_minutes: '0', entry_source: 'manual', notes: '', confirmed: false }
@@ -67,6 +67,17 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
           <MoneyInput name="remaining_balance" label={t('remainingBalance')} value={values.remaining_balance} onChange={update} />
           <TextInput name="final_payment" label={t('finalPayment')} type="number" min="0" step="0.01" value={values.final_payment} onChange={update} />
           <MoneyInput name="monthly_payment" label={t('monthlyPayment')} value={values.monthly_payment} onChange={update} />
+          <SelectInput
+            name="payment_due_day"
+            label={t('debtPaymentDueDay')}
+            value={values.payment_due_day != null && values.payment_due_day !== '' ? String(values.payment_due_day) : ''}
+            onChange={update}
+            options={[['', t('debtPaymentDueDayManual')], ...Array.from({ length: 28 }, (_, i) => {
+              const day = String(i + 1)
+              return [day, `${t('debtPaymentDueDayEachMonth')} ${day}`]
+            })]}
+          />
+          <p className="muted" style={{ margin: '-0.35rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtPaymentDueDayHint')}</p>
           <TextInput name="interest_rate" label={t('interestRate')} type="number" step="0.001" value={values.interest_rate} onChange={update} />
           <TextInput name="estimated_end_date" label={t('estimatedEndDate')} type="date" value={values.estimated_end_date} onChange={update} />
           <TextInput name="priority" label={t('priority')} type="number" value={values.priority} onChange={update} />

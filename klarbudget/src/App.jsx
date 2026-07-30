@@ -18,6 +18,7 @@ import { SmartShopping } from './components/SmartShopping'
 import { inferOfferCategory, normalizeOfferPayload, normalizeProduct } from './lib/shoppingHelpers'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
+import { applyAutomaticDebtPayments } from './lib/debtAutoPay'
 import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
@@ -238,9 +239,21 @@ function App() {
       setSettingsDraft(nextSettings)
     }
 
+    let debtsData = debtsRes.data || []
+    const autoPay = await applyAutomaticDebtPayments(supabase, debtsData, familyOwnerId)
+    if (autoPay.schemaMissing) {
+      console.warn('Debt auto-pay: run KB_MIGRATION_DEBT_AUTO_PAY.sql in Supabase')
+    } else if (autoPay.updated) {
+      debtsData = autoPay.debts
+      const count = autoPay.appliedCount
+      setNotice(count === 1
+        ? dictionary[language]?.debtAutoPayAppliedOne || 'S-a aplicat 1 rată automat la datorii.'
+        : (dictionary[language]?.debtAutoPayApplied || 'S-au aplicat {count} rate automat la datorii.').replace('{count}', String(count)))
+    }
+
     setIncomes(incomesRes.data || [])
     setExpenses(expensesRes.data || [])
-    setDebts(debtsRes.data || [])
+    setDebts(debtsData)
     setPaymentStatuses(paymentsRes.data || [])
     setAccounts(accountsRes.data || [])
     setAccountSnapshots(snapshotsRes.data || [])
@@ -1410,7 +1423,8 @@ function App() {
                 const category = debtCategories.find(([value]) => value === item.debt_category)?.[1] ?? item.debt_category ?? '-'
                 const paidPercent = toNumber(item.initial_amount) > 0 ? Math.round(((toNumber(item.initial_amount) - toNumber(item.remaining_balance)) / toNumber(item.initial_amount)) * 100) : 0
                 const finalPaymentText = toNumber(item.final_payment) > 0 ? ` - ${t('finalPayment')}: ${formatMoney(item.final_payment, currency, locale)} - ${t('totalToPay')}: ${formatMoney(debtRemainingTotal(item), currency, locale)}` : ''
-                return `${category} - ${t(item.status)} - ${item.interest_rate || 0}% - ${t('monthlyPayment')}: ${item.monthly_payment || 0}${finalPaymentText} - ${Math.max(0, paidPercent)}%`
+                const dueDayText = item.payment_due_day ? ` - ${t('debtPaymentDueDayShort')}: ${item.payment_due_day}` : ''
+                return `${category} - ${t(item.status)} - ${item.interest_rate || 0}% - ${t('monthlyPayment')}: ${item.monthly_payment || 0}${dueDayText}${finalPaymentText} - ${Math.max(0, paidPercent)}%`
               }}
               onEdit={(item) => {
                 setEditing({ incomes: null, expenses: null, debts: item })
@@ -2738,6 +2752,11 @@ function preparePayload(payload) {
     if ('is_meter_reset' in result) {
       result.is_meter_reset = Boolean(result.is_meter_reset)
     }
+  }
+
+  if ('payment_due_day' in result) {
+    const day = result.payment_due_day
+    result.payment_due_day = (day === '' || day === null || day === undefined) ? null : Number(day)
   }
 
   if ('expense_kind' in result) {
