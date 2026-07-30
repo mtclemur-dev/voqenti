@@ -65,7 +65,6 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
           <SelectInput name="debt_category" label={t('debtCategory')} value={values.debt_category} onChange={update} options={debtCategories} />
           <MoneyInput name="initial_amount" label={t('initialAmount')} value={values.initial_amount} onChange={update} />
           <MoneyInput name="remaining_balance" label={t('remainingBalance')} value={values.remaining_balance} onChange={update} />
-          <TextInput name="final_payment" label={t('finalPayment')} type="number" min="0" step="0.01" value={values.final_payment} onChange={update} />
           <MoneyInput name="monthly_payment" label={t('monthlyPayment')} value={values.monthly_payment} onChange={update} />
           <TextInput
             name="payment_due_day"
@@ -78,11 +77,12 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
             value={values.payment_due_day ?? ''}
             onChange={update}
           />
-          <p className="muted" style={{ margin: '-0.35rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtMonthlyDueDayHint')}</p>
+          <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtMonthlyDueDayHint')}</p>
+          <TextInput name="final_payment" label={t('finalPayment')} type="number" min="0" step="0.01" value={values.final_payment} onChange={update} />
           <TextInput name="interest_rate" label={t('interestRate')} type="number" step="0.001" value={values.interest_rate} onChange={update} />
           <TextInput name="estimated_end_date" label={t('estimatedEndDate')} type="date" value={values.estimated_end_date} onChange={update} />
-          <TextInput name="priority" label={t('priority')} type="number" value={values.priority} onChange={update} />
           <SelectInput name="status" label={t('status')} value={values.status} onChange={update} options={[['active', t('active')], ['paid', t('paid')], ['paused', t('paused')]]} />
+          <TextInput name="priority" label={t('priority')} type="number" value={values.priority} onChange={update} />
         </>
       )}
     </FormShell>

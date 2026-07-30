@@ -39,7 +39,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-16 — shopping simplificat'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26 — rată lunară auto'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
