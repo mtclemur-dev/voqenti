@@ -1423,7 +1423,7 @@ function App() {
                 const category = debtCategories.find(([value]) => value === item.debt_category)?.[1] ?? item.debt_category ?? '-'
                 const paidPercent = toNumber(item.initial_amount) > 0 ? Math.round(((toNumber(item.initial_amount) - toNumber(item.remaining_balance)) / toNumber(item.initial_amount)) * 100) : 0
                 const finalPaymentText = toNumber(item.final_payment) > 0 ? ` - ${t('finalPayment')}: ${formatMoney(item.final_payment, currency, locale)} - ${t('totalToPay')}: ${formatMoney(debtRemainingTotal(item), currency, locale)}` : ''
-                const dueDayText = item.payment_due_day ? ` - ${t('debtPaymentDueDayShort')}: ${item.payment_due_day}` : ''
+                const dueDayText = item.payment_due_day ? ` - ${t('debtMonthlyDueDayShort')} ${item.payment_due_day}` : ''
                 return `${category} - ${t(item.status)} - ${item.interest_rate || 0}% - ${t('monthlyPayment')}: ${item.monthly_payment || 0}${dueDayText}${finalPaymentText} - ${Math.max(0, paidPercent)}%`
               }}
               onEdit={(item) => {
@@ -2756,7 +2756,12 @@ function preparePayload(payload) {
 
   if ('payment_due_day' in result) {
     const day = result.payment_due_day
-    result.payment_due_day = (day === '' || day === null || day === undefined) ? null : Number(day)
+    if (day === '' || day === null || day === undefined) {
+      result.payment_due_day = null
+    } else {
+      const n = Number(day)
+      result.payment_due_day = Number.isFinite(n) && n >= 1 && n <= 31 ? Math.trunc(n) : null
+    }
   }
 
   if ('expense_kind' in result) {

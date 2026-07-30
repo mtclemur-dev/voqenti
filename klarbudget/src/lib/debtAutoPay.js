@@ -62,7 +62,7 @@ export function planDebtAutoPayments(debt, today = new Date()) {
   if (debt.status !== 'active') return []
   const dueDay = toNumber(debt.payment_due_day)
   const monthly = toNumber(debt.monthly_payment)
-  if (dueDay < 1 || dueDay > 28 || monthly <= 0) return []
+  if (dueDay < 1 || dueDay > 31 || monthly <= 0) return []
 
   const working = { ...debt }
   const plans = []
