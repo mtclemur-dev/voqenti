@@ -20,7 +20,7 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|icon\\.svg|manifest\\.webmanifest|sw\\.js|privacy-policy\\.html).*)",
       "destination": "/index.html"
     }
   ]

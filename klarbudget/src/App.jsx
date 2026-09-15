@@ -39,7 +39,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26 — rată lunară auto'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26b — loading fix'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -158,13 +158,17 @@ function App() {
       return
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user ?? null
-      setUser(u)
-      if (!u) {
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        const u = data.session?.user ?? null
+        setUser(u)
+        if (!u) {
+          setLoading(false)
+        }
+      })
+      .catch(() => {
         setLoading(false)
-      }
-    })
+      })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null
@@ -181,6 +185,7 @@ function App() {
     if (!user || !familyOwnerId) return
     setLoading(true)
 
+    try {
     const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes, pantryRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
@@ -273,7 +278,12 @@ function App() {
     setUtilityReadings(utilityReadingsRes.data || [])
     setUtilitySchemaReady(!utilityReadingsRes.error)
     setPantryItems(pantryRes?.data || [])
-    setLoading(false)
+    } catch (error) {
+      console.error('loadData failed', error)
+      setNotice(dictionary[language]?.loadDataFailed || 'Nu s-au putut încărca datele. Reîncarcă pagina.')
+    } finally {
+      setLoading(false)
+    }
   }, [language, user, familyOwnerId])
 
   useEffect(() => {
