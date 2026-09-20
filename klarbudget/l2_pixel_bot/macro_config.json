@@ -1,0 +1,165 @@
+{
+  "skills": [
+    {
+      "label": "Target",
+      "key": "f1",
+      "hits_lo": 1,
+      "hits_hi": 1,
+      "delay_lo": 0.15,
+      "delay_hi": 0.3,
+      "every_n": 1,
+      "skip_pct": 5,
+      "enabled": true
+    },
+    {
+      "label": "Death Spike",
+      "key": "f2",
+      "hits_lo": 1,
+      "hits_hi": 2,
+      "delay_lo": 0.8,
+      "delay_hi": 1.2,
+      "every_n": 1,
+      "skip_pct": 3,
+      "enabled": true
+    },
+    {
+      "label": "Corpse Drain",
+      "key": "f3",
+      "hits_lo": 1,
+      "hits_hi": 2,
+      "delay_lo": 0.3,
+      "delay_hi": 0.55,
+      "every_n": 3,
+      "skip_pct": 8,
+      "enabled": true
+    },
+    {
+      "label": "Pick Up",
+      "key": "f4",
+      "hits_lo": 3,
+      "hits_hi": 5,
+      "delay_lo": 0.12,
+      "delay_hi": 0.22,
+      "every_n": 1,
+      "skip_pct": 10,
+      "enabled": true
+    },
+    {
+      "label": "asist",
+      "key": "f5",
+      "hits_lo": 1,
+      "hits_hi": 1,
+      "delay_lo": 0.5,
+      "delay_hi": 0.9,
+      "every_n": 1,
+      "skip_pct": 5,
+      "enabled": false
+    }
+  ],
+  "buffs": [
+    {
+      "en": false,
+      "lbl": "Summon",
+      "key": "",
+      "int": "10.0",
+      "h": "1"
+    },
+    {
+      "en": false,
+      "lbl": "Buff 1",
+      "key": "",
+      "int": "5.0",
+      "h": "1"
+    },
+    {
+      "en": false,
+      "lbl": "Buff 2",
+      "key": "",
+      "int": "5.0",
+      "h": "1"
+    }
+  ],
+  "pots": {
+    "pot_hp": {
+      "en": false,
+      "key": "",
+      "int": "30.0"
+    },
+    "pot_mp": {
+      "en": false,
+      "key": "",
+      "int": "45.0"
+    },
+    "pot_cp": {
+      "en": false,
+      "key": "",
+      "int": "60.0"
+    }
+  },
+  "patrol": {
+    "enabled": false,
+    "key_fwd": "up",
+    "key_back": "down",
+    "key_left": "left",
+    "key_right": "right",
+    "cols": 4,
+    "rows": 3,
+    "turn_ms": 480,
+    "walk_ms": 1200,
+    "step_ms": 800,
+    "every_n_kills": 5,
+    "every_n_sec": 30.0,
+    "stuck_timeout_s": 30.0
+  },
+  "pat_ui": {
+    "en": false,
+    "fwd": "up",
+    "back": "down",
+    "left_k": "left",
+    "right_k": "right",
+    "cols": "4",
+    "rows": "3",
+    "turnms": "480",
+    "walkms": "1200",
+    "stepms": "800",
+    "nkills": "5",
+    "sec": "30"
+  },
+  "cam_en": true,
+  "cam_int": "10",
+  "cam_ms": "200",
+  "afk_en": true,
+  "afk_key": "esc",
+  "afk_int": "240",
+  "sch_en": false,
+  "sch_farm": "60",
+  "sch_pause": "10",
+  "minimize": true,
+  "ram": {
+    "en": true,
+    "pm_mode": "direct",
+    "pm_base": "42765",
+    "pm_xoff": "247043",
+    "pm_yoff": "-6456",
+    "tm_mode": "ptr",
+    "tm_base": "0x0",
+    "tm_idoff": "0x0",
+    "tm_xoff": "0x0",
+    "tm_yoff": "0x0",
+    "range": "1000",
+    "skip": true
+  },
+  "targeter": {
+    "en": true,
+    "mode": "chat",
+    "mobs": [
+      "stone giant",
+      "skeleton marksman",
+      "silent horror"
+    ],
+    "cycle": "5",
+    "permob": "15",
+    "apprms": "1500",
+    "appr": "f2"
+  }
+}

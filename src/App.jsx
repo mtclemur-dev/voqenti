@@ -4,8 +4,61 @@ import { DateTime } from 'luxon'
 import { languages as i18nLanguages, uiTranslations } from './i18n'
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import WorkPlan from './WorkPlan'
+import CompanyBoard from './CompanyBoard'
+import Inbox from './Inbox'
+import { EmployeeBottomNav, EmployeeDesktopNav, EmployeeHeader, EmployeeProfilePanel } from './plan/EmployeeChrome'
+import { AdminHeader, AdminPrimaryNav } from './plan/AdminChrome'
+import SafetyShoeLesson from './guides/SafetyShoeLesson'
+import { firstName, useGreetingKey } from './plan/planUtils'
+import { APP_VIEWS, isoDateOr, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
+
+function inviteLoginEmail(workerId) {
+  const id = String(workerId || '').replace(/-/g, '')
+  return id ? `w${id}@voqenti.app` : ''
+}
+
+function AuthPasswordField({ value, onChange, placeholder, autoComplete, show, onToggle, showLabel, hideLabel }) {
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        className="w-full rounded-md bg-slate-800 px-3 py-2 pr-16 text-sm text-slate-100"
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-cyan-200"
+      >
+        {show ? hideLabel : showLabel}
+      </button>
+    </div>
+  )
+}
+
+const INVITE_STORAGE_KEY = 'voqenti_invite'
+
+function readInviteToken() {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('invite')
+    const token = String(fromUrl || sessionStorage.getItem(INVITE_STORAGE_KEY) || '').trim()
+    if (token) sessionStorage.setItem(INVITE_STORAGE_KEY, token)
+    return token
+  } catch {
+    return ''
+  }
+}
+
+function clearInviteToken() {
+  try { sessionStorage.removeItem(INVITE_STORAGE_KEY) } catch { /* ignore */ }
+}
 
 function App() {
+  const helloKey = useGreetingKey()
   const [oraStart, setOraStart] = useState(null)
   const [inLucru, setInLucru] = useState(false)
   const [currentId, setCurrentId] = useState(null)
@@ -16,15 +69,30 @@ function App() {
   const [user, setUser] = useState(null)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [authPassword2, setAuthPassword2] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [authName, setAuthName] = useState('')
+  const [inviteName, setInviteName] = useState('')
+  const [inviteWorkerId, setInviteWorkerId] = useState('')
+  const [inviteInvalid, setInviteInvalid] = useState(false)
+  const [inviteClaimed, setInviteClaimed] = useState(false)
+  const [authMode, setAuthMode] = useState('signin')
   const [language, setLanguage] = useState('de')
-  const [view, setView] = useState('pontaj') // 'pontaj' | 'reports' | 'times' | 'materials'
+  const [view, setView] = useState(() => {
+    const saved = readUiMemory().view
+    return APP_VIEWS.includes(saved) ? saved : 'plan'
+  })
+  const [inboxOpen, setInboxOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [helpAvailable, setHelpAvailable] = useState(false)
   const [reports, setReports] = useState([])
   const [reportObject, setReportObject] = useState('')
-  const [dashboardObjectId, setDashboardObjectId] = useState('')
-  const [dashboardAuftrag, setDashboardAuftrag] = useState('')
+  const [dashboardObjectId, setDashboardObjectId] = useState(() => stringOr(readUiMemory().dashboardObjectId))
+  const [dashboardAuftrag, setDashboardAuftrag] = useState(() => stringOr(readUiMemory().dashboardAuftrag))
   const [objects, setObjects] = useState([])
   const [objectsError, setObjectsError] = useState('')
-  const [selectedObjectId, setSelectedObjectId] = useState('')
+  const [selectedObjectId, setSelectedObjectId] = useState(() => stringOr(readUiMemory().selectedObjectId))
   const [workers, setWorkers] = useState([])
   const [selectedWorkerIds, setSelectedWorkerIds] = useState([])
   const [workerPickerOpen, setWorkerPickerOpen] = useState(false)
@@ -63,7 +131,7 @@ function App() {
   const [materialRequests, setMaterialRequests] = useState([])
   const [materialRequestObject, setMaterialRequestObject] = useState('')
   const [materialRequestObjectId, setMaterialRequestObjectId] = useState('')
-  const [materialRequestDate, setMaterialRequestDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
+  const [materialRequestDate, setMaterialRequestDate] = useState(() => isoDateOr(readUiMemory().materialRequestDate, DateTime.now().setZone('Europe/Berlin').toISODate()))
   const [selectedMaterialRequestIds, setSelectedMaterialRequestIds] = useState([])
   const [materialRequestAmounts, setMaterialRequestAmounts] = useState({})
   const [materialRequestUnits, setMaterialRequestUnits] = useState({})
@@ -76,8 +144,8 @@ function App() {
   const [equipmentPanelOpen, setEquipmentPanelOpen] = useState(false)
   const [equipmentReturnAllOk, setEquipmentReturnAllOk] = useState(false)
   const [equipmentReturnNote, setEquipmentReturnNote] = useState('')
-  const [workerSearchDate, setWorkerSearchDate] = useState(DateTime.now().setZone('Europe/Berlin').toISODate())
-  const [workerSearchId, setWorkerSearchId] = useState('')
+  const [workerSearchDate, setWorkerSearchDate] = useState(() => isoDateOr(readUiMemory().workerSearchDate, DateTime.now().setZone('Europe/Berlin').toISODate()))
+  const [workerSearchId, setWorkerSearchId] = useState(() => stringOr(readUiMemory().workerSearchId))
   const [isSigning, setIsSigning] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
   const [reportSignatureDataUrl, setReportSignatureDataUrl] = useState(null)
@@ -91,8 +159,13 @@ function App() {
   const modalSignatureRef = useRef(null)
   const notifiedReviewIdsRef = useRef(new Set())
   const userEmail = user?.email?.toLowerCase() ?? ''
+  const userId = user?.id
   const isAdmin = userEmail === 'mtclemur@gmail.com'
   const currentWorker = workers.find(worker => worker.email?.toLowerCase() === userEmail)
+    || (isAdmin
+      ? workers.find(worker => String(worker.name || '').toLowerCase().includes('plamadeala victor'))
+        || workers.find(worker => ['admin', 'vorarbeiter'].includes(String(worker.role || '').toLowerCase()))
+      : undefined)
   const displayName = currentWorker?.name ?? user?.user_metadata?.name ?? user?.email ?? 'Benutzer'
   const workerNameByEmail = useCallback((email, fallback = 'Benutzer') => {
     const worker = workers.find(item => item.email?.toLowerCase() === email?.toLowerCase())
@@ -101,6 +174,21 @@ function App() {
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
+
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
+  useEffect(() => {
+    writeUiMemory({
+      view,
+      dashboardObjectId,
+      dashboardAuftrag,
+      selectedObjectId,
+      materialRequestDate,
+      workerSearchDate,
+      workerSearchId,
+    })
+  }, [dashboardAuftrag, dashboardObjectId, materialRequestDate, selectedObjectId, view, workerSearchDate, workerSearchId])
   const isReviewStatus = useCallback((status) => status === 'In Prüfung' || status === 'In PrÃ¼fung', [])
   const reportStatusLabel = useCallback((status) => {
     const key = {
@@ -174,7 +262,7 @@ function App() {
     if (permission === 'granted' && navigator.vibrate) navigator.vibrate(120)
   }
   const loadLearningItem = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setLearningItem(null)
       return
     }
@@ -207,11 +295,12 @@ function App() {
 
     const nextItem = items.find(item => item.shown_date !== today) ?? items[0]
     setLearningItem(nextItem)
+    if (nextItem.shown_date === today) return
     await supabase
       .from('learning_items')
       .update({ shown_date: today, updated_at: new Date().toISOString() })
       .eq('id', nextItem.id)
-  }, [user])
+  }, [userId])
   const materialRequestUnitsList = ['Stueck', 'Rolle', 'Karton', 'Flasche', 'Kanister', 'Packung', 'Liter', 'Paar', 'Set']
   const workTemplateOptions = [
     'Unterhaltsreinigung',
@@ -416,9 +505,9 @@ function App() {
   const formatDateBerlin = useCallback((iso) => {
     if (!iso) return ''
     try {
-      return DateTime.fromISO(iso, { zone: 'utc' }).setZone('Europe/Berlin').toFormat("ccc d LLL")
+      return DateTime.fromISO(iso, { zone: 'utc' }).setZone('Europe/Berlin').toFormat('dd.MM.yyyy')
     } catch {
-      return new Date(iso).toLocaleDateString('ro-RO')
+      return new Date(iso).toLocaleDateString('de-DE')
     }
   }, [])
 
@@ -432,22 +521,22 @@ function App() {
   }, [])
 
   const incarcaIstoric = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setIstoric([])
       return
     }
     const { data, error } = await supabase
       .from('pontaj')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5)
 
     if (!error) setIstoric(data)
-  }, [user])
+  }, [userId])
 
   const incarcaDashboardSummary = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setDashboardPontaj([])
       setDashboardReports([])
       setDashboardEmails([])
@@ -461,7 +550,7 @@ function App() {
     const { data: pontajData, error: pontajError } = await supabase
       .from('pontaj')
       .select('id, Uhrzeit_Start, Uhrzeit_Ende, status, report_id, total_minutes, pause_minutes, auto_pause_minutes, fahrzeit_minutes, effective_minutes, entry_type, correction_reason, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .gte('Uhrzeit_Start', monthStart)
       .order('created_at', { ascending: false })
       .limit(200)
@@ -502,15 +591,15 @@ function App() {
       .eq('request_date', today)
 
     setDashboardMaterialCount(materialError ? 0 : (count ?? 0))
-  }, [user])
+  }, [userId])
 
   const verificaSesiuneActiva = useCallback(async () => {
-    if (!user) return
+    if (!userId) return
     const { data, error } = await supabase
       .from('pontaj')
       .select('*')
       .eq('status', 'activ')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
 
@@ -529,10 +618,10 @@ function App() {
       setActiveReportId(null)
       setOraStart(null)
     }
-  }, [formatTimeBerlin, user])
+  }, [formatTimeBerlin, userId])
 
   const incarcaReports = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setReports([])
       return
     }
@@ -543,13 +632,13 @@ function App() {
       .limit(10)
 
     if (!error) setReports(data)
-  }, [user])
+  }, [userId])
 
   const incarcaObjects = useCallback(async () => {
     setObjectsError('')
     const { data, error } = await supabase
       .from('objects')
-      .select('id, name, address')
+      .select('id, name, address, manager, phone')
       .order('name', { ascending: true })
     if (error) {
       console.error('Objects load error:', error)
@@ -560,6 +649,42 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (user) return undefined
+    const token = readInviteToken()
+    if (!token) return undefined
+    let cancelled = false
+    const loadInvite = async () => {
+      const { data, error } = await supabase.rpc('lookup_worker_invite', { p_token: token })
+      if (cancelled) return
+      if (error && /lookup_worker_invite|schema cache|does not exist/i.test(error.message || '')) {
+        clearInviteToken()
+        setInviteName('')
+        setInviteWorkerId('')
+        setInviteClaimed(false)
+        setInviteInvalid(false)
+        return
+      }
+      const row = Array.isArray(data) ? data[0] : data
+      if (!row?.name) {
+        setInviteName('')
+        setInviteWorkerId('')
+        setInviteClaimed(false)
+        setInviteInvalid(true)
+        return
+      }
+      setInviteName(row.name)
+      setInviteWorkerId(row.id || '')
+      setInviteClaimed(Boolean(row.claimed))
+      setInviteInvalid(false)
+      setAuthName(row.name)
+      const code = String(navigator.language || '').slice(0, 2)
+      if (['de', 'ro', 'ru'].includes(code)) setLanguage(code)
+    }
+    loadInvite()
+    return () => { cancelled = true }
+  }, [userId])
+
   const incarcaWorkers = useCallback(async () => {
     const { data, error } = await supabase
       .from('workers')
@@ -569,6 +694,56 @@ function App() {
 
     if (!error) setWorkers(data ?? [])
   }, [])
+
+  useEffect(() => {
+    if (!user?.email) return undefined
+    let cancelled = false
+    const ensureWorker = async () => {
+      const email = user.email.toLowerCase()
+      const { data: byEmail } = await supabase.from('workers').select('id, name, email, role, active').ilike('email', email)
+      if (cancelled) return
+      const match = (byEmail ?? []).find(item => item.email?.toLowerCase() === email)
+      if (match) {
+        clearInviteToken()
+        if (match.active === false) {
+          await supabase.from('workers').update({ active: true }).eq('id', match.id)
+          incarcaWorkers()
+        }
+        return
+      }
+      if (email === 'mtclemur@gmail.com') {
+        const { data } = await supabase.from('workers').select('id, name, email, role, active')
+        if (cancelled) return
+        const named = (data ?? []).find(item => String(item.name || '').toLowerCase().includes('plamadeala victor'))
+          || (data ?? []).find(item => ['admin', 'vorarbeiter'].includes(String(item.role || '').toLowerCase()))
+        if (named) {
+          await supabase.from('workers').update({ email: user.email, active: true }).eq('id', named.id)
+          clearInviteToken()
+          incarcaWorkers()
+          return
+        }
+      }
+      const token = readInviteToken()
+      if (token) {
+        const claimed = await supabase.rpc('claim_worker_invite', { p_token: token })
+        if (!claimed.error) {
+          clearInviteToken()
+          incarcaWorkers()
+          return
+        }
+      }
+      const name = String(user.user_metadata?.name || user.user_metadata?.full_name || email.split('@')[0]).trim()
+      const { error } = await supabase.from('workers').insert({
+        name,
+        email: user.email,
+        role: 'mitarbeiter',
+        active: true,
+      })
+      if (!error) incarcaWorkers()
+    }
+    ensureWorker()
+    return () => { cancelled = true }
+  }, [incarcaWorkers, userId])
 
   const incarcaMaterialbedarf = useCallback(async () => {
     const { data: itemsData, error: itemsError } = await supabase
@@ -651,10 +826,10 @@ function App() {
     } else {
       setOpenCheckouts(checkoutData ?? [])
     }
-  }, [isAdmin, isVorarbeiter, user])
+  }, [isAdmin, isVorarbeiter, userId])
 
   const incarcaWorkerEntries = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setWorkerEntries([])
       setWorkerReports([])
       return
@@ -701,13 +876,13 @@ function App() {
         if (canEditLockedReports) {
           return workerSearchId ? (report.worker_ids ?? []).includes(workerSearchId) : true
         }
-        return report.user_id === user.id
+        return report.user_id === userId
           || (currentWorker?.id && (report.worker_ids ?? []).includes(currentWorker.id))
           || report.worker_names?.some(name => name?.toLowerCase() === currentWorker?.name?.toLowerCase())
       })
       setWorkerReports(filteredReports)
     }
-  }, [canEditLockedReports, currentWorker, user, workerSearchDate, workerSearchId])
+  }, [canEditLockedReports, currentWorker?.id, userId, workerSearchDate, workerSearchId])
 
   // Initialize auth and listen for changes
   useEffect(() => {
@@ -717,16 +892,17 @@ function App() {
       setUser(u)
       if (u) {
         setLanguage(u.user_metadata?.preferred_language ?? 'de')
-        setView('pontaj')
       }
     }
     initAuth()
 
-    const { data: { subscription } = {} } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        setLanguage(session.user.user_metadata?.preferred_language ?? 'de')
-        setView('pontaj')
+    const { data: { subscription } = {} } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED') return
+      const next = session?.user ?? null
+      setUser(current => (current?.id === next?.id && current?.email === next?.email ? current : next))
+      if (next) {
+        const lang = next.user_metadata?.preferred_language ?? 'de'
+        setLanguage(current => current === lang ? current : lang)
       }
     })
 
@@ -740,7 +916,7 @@ function App() {
     loadLearningItem()
     verificaSesiuneActiva()
 
-    if (!user) return
+    if (!userId) return
 
     let refreshTimer = null
     const scheduleRefresh = () => {
@@ -753,10 +929,10 @@ function App() {
     }
 
     const channel = supabase
-      .channel(`pontaj-listener-${user.id}`)
+      .channel(`pontaj-listener-${userId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'pontaj', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'pontaj', filter: `user_id=eq.${userId}` },
         scheduleRefresh,
       )
       .subscribe()
@@ -769,9 +945,13 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaDashboardSummary, incarcaIstoric, loadLearningItem, user, verificaSesiuneActiva])
+  }, [incarcaDashboardSummary, incarcaIstoric, loadLearningItem, userId, verificaSesiuneActiva])
 
   useEffect(() => {
+    if (view === 'plan' || view === 'openPosts' || view === 'notices' || view === 'guides' || view === 'history' || view === 'hours' || view === 'mine') {
+      incarcaObjects()
+      incarcaWorkers()
+    }
     if (view === 'reports') {
       incarcaReports()
       incarcaObjects()
@@ -784,17 +964,20 @@ function App() {
     }
     if (view === 'times') {
       incarcaWorkers()
-      incarcaWorkerEntries()
     }
     if (view === 'materials') {
       incarcaObjects()
       incarcaMaterialbedarf()
       incarcaInventory()
     }
-  }, [incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkerEntries, incarcaWorkers, view, user])
+  }, [incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkers, view, userId])
 
   useEffect(() => {
-    if (!user) return
+    if (view === 'times') incarcaWorkerEntries()
+  }, [incarcaWorkerEntries, view])
+
+  useEffect(() => {
+    if (!userId) return
 
     let dashboardTimer = null
     let inventoryTimer = null
@@ -808,7 +991,7 @@ function App() {
     }
 
     const channel = supabase
-      .channel(`dashboard-summary-${user.id}`)
+      .channel(`dashboard-summary-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tagesbericht' }, (payload) => {
         const report = payload?.new
         if (report) notifyReviewNeeded(report)
@@ -837,7 +1020,7 @@ function App() {
         channel.unsubscribe()
       }
     }
-  }, [incarcaDashboardSummary, incarcaInventory, notifyReviewNeeded, user])
+  }, [incarcaDashboardSummary, incarcaInventory, notifyReviewNeeded, userId])
 
   const getSignatureDataUrl = () => {
     return reportSignatureDataUrl
@@ -1386,6 +1569,14 @@ function App() {
     setEquipmentReturnNote('')
     incarcaInventory()
   }
+
+  const handleUnreadChange = useCallback((count) => {
+    setUnreadCount(current => (current === count ? current : count))
+  }, [])
+  const handleHelpAvailable = useCallback((available) => {
+    setHelpAvailable(Boolean(available))
+    if (!available && view === 'openPosts') setView('plan')
+  }, [view])
 
   const handleLanguageChange = async (nextLanguage) => {
     setLanguage(nextLanguage)
@@ -1948,25 +2139,37 @@ function App() {
       alert(t('authMissing'))
       return
     }
+    const signupName = (inviteName || authName).trim()
+    if (!signupName) {
+      alert(t('authNameMissing'))
+      return
+    }
     if (authPassword.length < 6) {
       alert(t('authPasswordShort'))
       return
     }
+    if (authPassword !== authPassword2) {
+      alert(t('authPasswordMismatch'))
+      return
+    }
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: authEmail,
         password: authPassword,
         options: {
-          data: { preferred_language: language },
+          data: { preferred_language: language, name: signupName },
         },
       })
       if (error) {
         console.error('Sign up error:', error)
         alert(`${t('signUpError')} ${error.message}`)
-      } else {
+      } else if (!data.session) {
         alert(t('authSignUpSuccess'))
-        setAuthEmail('')
         setAuthPassword('')
+        setAuthPassword2('')
+      } else {
+        setAuthPassword('')
+        setAuthPassword2('')
       }
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -1974,13 +2177,95 @@ function App() {
     }
   }
 
-  const handleSignIn = async () => {
-    if (!authEmail || !authPassword) {
-      alert(t('authMissing'))
+  const handleActivateInvite = async () => {
+    const email = inviteLoginEmail(inviteWorkerId)
+    const signupName = inviteName.trim()
+    if (!email || !signupName) {
+      alert(t('inviteMissing'))
+      return
+    }
+    if (authPassword.length < 6) {
+      alert(t('authPasswordShort'))
+      return
+    }
+    if (authPassword !== authPassword2) {
+      alert(t('authPasswordMismatch'))
       return
     }
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: authPassword,
+        options: {
+          data: { preferred_language: language, name: signupName },
+        },
+      })
+      if (error) {
+        const exists = /already registered|already been registered|User already registered/i.test(error.message || '')
+        if (exists) {
+          const signed = await supabase.auth.signInWithPassword({ email, password: authPassword })
+          if (signed.error) {
+            alert(`${t('signInError')} ${signed.error.message}`)
+            return
+          }
+          setAuthPassword('')
+          setAuthPassword2('')
+          setView('plan')
+          return
+        }
+        console.error('Sign up error:', error)
+        alert(`${t('signUpError')} ${error.message}`)
+        return
+      }
+      if (!data.session) {
+        alert(t('authSignUpSuccess'))
+        return
+      }
+      setAuthPassword('')
+      setAuthPassword2('')
+      setView('plan')
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      alert(`${t('unexpectedError')} ${err?.message || t('connectionCheck')}`)
+    }
+  }
+
+  const handleInviteSignIn = async () => {
+    const email = inviteLoginEmail(inviteWorkerId)
+    if (!email || !authPassword) {
+      alert(t('authPasswordShort'))
+      return
+    }
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword })
+      if (error) {
+        alert(`${t('signInError')} ${error.message}`)
+        return
+      }
+      setAuthPassword('')
+      setView('plan')
+    } catch (err) {
+      alert(`${t('unexpectedError')} ${err?.message || t('connectionCheck')}`)
+    }
+  }
+
+  const handleSignIn = async () => {
+    const typed = authEmail.trim()
+    if (!typed || !authPassword) {
+      alert(t('authMissing'))
+      return
+    }
+    let email = typed
+    if (!typed.includes('@')) {
+      const { data, error } = await supabase.rpc('lookup_worker_login', { p_name: typed })
+      if (error || !data) {
+        alert(t('signInError'))
+        return
+      }
+      email = inviteLoginEmail(data)
+    }
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword })
       if (error) {
         console.error('Sign in error:', error)
         alert(`${t('signInError')} ${error.message}`)
@@ -1995,6 +2280,7 @@ function App() {
   }
 
   const handleSignOut = async () => {
+    if (!window.confirm(t('signOutConfirm'))) return
     try {
       await supabase.auth.signOut()
       setUser(null)
@@ -2049,6 +2335,34 @@ function App() {
     ? reports.filter(report => report.id === activeSession.report_id)
     : reports
 
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'lesson') {
+    return (
+      <div className="min-h-screen bg-slate-950 p-4 pb-28 text-left">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {i18nLanguages.map(item => (
+            <button
+              key={item.code}
+              type="button"
+              onClick={() => handleLanguageChange(item.code)}
+              className={`min-h-11 rounded-xl px-4 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${language === item.code ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-100'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <SafetyShoeLesson t={t} onClose={() => {}} />
+        <EmployeeBottomNav
+          t={t}
+          view="guides"
+          unread={0}
+          onOpenView={() => {}}
+          onOpenInbox={() => {}}
+          onOpenProfile={() => {}}
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       className="min-h-screen w-full flex items-center justify-center p-6"
@@ -2057,21 +2371,25 @@ function App() {
       }}
     >
       <div className="relative w-full max-w-5xl">
-        <img
-          src="/heico-logo.jpg"
-          alt="HEICO Service GmbH"
-          className="pointer-events-none absolute -right-10 top-4 hidden w-72 opacity-[0.07] mix-blend-screen sm:block lg:w-96"
-        />
         <div className="absolute inset-0 rounded-[2.5rem] bg-white/5 shadow-[inset_0_0_120px_rgba(255,255,255,0.06)] pointer-events-none" />
-        <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.95fr]">
-          <div className="bg-white/10 border border-white/10 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] rounded-[2rem] p-8 backdrop-blur-xl text-left overflow-hidden">
+        <div className={`relative grid gap-8 ${['plan', 'openPosts', 'notices', 'guides', 'history', 'hours', 'mine'].includes(view) ? '' : 'lg:grid-cols-[1.2fr_0.95fr]'}`}>
+          <div className={`bg-white/10 border border-white/10 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] rounded-[2rem] backdrop-blur-xl text-left overflow-hidden ${user && !isAdmin ? 'p-5 pb-28 md:p-8 md:pb-8' : user ? 'p-5 md:p-6' : 'p-8'}`}>
+            {!user && (
             <div className="mb-8">
               <p className="inline-flex rounded-full bg-cyan-500/20 text-cyan-200 text-[11px] uppercase tracking-[0.3em] font-semibold px-4 py-2 mb-4">
                 {t('appTag')}</p>
               <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight">Voqenti</h1>
-              <p className="mt-3 text-sm sm:text-base text-slate-300 max-w-xl">
-                {t('subtitle')}
-              </p>
+              {!user && inviteName ? (
+                <>
+                  <p className="mt-4 text-3xl font-black text-white">{t(helloKey)}, {firstName(inviteName) || inviteName}</p>
+                  <p className="mt-1 text-lg font-semibold text-cyan-100">{inviteName}</p>
+                  <p className="mt-2 text-sm sm:text-base text-slate-300 max-w-xl">{inviteClaimed ? t('inviteReturnHint') : t('inviteHint')}</p>
+                </>
+              ) : (
+                <p className="mt-3 text-sm sm:text-base text-slate-300 max-w-xl">
+                  {t('subtitle')}
+                </p>
+              )}
               <div className="mt-4">
                 {user ? (
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-slate-200 mb-4">
@@ -2080,7 +2398,7 @@ function App() {
                       <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 bg-slate-800 rounded-md text-slate-100 text-sm">
                         {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
                       </select>
-                      {canEditLockedReports && notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+                      {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
                         <button onClick={handleEnableNotifications} className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-300/20 rounded-md text-amber-100 text-sm w-full sm:w-auto">
                           {t('enableNotifications')}
                         </button>
@@ -2089,58 +2407,270 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        value={authEmail}
-                        onChange={e => setAuthEmail(e.target.value)}
-                        placeholder={t('email')}
-                        type="email"
-                        className="px-3 py-2 rounded-md bg-slate-800 text-slate-100 text-sm flex-1"
-                      />
-                      <input
-                        type="password"
-                        value={authPassword}
-                        onChange={e => setAuthPassword(e.target.value)}
-                        placeholder={t('password')}
-                        className="px-3 py-2 rounded-md bg-slate-800 text-slate-100 text-sm flex-1"
-                      />
-                      <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="px-3 py-2 rounded-md bg-slate-800 text-slate-100 text-sm">
-                        {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={handleSignIn} className="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-md text-white text-sm font-medium">{t('signIn')}</button>
-                      <button onClick={handleSignUp} className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-white text-sm font-medium">{t('signUp')}</button>
-                    </div>
-                  </div>
+                  <form
+                    className="space-y-3"
+                    onSubmit={event => {
+                      event.preventDefault()
+                      if (inviteName && inviteClaimed) handleInviteSignIn()
+                      else if (inviteName) handleActivateInvite()
+                      else if (authMode === 'signup') handleSignUp()
+                      else handleSignIn()
+                    }}
+                  >
+                    {inviteInvalid && (
+                      <p className="text-sm text-rose-200">{t('inviteMissing')}</p>
+                    )}
+                    {inviteName ? (
+                      <div className="flex flex-col gap-2">
+                        <AuthPasswordField
+                          value={authPassword}
+                          onChange={e => setAuthPassword(e.target.value)}
+                          placeholder={t('password')}
+                          autoComplete={inviteClaimed ? 'current-password' : 'new-password'}
+                          show={showPassword}
+                          onToggle={() => setShowPassword(current => !current)}
+                          showLabel={t('passwordShow')}
+                          hideLabel={t('passwordHide')}
+                        />
+                        {!inviteClaimed && (
+                          <AuthPasswordField
+                            value={authPassword2}
+                            onChange={e => setAuthPassword2(e.target.value)}
+                            placeholder={t('passwordRepeat')}
+                            autoComplete="new-password"
+                            show={showPassword}
+                            onToggle={() => setShowPassword(current => !current)}
+                            showLabel={t('passwordShow')}
+                            hideLabel={t('passwordHide')}
+                          />
+                        )}
+                        <label className="text-xs text-slate-400">
+                          {t('language')}
+                          <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="mt-1 w-full rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
+                            {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+                          </select>
+                        </label>
+                        <button type="submit" className="mt-1 min-h-11 w-full rounded-xl bg-cyan-600 px-4 text-sm font-semibold text-white">
+                          {inviteClaimed ? t('signIn') : t('inviteActivate')}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {authMode === 'signup' && (
+                          <input
+                            value={authName}
+                            onChange={e => setAuthName(e.target.value)}
+                            placeholder={t('registerName')}
+                            type="text"
+                            autoComplete="name"
+                            className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100"
+                          />
+                        )}
+                        <input
+                          value={authEmail}
+                          onChange={e => setAuthEmail(e.target.value)}
+                          placeholder={t('loginNameOrEmail')}
+                          type={authMode === 'signup' ? 'email' : 'text'}
+                          autoComplete={authMode === 'signup' ? 'email' : 'username'}
+                          className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100"
+                        />
+                        <AuthPasswordField
+                          value={authPassword}
+                          onChange={e => setAuthPassword(e.target.value)}
+                          placeholder={t('password')}
+                          autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                          show={showPassword}
+                          onToggle={() => setShowPassword(current => !current)}
+                          showLabel={t('passwordShow')}
+                          hideLabel={t('passwordHide')}
+                        />
+                        {authMode === 'signup' && (
+                          <AuthPasswordField
+                            value={authPassword2}
+                            onChange={e => setAuthPassword2(e.target.value)}
+                            placeholder={t('passwordRepeat')}
+                            autoComplete="new-password"
+                            show={showPassword}
+                            onToggle={() => setShowPassword(current => !current)}
+                            showLabel={t('passwordShow')}
+                            hideLabel={t('passwordHide')}
+                          />
+                        )}
+                        <label className="text-xs text-slate-400">
+                          {t('language')}
+                          <select value={language} onChange={e => handleLanguageChange(e.target.value)} className="mt-1 w-full rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-100">
+                            {i18nLanguages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+                          </select>
+                        </label>
+                        <button type="submit" className="min-h-11 w-full rounded-xl bg-cyan-600 px-4 text-sm font-semibold text-white">
+                          {authMode === 'signup' ? t('signUp') : t('signIn')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthMode(current => current === 'signup' ? 'signin' : 'signup')}
+                          className="text-sm font-semibold text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+                        >
+                          {authMode === 'signup' ? t('signIn') : t('signUp')}
+                        </button>
+                      </div>
+                    )}
+                  </form>
                 )}
               </div>
             </div>
+            )}
 
-	            {user && (
-	              <div className="mb-6 flex flex-wrap gap-2">
-	                <button onClick={() => setView('pontaj')} className={`px-3 py-2 rounded-md text-sm ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('timeTracking')}</button>
-	                <button onClick={() => {
-                    if (inLucru && !canEditLockedReports) {
-                      openCurrentReport()
-                    } else {
-                      setView('reports')
-                      incarcaReports()
-                    }
-                  }} className={`relative px-3 py-2 rounded-md text-sm ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
-                    {t('report')}
-                    {canEditLockedReports && reviewReports.length > 0 && (
-                      <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-slate-950">
-                        {reviewReports.length}
-                      </span>
-                    )}
-                  </button>
-	                <button onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`px-3 py-2 rounded-md text-sm ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('workTimes')}</button>
-	                <button onClick={() => { setView('materials'); incarcaMaterialbedarf(); incarcaInventory(); }} className={`px-3 py-2 rounded-md text-sm ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-200'}`}>{t('materials')}</button>
-	              </div>
-	            )}
+            {user && isAdmin && (
+              <>
+                <AdminHeader
+                  t={t}
+                  displayName={displayName}
+                  unread={unreadCount}
+                  onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}
+                  onOpenProfile={() => { setInboxOpen(false); setProfileOpen(current => !current) }}
+                />
+                <AdminPrimaryNav
+                  t={t}
+                  view={view}
+                  showMine={Boolean(currentWorker)}
+                  onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
+                />
+                <Inbox
+                  t={t}
+                  isAdmin={isAdmin}
+                  currentWorker={currentWorker}
+                  onOpenView={(next) => { setInboxOpen(false); setView(next) }}
+                  open={inboxOpen}
+                  onOpenChange={setInboxOpen}
+                  hideTrigger
+                  onUnreadChange={handleUnreadChange}
+                />
+                <EmployeeProfilePanel
+                  t={t}
+                  language={language}
+                  languages={i18nLanguages}
+                  open={profileOpen}
+                  onClose={() => setProfileOpen(false)}
+                  onLanguageChange={handleLanguageChange}
+                  onSignOut={handleSignOut}
+                  notifyPermission={notificationPermission}
+                  onEnableNotifications={handleEnableNotifications}
+                />
+                {['pontaj', 'reports', 'times', 'materials'].includes(view) && (
+                  <div className="mb-4 flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => setView('pontaj')} className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${view==='pontaj' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{t('timeTracking')}</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (inLucru && !canEditLockedReports) {
+                          openCurrentReport()
+                        } else {
+                          setView('reports')
+                          incarcaReports()
+                        }
+                      }}
+                      className={`relative min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${view==='reports' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    >
+                      {t('report')}
+                      {canEditLockedReports && reviewReports.length > 0 && (
+                        <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-slate-950">
+                          {reviewReports.length}
+                        </span>
+                      )}
+                    </button>
+                    <button type="button" onClick={() => { setView('times'); incarcaWorkerEntries(); }} className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${view==='times' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{t('workTimes')}</button>
+                    <button type="button" onClick={() => { setView('materials'); incarcaMaterialbedarf(); incarcaInventory(); }} className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${view==='materials' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{t('materials')}</button>
+                  </div>
+                )}
+              </>
+            )}
 
+            {user && !isAdmin && (
+              <>
+                <EmployeeHeader
+                  t={t}
+                  language={language}
+                  currentWorker={currentWorker}
+                  displayName={displayName}
+                  unread={unreadCount}
+                  onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}
+                />
+                <EmployeeDesktopNav
+                  t={t}
+                  view={view}
+                  unread={unreadCount}
+                  showHelp={helpAvailable}
+                  onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
+                  onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}
+                  onOpenProfile={() => { setInboxOpen(false); setProfileOpen(current => !current) }}
+                />
+                <Inbox
+                  t={t}
+                  isAdmin={isAdmin}
+                  currentWorker={currentWorker}
+                  onOpenView={(next) => { setInboxOpen(false); setView(next) }}
+                  open={inboxOpen}
+                  onOpenChange={setInboxOpen}
+                  hideTrigger
+                  onUnreadChange={handleUnreadChange}
+                />
+                <EmployeeProfilePanel
+                  t={t}
+                  language={language}
+                  languages={i18nLanguages}
+                  open={profileOpen}
+                  onClose={() => setProfileOpen(false)}
+                  onLanguageChange={handleLanguageChange}
+                  onSignOut={handleSignOut}
+                  showHelp={helpAvailable}
+                  onOpenHelp={() => { setProfileOpen(false); setInboxOpen(false); setView('openPosts') }}
+                  notifyPermission={notificationPermission}
+                  onEnableNotifications={handleEnableNotifications}
+                />
+                <EmployeeBottomNav
+                  t={t}
+                  view={view}
+                  unread={unreadCount}
+                  inboxOpen={inboxOpen}
+                  profileOpen={profileOpen}
+                  onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
+                  onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}
+                  onOpenProfile={() => { setInboxOpen(false); setProfileOpen(current => !current) }}
+                />
+              </>
+            )}
+
+            {user && (
+              <div className={['plan', 'openPosts', 'history', 'hours', 'mine'].includes(view) ? '' : 'hidden'} aria-hidden={!['plan', 'openPosts', 'history', 'hours', 'mine'].includes(view)}>
+                <WorkPlan
+                  t={t}
+                  language={language}
+                  view={view}
+                  isAdmin={isAdmin}
+                  workers={workers}
+                  objects={objects}
+                  currentWorker={currentWorker}
+                  onOpenNotices={() => setView('notices')}
+                  onOpenHours={() => setView('hours')}
+                  onReloadWorkers={incarcaWorkers}
+                  onReloadObjects={incarcaObjects}
+                  onHelpAvailable={handleHelpAvailable}
+                />
+              </div>
+            )}
+            {user && (
+              <div className={view === 'notices' || view === 'guides' ? '' : 'hidden'} aria-hidden={view !== 'notices' && view !== 'guides'}>
+                <CompanyBoard
+                  t={t}
+                  view={view}
+                  isAdmin={isAdmin}
+                  displayName={displayName}
+                  userId={user.id}
+                  workers={workers}
+                  currentWorker={currentWorker}
+                />
+              </div>
+            )}
             {view === 'pontaj' ? (
               <>
                 {canEditLockedReports && reviewReports.length > 0 && (
@@ -2367,7 +2897,8 @@ function App() {
                           setReportStart(`${e.target.value}T${timePart}`)
                           markReportTimeManual()
                         }}
-                        className="mt-1 w-full px-3 py-2 rounded-md bg-slate-900 text-slate-100"
+                        className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
+                        style={{ colorScheme: 'light' }}
                       />
                     </label>
                     <label className="block text-xs text-slate-400">
@@ -2642,7 +3173,8 @@ function App() {
 	                    type="date"
 	                    value={workerSearchDate}
 	                    onChange={e => setWorkerSearchDate(e.target.value)}
-	                    className="w-full px-3 py-2 rounded-md bg-slate-800 text-slate-100"
+	                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
+	                    style={{ colorScheme: 'light' }}
 	                  />
 	                  <select
 	                    value={workerSearchId}
@@ -2688,7 +3220,8 @@ function App() {
                       type="date"
                       value={materialRequestDate}
                       onChange={e => setMaterialRequestDate(e.target.value)}
-                      className="w-full rounded-md bg-slate-900 px-3 py-2 text-slate-100"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
+                      style={{ colorScheme: 'light' }}
                     />
                     <div className="space-y-2 max-h-80 overflow-auto pr-1">
                       {materialItems.length === 0 ? (
@@ -2774,6 +3307,7 @@ function App() {
 	            )}
           </div>
 
+	          {view !== 'plan' && view !== 'openPosts' && view !== 'notices' && view !== 'guides' && view !== 'history' && view !== 'hours' && view !== 'mine' && (
 	          <div className="bg-slate-950/80 border border-slate-800 shadow-2xl rounded-[2rem] p-8 backdrop-blur-xl overflow-hidden">
 	            <h2 className="text-sm uppercase tracking-[0.3em] font-bold text-slate-400 mb-6 text-center">{view==='pontaj' ? t('currentActivity') : view === 'reports' ? t('reports') : view === 'times' ? t('workTimes') : view === 'materials' ? t('materials') : t('currentActivity')}</h2>
 	            <div className="space-y-4">
@@ -3112,6 +3646,7 @@ function App() {
 	              )}
             </div>
           </div>
+          )}
         </div>
         {workerPickerOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 flex items-end sm:items-center justify-center">
@@ -3212,6 +3747,9 @@ function App() {
             </div>
           </div>
         )}
+        <p className="relative mt-6 text-center text-[11px] leading-5 text-slate-500">
+          © {new Date().getFullYear()} Voqenti. {t('copyright')}
+        </p>
       </div>
     </div>
   )
