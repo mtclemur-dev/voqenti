@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
-import CannotAttendDialog from './CannotAttendDialog'
 import { IconAlert, IconBag, IconCheck, IconChevron, IconMap, IconNote, IconWork } from './icons'
 import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
+import { HoursRow } from './EmployeeHours'
 import {
   assignmentRange,
   berlinWeekDays,
   berlinWeekStart,
   crewAssignees,
+  crewRowsFor,
   dayStampKey,
   firstName,
   formatDisplayDate,
@@ -116,11 +117,22 @@ function workerLabel(workers, workerId) {
   return firstName(name) || name
 }
 
+function storedCrewNames(job) {
+  if (Array.isArray(job?.crew_names)) return job.crew_names.filter(Boolean)
+  const text = String(job?.crew_names || '').trim()
+  return text ? text.split(',').map(item => item.trim()).filter(Boolean) : []
+}
+
 function CrewLine({ t, job, workers = [], currentWorkerId }) {
   const others = crewAssignees(job)
     .filter(row => row.worker_id && row.worker_id !== currentWorkerId)
     .map(row => workerLabel(workers, row.worker_id))
     .filter(Boolean)
+  if (!others.length) {
+    const mine = workers.find(item => item.id === currentWorkerId)?.name || ''
+    const mineFirst = firstName(mine)
+    others.push(...storedCrewNames(job).filter(name => name && name !== mine && firstName(name) !== mineFirst))
+  }
   if (!others.length) return null
   return (
     <span className="mt-1 block text-sm font-semibold text-cyan-100">
@@ -186,7 +198,8 @@ function NextAssignmentCard({
   workers = [],
   currentWorkerId,
   onConfirm,
-  onCannotCome,
+  onSaveHours,
+  confirmingId = '',
   confirming = false,
   embedded = false,
 }) {
@@ -205,6 +218,7 @@ function NextAssignmentCard({
   const place = object?.name || job.object_name || t('planNoPlace')
   const address = object?.address || job.location_text
   const timeLabel = [start, end].filter(Boolean).join(' – ')
+  const busy = confirming || confirmingId === row.id
   const cardRef = useRef(null)
   const rowRef = useRef(row)
 
@@ -213,7 +227,7 @@ function NextAssignmentCard({
   }, [row])
 
   useEffect(() => {
-    if (!canAct || row.seen_at || confirming) return undefined
+    if (!canAct || row.seen_at || busy) return undefined
     const node = cardRef.current
     const mark = () => onConfirm?.(rowRef.current)
     if (!node || typeof IntersectionObserver === 'undefined') {
@@ -233,7 +247,7 @@ function NextAssignmentCard({
       clearTimeout(timer)
       observer.disconnect()
     }
-  }, [canAct, confirming, onConfirm, row.id, row.seen_at])
+  }, [busy, canAct, onConfirm, row.id, row.seen_at])
 
   return (
     <article ref={cardRef} className={embedded ? '' : 'rounded-3xl border border-slate-800 bg-slate-900/90 p-4 md:p-5'}>
@@ -275,32 +289,45 @@ function NextAssignmentCard({
         <AssignmentDetails t={t} job={job} />
       </div>
 
+      {onSaveHours && (
+        <div className="mt-4 space-y-2">
+          {crewRowsFor(row).map((item, index, list) => {
+            const name = workers.find(worker => worker.id === item.worker_id)?.name || ''
+            const mine = item.worker_id === currentWorkerId
+            return (
+              <HoursRow
+                key={item.id || item.worker_id}
+                t={t}
+                language={language}
+                today={today}
+                row={item}
+                object={object}
+                workerLabel={list.length > 1 ? (mine ? t('planSelf') : (firstName(name) || name || t('planUnknownWorker'))) : ''}
+                currentWorkerId={currentWorkerId}
+                onSave={onSaveHours}
+                saving={confirmingId === item.id}
+                compact
+              />
+            )
+          })}
+        </div>
+      )}
+
       {job.updated_at && (
         <p className="mt-3 text-xs text-slate-500">{t('lastUpdated')}: {formatUpdatedAt(job.updated_at, language)}</p>
       )}
 
-      {canAct && (
+      {canAct && mapsHref && (
         <div className="mt-4 grid gap-2">
-          {mapsHref && (
-            <a
-              href={mapsHref}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
-            >
-              <IconMap />
-              {t('openNavigation')}
-            </a>
-          )}
-          <div className="grid gap-2">
-            <button
-              type="button"
-              onClick={() => onCannotCome(row)}
-              className="min-h-12 rounded-2xl bg-rose-500/15 px-4 text-sm font-semibold text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-            >
-              {t('planCannotCome')}
-            </button>
-          </div>
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+          >
+            <IconMap />
+            {t('openNavigation')}
+          </a>
         </div>
       )}
 
@@ -321,7 +348,8 @@ function ExpandableAssignment({
   workers = [],
   currentWorkerId,
   onConfirm,
-  onCannotCome,
+  onSaveHours,
+  confirmingId = '',
   confirming = false,
   alert = false,
 }) {
@@ -376,7 +404,8 @@ function ExpandableAssignment({
               workers={workers}
               currentWorkerId={currentWorkerId}
               onConfirm={onConfirm}
-              onCannotCome={onCannotCome}
+              onSaveHours={onSaveHours}
+              confirmingId={confirmingId}
               confirming={confirming}
               embedded
             />
@@ -400,7 +429,7 @@ export default function EmployeeHome({
   errorMessage = '',
   onRetry,
   onConfirm,
-  onCannotComeSubmit,
+  onSaveHours,
   onOpenNotices,
   onOpenHours,
   confirmingId = '',
@@ -411,10 +440,6 @@ export default function EmployeeHome({
   const today = now.toISODate()
   const selectedDate = boardDate || today
   const setBoardDate = (date) => onBoardDateChange?.(date)
-  const [dialogRow, setDialogRow] = useState(null)
-  const [dialogBusy, setDialogBusy] = useState(false)
-  const [dialogError, setDialogError] = useState('')
-  const [dialogSuccess, setDialogSuccess] = useState('')
   const [notifyPerm, setNotifyPerm] = useState(null)
   const scheduledRef = useRef(new Set())
   const objectById = (id) => objects.find(item => item.id === id)
@@ -468,25 +493,6 @@ export default function EmployeeHome({
   const weekMinutes = myPlan
     .filter(row => isAssignmentActive(row) && weekDays.includes(isoDate(row.work_jobs?.work_date)))
     .reduce((sum, row) => sum + rowWorkMinutes(row), 0)
-  const openDecline = (row) => {
-    setDialogError('')
-    setDialogSuccess('')
-    setDialogRow(row)
-  }
-
-  const submitDecline = async (reason) => {
-    if (!dialogRow) return
-    setDialogBusy(true)
-    setDialogError('')
-    const result = await onCannotComeSubmit(dialogRow, reason)
-    setDialogBusy(false)
-    if (result?.error) {
-      setDialogError(result.error)
-      return
-    }
-    setDialogRow(null)
-    setDialogSuccess(t('cannotComeSaved'))
-  }
 
   if (loading) {
     return (
@@ -532,8 +538,8 @@ export default function EmployeeHome({
                 workers={workers}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
-                onCannotCome={openDecline}
-                confirming={confirmingId === row.id}
+                onSaveHours={onSaveHours}
+                confirmingId={confirmingId}
               />
             ) : (
               <ExpandableAssignment
@@ -547,18 +553,14 @@ export default function EmployeeHome({
                 workers={workers}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
-                onCannotCome={openDecline}
-                confirming={confirmingId === row.id}
+                onSaveHours={onSaveHours}
+                confirmingId={confirmingId}
                 alert={isAssignmentInactive(row)}
               />
             )
           ))
         )}
       </section>
-
-      {dialogSuccess && (
-        <p className="rounded-2xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100" role="status">{dialogSuccess}</p>
-      )}
 
       {myPending.length > 0 && (
         <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
@@ -651,23 +653,14 @@ export default function EmployeeHome({
                 workers={workers}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
-                onCannotCome={openDecline}
-                confirming={confirmingId === row.id}
+                onSaveHours={onSaveHours}
+                confirmingId={confirmingId}
                 alert={isAssignmentInactive(row)}
               />
             ))}
           </div>
         )
       )}
-
-      <CannotAttendDialog
-        t={t}
-        open={Boolean(dialogRow)}
-        busy={dialogBusy}
-        errorMessage={dialogError}
-        onClose={() => !dialogBusy && setDialogRow(null)}
-        onConfirm={submitDecline}
-      />
     </div>
   )
 }

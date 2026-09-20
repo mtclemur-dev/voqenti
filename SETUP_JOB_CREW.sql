@@ -1,12 +1,16 @@
 -- Colegii de pe aceeasi lucrare se vad unii pe altii.
 -- Pot pune orele lucrate pentru ei si pentru colegi.
--- Se pastreaza cine a schimbat ora. Nu pot anula lucrarea altuia.
--- Ruleaza in Supabase SQL Editor, dupa SETUP_WORK_PLAN.sql, SETUP_IMPROVEMENTS.sql si SETUP_WORKER_HOURS.sql.
+-- Se pastreaza cine a schimbat ora.
+-- Ruleaza in Supabase SQL Editor (acelasi proiect Voqenti). Poti rula de mai multe ori.
+-- Fara acest SQL, lucratorul vede doar randul lui.
 
 ALTER TABLE public.work_job_assignees
   ADD COLUMN IF NOT EXISTS hours_changed_by uuid REFERENCES public.workers(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS hours_changed_by_name text,
   ADD COLUMN IF NOT EXISTS hours_changed_at timestamptz;
+
+ALTER TABLE public.work_jobs
+  ADD COLUMN IF NOT EXISTS crew_names text[];
 
 CREATE OR REPLACE FUNCTION public.worker_shares_job(p_job_id uuid)
 RETURNS boolean
@@ -20,9 +24,62 @@ AS $$
     FROM public.work_job_assignees
     WHERE job_id = p_job_id
       AND worker_id = public.current_worker_id()
-      AND status IN ('assigned', 'approved')
+      AND status IN ('assigned', 'approved', 'pending', 'declined')
   );
 $$;
+
+CREATE OR REPLACE FUNCTION public.list_job_crew(p_job_ids uuid[])
+RETURNS SETOF public.work_job_assignees
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT a.*
+  FROM public.work_job_assignees a
+  WHERE a.job_id = ANY (p_job_ids)
+    AND a.status IN ('assigned', 'approved')
+    AND (
+      public.is_work_planner()
+      OR EXISTS (
+        SELECT 1
+        FROM public.work_job_assignees mine
+        WHERE mine.job_id = a.job_id
+          AND mine.worker_id = public.current_worker_id()
+          AND mine.status IN ('assigned', 'approved', 'pending', 'declined')
+      )
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.refresh_job_crew_names()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  target uuid;
+BEGIN
+  target := COALESCE(NEW.job_id, OLD.job_id);
+  UPDATE public.work_jobs
+  SET crew_names = ARRAY(
+        SELECT w.name
+        FROM public.work_job_assignees a
+        JOIN public.workers w ON w.id = a.worker_id
+        WHERE a.job_id = target
+          AND a.status IN ('assigned', 'approved')
+        ORDER BY w.name
+      )
+  WHERE id = target;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_refresh_job_crew_names ON public.work_job_assignees;
+CREATE TRIGGER trg_refresh_job_crew_names
+AFTER INSERT OR UPDATE OF status, worker_id, job_id OR DELETE ON public.work_job_assignees
+FOR EACH ROW
+EXECUTE PROCEDURE public.refresh_job_crew_names();
 
 CREATE OR REPLACE FUNCTION public.guard_work_assignee_update()
 RETURNS trigger
@@ -59,7 +116,7 @@ BEGIN
     IF OLD.status = 'declined' THEN
       RAISE EXCEPTION 'not allowed';
     END IF;
-    IF NEW.status IS DISTINCT FROM OLD.status AND NEW.status <> 'declined' THEN
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
       RAISE EXCEPTION 'not allowed';
     END IF;
     IF OLD.status NOT IN ('assigned', 'approved') THEN
@@ -115,6 +172,17 @@ CREATE POLICY "Work assignees update crew"
     OR public.worker_shares_job(job_id)
   );
 
+UPDATE public.work_jobs j
+SET crew_names = ARRAY(
+  SELECT w.name
+  FROM public.work_job_assignees a
+  JOIN public.workers w ON w.id = a.worker_id
+  WHERE a.job_id = j.id
+    AND a.status IN ('assigned', 'approved')
+  ORDER BY w.name
+);
+
 GRANT EXECUTE ON FUNCTION public.worker_shares_job(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_job_crew(uuid[]) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

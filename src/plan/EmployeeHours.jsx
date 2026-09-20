@@ -6,7 +6,7 @@ import {
   berlinWeekDays,
   berlinWeekStart,
   clockRangeLabel,
-  crewAssignees,
+  crewRowsFor,
   firstName,
   formatClock,
   formatDisplayDate,
@@ -56,10 +56,10 @@ function TimeField({ label, value, onChange }) {
   )
 }
 
-function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, saving }) {
+export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, saving, compact = false }) {
   const job = row.work_jobs
   const date = isoDate(job?.work_date)
-  const canEdit = Boolean(date && date <= today)
+  const canEdit = Boolean(onSave && date && date <= today)
   const planned = assignmentRange(row, job)
   const [start, setStart] = useState(formatClock(row.actual_start || planned.start))
   const [end, setEnd] = useState(formatClock(row.actual_end || planned.end))
@@ -79,11 +79,15 @@ function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerI
     : ''
 
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-      <p className="text-xs text-slate-400">{formatDisplayDate(date, language)}</p>
-      <h3 className="mt-1 text-lg font-bold text-white">{place}</h3>
-      {shortPlace(job, object) && shortPlace(job, object) !== place && (
-        <p className="mt-1 text-sm text-slate-300">{shortPlace(job, object)}</p>
+    <article className={compact ? 'rounded-2xl border border-slate-800 bg-slate-950/50 p-3' : 'rounded-2xl border border-slate-800 bg-slate-900/80 p-4'}>
+      {!compact && (
+        <>
+          <p className="text-xs text-slate-400">{formatDisplayDate(date, language)}</p>
+          <h3 className="mt-1 text-lg font-bold text-white">{place}</h3>
+          {shortPlace(job, object) && shortPlace(job, object) !== place && (
+            <p className="mt-1 text-sm text-slate-300">{shortPlace(job, object)}</p>
+          )}
+        </>
       )}
       {workerLabel && (
         <p className="mt-2 text-sm font-semibold text-cyan-100">{t('hoursFor').replace('{name}', workerLabel)}</p>
@@ -114,21 +118,6 @@ function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerI
       )}
     </article>
   )
-}
-
-function crewRowsFor(myRow) {
-  const job = myRow.work_jobs
-  const crew = crewAssignees(job)
-  if (!crew.length) return [myRow]
-  const mapped = crew.map(item => ({
-    ...item,
-    work_jobs: job,
-    job_id: job?.id || myRow.job_id,
-  }))
-  if (!mapped.some(item => item.id === myRow.id || item.worker_id === myRow.worker_id)) {
-    mapped.unshift(myRow)
-  }
-  return mapped
 }
 
 export default function EmployeeHours({

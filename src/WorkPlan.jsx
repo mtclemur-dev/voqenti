@@ -57,7 +57,42 @@ function isMissingColumn(error) {
     || message.includes('planned_start')
     || message.includes('planned_end')
     || message.includes('hours_changed')
+    || message.includes('crew_names')
     || message.includes('schema cache')
+}
+
+async function loadCrewForJobs(jobIds) {
+  if (!jobIds.length) return []
+  const rpc = await supabase.rpc('list_job_crew', { p_job_ids: jobIds })
+  if (!rpc.error) return rpc.data ?? []
+  const listed = await supabase
+    .from('work_job_assignees')
+    .select('*')
+    .in('job_id', jobIds)
+    .in('status', ['assigned', 'approved'])
+  return listed.error ? [] : (listed.data ?? [])
+}
+
+function attachCrew(rows, crew) {
+  const byJob = {}
+  for (const item of crew) {
+    const jobId = item.job_id
+    if (!jobId) continue
+    ;(byJob[jobId] ??= []).push(item)
+  }
+  return rows.map(row => {
+    const job = row.work_jobs
+    if (!job) return row
+    const people = byJob[job.id]
+    if (!people?.length) return row
+    return { ...row, work_jobs: { ...job, work_job_assignees: people } }
+  })
+}
+
+function crewNamesFor(workerIds, list = []) {
+  return workerIds
+    .map(id => list.find(item => item.id === id)?.name)
+    .filter(Boolean)
 }
 
 function restoreJobForm(saved) {
@@ -577,23 +612,13 @@ export default function WorkPlan({
     }
 
     const [{ data: assigneeData, error: assigneeError }, { data: openData, error: openError }] = await Promise.all([
-      (async () => {
-        const nested = await supabase
-          .from('work_job_assignees')
-          .select('*, work_jobs!inner(*, work_job_assignees(*))')
-          .eq('worker_id', workerId)
-          .in('status', ['assigned', 'approved', 'pending', 'declined'])
-          .neq('work_jobs.status', 'cancelled')
-          .gte('work_jobs.work_date', yearStart)
-        if (!nested.error) return nested
-        return supabase
-          .from('work_job_assignees')
-          .select('*, work_jobs!inner(*)')
-          .eq('worker_id', workerId)
-          .in('status', ['assigned', 'approved', 'pending', 'declined'])
-          .neq('work_jobs.status', 'cancelled')
-          .gte('work_jobs.work_date', yearStart)
-      })(),
+      supabase
+        .from('work_job_assignees')
+        .select('*, work_jobs!inner(*)')
+        .eq('worker_id', workerId)
+        .in('status', ['assigned', 'approved', 'pending', 'declined'])
+        .neq('work_jobs.status', 'cancelled')
+        .gte('work_jobs.work_date', yearStart),
       supabase
         .from('work_jobs')
         .select('*')
@@ -614,7 +639,10 @@ export default function WorkPlan({
     }
 
     setSetupNeeded(false)
-    setMyRows((assigneeData ?? []).filter(row => row.work_jobs && row.work_jobs.status !== 'cancelled' && row.work_jobs.status !== 'canceled'))
+    const mine = (assigneeData ?? []).filter(row => row.work_jobs && row.work_jobs.status !== 'cancelled' && row.work_jobs.status !== 'canceled')
+    const jobIds = [...new Set(mine.map(row => row.work_jobs?.id || row.job_id).filter(Boolean))]
+    const crew = await loadCrewForJobs(jobIds)
+    setMyRows(attachCrew(mine, crew))
     setOpenJobs(openData ?? [])
     await loadAbsences()
     finish()
@@ -1010,11 +1038,19 @@ export default function WorkPlan({
       needed_count: Math.max(1, form.worker_ids.length),
       status: 'active',
       updated_at: new Date().toISOString(),
+      crew_names: crewNamesFor(form.worker_ids, workers),
     }
 
-    const result = editingId
+    let result = editingId
       ? await supabase.from('work_jobs').update(payload).eq('id', editingId).select().single()
       : await supabase.from('work_jobs').insert([payload]).select().single()
+    if (result.error && isMissingColumn(result.error)) {
+      const basic = { ...payload }
+      delete basic.crew_names
+      result = editingId
+        ? await supabase.from('work_jobs').update(basic).eq('id', editingId).select().single()
+        : await supabase.from('work_jobs').insert([basic]).select().single()
+    }
 
     if (result.error) {
       setSaving(false)
@@ -1272,7 +1308,7 @@ export default function WorkPlan({
         return !overlapJobForWorker(row.worker_id, day, range, job.id)
       })
       if (!available.length) continue
-      const { data, error } = await supabase.from('work_jobs').insert([{
+      const copyPayload = {
         work_date: day,
         start_time: job.start_time || null,
         end_time: job.end_time || null,
@@ -1287,7 +1323,16 @@ export default function WorkPlan({
         needed_count: Math.max(1, available.length),
         status: 'active',
         updated_at: new Date().toISOString(),
-      }]).select().single()
+        crew_names: crewNamesFor(available.map(row => row.worker_id), workers),
+      }
+      let { data, error } = await supabase.from('work_jobs').insert([copyPayload]).select().single()
+      if (error && isMissingColumn(error)) {
+        const basic = { ...copyPayload }
+        delete basic.crew_names
+        const fallback = await supabase.from('work_jobs').insert([basic]).select().single()
+        data = fallback.data
+        error = fallback.error
+      }
       if (error) {
         alert(`${t('planSaveError')} ${error.message}`)
         return
@@ -1388,20 +1433,6 @@ export default function WorkPlan({
       return
     }
     loadData(view === 'history' ? 'history' : 'live')
-  }
-
-  const handleCannotComeSubmit = async (row, reason) => {
-    const { error } = await supabase
-      .from('work_job_assignees')
-      .update({
-        status: 'declined',
-        decline_reason: reason.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', row.id)
-    if (error) return { error: `${t('planSaveError')} ${error.message}` }
-    loadData(view === 'history' ? 'history' : 'live')
-    return {}
   }
 
   const handleCancelJob = async (job) => {
@@ -2457,7 +2488,7 @@ export default function WorkPlan({
             errorMessage={errorMessage}
             onRetry={loadData}
             onConfirm={handleSeen}
-            onCannotComeSubmit={handleCannotComeSubmit}
+            onSaveHours={handleSaveHours}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
@@ -2482,7 +2513,7 @@ export default function WorkPlan({
             errorMessage={errorMessage}
             onRetry={loadData}
             onConfirm={handleSeen}
-            onCannotComeSubmit={handleCannotComeSubmit}
+            onSaveHours={handleSaveHours}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
