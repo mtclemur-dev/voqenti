@@ -6,7 +6,6 @@ import {
   berlinWeekDays,
   berlinWeekStart,
   clockRangeLabel,
-  crewRowsFor,
   firstName,
   formatClock,
   formatDisplayDate,
@@ -124,7 +123,6 @@ export default function EmployeeHours({
   t,
   language,
   objects = [],
-  workers = [],
   currentWorker,
   myPlan = [],
   loading = false,
@@ -262,28 +260,20 @@ export default function EmployeeHours({
         </div>
       ) : (
         <div className="space-y-3">
-          {dayRows.flatMap(myRow => {
-            const rows = crewRowsFor(myRow)
-            const showNames = rows.length > 1
-            return rows.map(row => {
-              const name = workers.find(item => item.id === row.worker_id)?.name || ''
-              const mine = row.worker_id === currentWorker?.id
-              return (
-                <HoursRow
-                  key={row.id || `${myRow.id}-${row.worker_id}`}
-                  t={t}
-                  language={language}
-                  today={today}
-                  row={row}
-                  object={objectById(row.work_jobs?.object_id)}
-                  workerLabel={showNames ? (mine ? t('planSelf') : (firstName(name) || name || t('planUnknownWorker'))) : ''}
-                  currentWorkerId={currentWorker?.id}
-                  onSave={onSaveHours}
-                  saving={savingId === row.id}
-                />
-              )
-            })
-          })}
+          {dayRows.map(row => (
+            <HoursRow
+              key={row.id}
+              t={t}
+              language={language}
+              today={today}
+              row={row}
+              object={objectById(row.work_jobs?.object_id)}
+              workerLabel=""
+              currentWorkerId={currentWorker?.id}
+              onSave={onSaveHours}
+              saving={savingId === row.id}
+            />
+          ))}
         </div>
       )}
     </div>

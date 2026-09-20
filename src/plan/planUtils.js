@@ -148,21 +148,6 @@ export function crewAssignees(job, statuses = ['assigned', 'approved']) {
   return (job?.work_job_assignees ?? []).filter(row => statuses.includes(row.status))
 }
 
-export function crewRowsFor(myRow) {
-  const job = myRow.work_jobs
-  const crew = crewAssignees(job)
-  if (!crew.length) return [myRow]
-  const mapped = crew.map(item => ({
-    ...item,
-    work_jobs: job,
-    job_id: job?.id || myRow.job_id,
-  }))
-  if (!mapped.some(item => item.id === myRow.id || item.worker_id === myRow.worker_id)) {
-    mapped.unshift(myRow)
-  }
-  return mapped
-}
-
 export function formatSeenAt(value, language = 'de') {
   if (!value) return ''
   const dt = DateTime.fromISO(value, { zone: 'Europe/Berlin' }).setLocale(language)

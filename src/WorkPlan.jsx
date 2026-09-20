@@ -61,31 +61,27 @@ function isMissingColumn(error) {
     || message.includes('schema cache')
 }
 
-async function loadCrewForJobs(jobIds) {
+async function loadCrewNamesForJobs(jobIds) {
   if (!jobIds.length) return []
-  const rpc = await supabase.rpc('list_job_crew', { p_job_ids: jobIds })
-  if (!rpc.error) return rpc.data ?? []
-  const listed = await supabase
-    .from('work_job_assignees')
-    .select('*')
-    .in('job_id', jobIds)
-    .in('status', ['assigned', 'approved'])
-  return listed.error ? [] : (listed.data ?? [])
+  const rpc = await supabase.rpc('list_job_crew_names', { p_job_ids: jobIds })
+  return rpc.error ? [] : (rpc.data ?? [])
 }
 
-function attachCrew(rows, crew) {
+function attachCrewNames(rows, names) {
   const byJob = {}
-  for (const item of crew) {
+  for (const item of names) {
     const jobId = item.job_id
-    if (!jobId) continue
-    ;(byJob[jobId] ??= []).push(item)
+    const name = String(item.worker_name || '').trim()
+    if (!jobId || !name) continue
+    ;(byJob[jobId] ??= []).push(name)
   }
   return rows.map(row => {
     const job = row.work_jobs
     if (!job) return row
-    const people = byJob[job.id]
-    if (!people?.length) return row
-    return { ...row, work_jobs: { ...job, work_job_assignees: people } }
+    if (Array.isArray(job.crew_names) && job.crew_names.filter(Boolean).length) return row
+    const list = byJob[job.id]
+    if (!list?.length) return row
+    return { ...row, work_jobs: { ...job, crew_names: [...new Set(list)] } }
   })
 }
 
@@ -641,8 +637,8 @@ export default function WorkPlan({
     setSetupNeeded(false)
     const mine = (assigneeData ?? []).filter(row => row.work_jobs && row.work_jobs.status !== 'cancelled' && row.work_jobs.status !== 'canceled')
     const jobIds = [...new Set(mine.map(row => row.work_jobs?.id || row.job_id).filter(Boolean))]
-    const crew = await loadCrewForJobs(jobIds)
-    setMyRows(attachCrew(mine, crew))
+    const names = await loadCrewNamesForJobs(jobIds)
+    setMyRows(attachCrewNames(mine, names))
     setOpenJobs(openData ?? [])
     await loadAbsences()
     finish()
@@ -1403,6 +1399,7 @@ export default function WorkPlan({
   }, [t])
 
   const handleSaveHours = async (row, start, end) => {
+    if (!isAdmin && currentWorker?.id && row.worker_id && row.worker_id !== currentWorker.id) return
     setConfirmingId(row.id)
     const payload = {
       actual_start: start || null,
@@ -2528,7 +2525,6 @@ export default function WorkPlan({
           t={t}
           language={language}
           objects={objects}
-          workers={workers}
           currentWorker={currentWorker}
           myPlan={myPlan}
           loading={loading}

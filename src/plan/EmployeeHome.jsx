@@ -10,7 +10,6 @@ import {
   berlinWeekDays,
   berlinWeekStart,
   crewAssignees,
-  crewRowsFor,
   dayStampKey,
   firstName,
   formatDisplayDate,
@@ -124,19 +123,24 @@ function storedCrewNames(job) {
 }
 
 function CrewLine({ t, job, workers = [], currentWorkerId }) {
-  const others = crewAssignees(job)
-    .filter(row => row.worker_id && row.worker_id !== currentWorkerId)
-    .map(row => workerLabel(workers, row.worker_id))
-    .filter(Boolean)
-  if (!others.length) {
-    const mine = workers.find(item => item.id === currentWorkerId)?.name || ''
-    const mineFirst = firstName(mine)
-    others.push(...storedCrewNames(job).filter(name => name && name !== mine && firstName(name) !== mineFirst))
+  const mine = workers.find(item => item.id === currentWorkerId)?.name || ''
+  const mineFirst = firstName(mine)
+  const names = []
+  const add = (name) => {
+    const label = String(name || '').trim()
+    if (!label) return
+    if (label === mine || (mineFirst && firstName(label) === mineFirst)) return
+    if (names.some(item => item === label || firstName(item) === firstName(label))) return
+    names.push(label)
   }
-  if (!others.length) return null
+  storedCrewNames(job).forEach(add)
+  crewAssignees(job)
+    .filter(row => row.worker_id && row.worker_id !== currentWorkerId)
+    .forEach(row => add(workerLabel(workers, row.worker_id)))
+  if (!names.length) return null
   return (
     <span className="mt-1 block text-sm font-semibold text-cyan-100">
-      {t('planWithCrew').replace('{names}', others.join(', '))}
+      {t('planWithCrew').replace('{names}', names.join(', '))}
     </span>
   )
 }
@@ -290,26 +294,19 @@ function NextAssignmentCard({
       </div>
 
       {onSaveHours && (
-        <div className="mt-4 space-y-2">
-          {crewRowsFor(row).map((item, index, list) => {
-            const name = workers.find(worker => worker.id === item.worker_id)?.name || ''
-            const mine = item.worker_id === currentWorkerId
-            return (
-              <HoursRow
-                key={item.id || item.worker_id}
-                t={t}
-                language={language}
-                today={today}
-                row={item}
-                object={object}
-                workerLabel={list.length > 1 ? (mine ? t('planSelf') : (firstName(name) || name || t('planUnknownWorker'))) : ''}
-                currentWorkerId={currentWorkerId}
-                onSave={onSaveHours}
-                saving={confirmingId === item.id}
-                compact
-              />
-            )
-          })}
+        <div className="mt-4">
+          <HoursRow
+            t={t}
+            language={language}
+            today={today}
+            row={row}
+            object={object}
+            workerLabel=""
+            currentWorkerId={currentWorkerId}
+            onSave={onSaveHours}
+            saving={confirmingId === row.id}
+            compact
+          />
         </div>
       )}
 
