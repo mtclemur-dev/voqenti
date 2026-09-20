@@ -53,7 +53,11 @@ const emptyNeedForm = () => ({
 
 function isMissingColumn(error) {
   const message = error?.message?.toLowerCase() ?? ''
-  return error?.code === 'PGRST204' || message.includes('planned_start') || message.includes('planned_end') || message.includes('schema cache')
+  return error?.code === 'PGRST204'
+    || message.includes('planned_start')
+    || message.includes('planned_end')
+    || message.includes('hours_changed')
+    || message.includes('schema cache')
 }
 
 function restoreJobForm(saved) {
@@ -573,13 +577,23 @@ export default function WorkPlan({
     }
 
     const [{ data: assigneeData, error: assigneeError }, { data: openData, error: openError }] = await Promise.all([
-      supabase
-        .from('work_job_assignees')
-        .select('*, work_jobs!inner(*)')
-        .eq('worker_id', workerId)
-        .in('status', ['assigned', 'approved', 'pending', 'declined'])
-        .neq('work_jobs.status', 'cancelled')
-        .gte('work_jobs.work_date', yearStart),
+      (async () => {
+        const nested = await supabase
+          .from('work_job_assignees')
+          .select('*, work_jobs!inner(*, work_job_assignees(*))')
+          .eq('worker_id', workerId)
+          .in('status', ['assigned', 'approved', 'pending', 'declined'])
+          .neq('work_jobs.status', 'cancelled')
+          .gte('work_jobs.work_date', yearStart)
+        if (!nested.error) return nested
+        return supabase
+          .from('work_job_assignees')
+          .select('*, work_jobs!inner(*)')
+          .eq('worker_id', workerId)
+          .in('status', ['assigned', 'approved', 'pending', 'declined'])
+          .neq('work_jobs.status', 'cancelled')
+          .gte('work_jobs.work_date', yearStart)
+      })(),
       supabase
         .from('work_jobs')
         .select('*')
@@ -1345,14 +1359,29 @@ export default function WorkPlan({
 
   const handleSaveHours = async (row, start, end) => {
     setConfirmingId(row.id)
-    const { error } = await supabase
+    const payload = {
+      actual_start: start || null,
+      actual_end: end || null,
+      updated_at: new Date().toISOString(),
+      hours_changed_by: currentWorker?.id || null,
+      hours_changed_by_name: currentWorker?.name || null,
+      hours_changed_at: new Date().toISOString(),
+    }
+    let { error } = await supabase
       .from('work_job_assignees')
-      .update({
-        actual_start: start || null,
-        actual_end: end || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq('id', row.id)
+    if (error && isMissingColumn(error)) {
+      const fallback = await supabase
+        .from('work_job_assignees')
+        .update({
+          actual_start: start || null,
+          actual_end: end || null,
+          updated_at: payload.updated_at,
+        })
+        .eq('id', row.id)
+      error = fallback.error
+    }
     setConfirmingId('')
     if (error) {
       alert(`${t('planSaveError')} ${error.message}`)
@@ -2419,6 +2448,7 @@ export default function WorkPlan({
             t={t}
             language={language}
             currentWorker={currentWorker}
+            workers={workers}
             objects={objects}
             myPlan={myPlan}
             myPending={myPending}
@@ -2443,6 +2473,7 @@ export default function WorkPlan({
             t={t}
             language={language}
             currentWorker={currentWorker}
+            workers={workers}
             objects={objects}
             myPlan={myPlan}
             myPending={myPending}
@@ -2466,6 +2497,8 @@ export default function WorkPlan({
           t={t}
           language={language}
           objects={objects}
+          workers={workers}
+          currentWorker={currentWorker}
           myPlan={myPlan}
           loading={loading}
           errorMessage={errorMessage}

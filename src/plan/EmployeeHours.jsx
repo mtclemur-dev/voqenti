@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import WeekBoard from './WeekBoard'
 import {
@@ -6,8 +6,11 @@ import {
   berlinWeekDays,
   berlinWeekStart,
   clockRangeLabel,
+  crewAssignees,
+  firstName,
   formatClock,
   formatDisplayDate,
+  formatSeenAt,
   isAssignmentActive,
   isoDate,
   minutesLabel,
@@ -53,16 +56,27 @@ function TimeField({ label, value, onChange }) {
   )
 }
 
-function HoursRow({ t, language, today, row, object, onSave, saving }) {
+function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, saving }) {
   const job = row.work_jobs
   const date = isoDate(job?.work_date)
   const canEdit = Boolean(date && date <= today)
   const planned = assignmentRange(row, job)
   const [start, setStart] = useState(formatClock(row.actual_start || planned.start))
   const [end, setEnd] = useState(formatClock(row.actual_end || planned.end))
+  useEffect(() => {
+    setStart(formatClock(row.actual_start || planned.start))
+    setEnd(formatClock(row.actual_end || planned.end))
+  }, [planned.end, planned.start, row.actual_end, row.actual_start])
   const minutes = rowWorkMinutes({ ...row, actual_start: start, actual_end: end })
   const place = object?.name || job?.object_name || job?.location_text || t('planNoPlace')
   const dirty = start !== formatClock(row.actual_start || planned.start) || end !== formatClock(row.actual_end || planned.end) || !row.actual_start || !row.actual_end
+  const changerName = row.hours_changed_by_name || ''
+  const changerMine = Boolean(currentWorkerId && row.hours_changed_by === currentWorkerId)
+  const changedLabel = row.hours_changed_at
+    ? t('hoursChangedBy')
+      .replace('{name}', changerMine ? t('planSelf') : (firstName(changerName) || changerName || t('planUnknownWorker')))
+      .replace('{time}', formatSeenAt(row.hours_changed_at, language))
+    : ''
 
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
@@ -71,7 +85,11 @@ function HoursRow({ t, language, today, row, object, onSave, saving }) {
       {shortPlace(job, object) && shortPlace(job, object) !== place && (
         <p className="mt-1 text-sm text-slate-300">{shortPlace(job, object)}</p>
       )}
+      {workerLabel && (
+        <p className="mt-2 text-sm font-semibold text-cyan-100">{t('hoursFor').replace('{name}', workerLabel)}</p>
+      )}
       <p className="mt-2 text-sm text-cyan-100">{minutesLabel(minutes, t)}</p>
+      {changedLabel && <p className="mt-1 text-xs text-slate-400">{changedLabel}</p>}
       {canEdit ? (
         <>
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -98,10 +116,27 @@ function HoursRow({ t, language, today, row, object, onSave, saving }) {
   )
 }
 
+function crewRowsFor(myRow) {
+  const job = myRow.work_jobs
+  const crew = crewAssignees(job)
+  if (!crew.length) return [myRow]
+  const mapped = crew.map(item => ({
+    ...item,
+    work_jobs: job,
+    job_id: job?.id || myRow.job_id,
+  }))
+  if (!mapped.some(item => item.id === myRow.id || item.worker_id === myRow.worker_id)) {
+    mapped.unshift(myRow)
+  }
+  return mapped
+}
+
 export default function EmployeeHours({
   t,
   language,
   objects = [],
+  workers = [],
+  currentWorker,
   myPlan = [],
   loading = false,
   errorMessage = '',
@@ -238,18 +273,28 @@ export default function EmployeeHours({
         </div>
       ) : (
         <div className="space-y-3">
-          {dayRows.map(row => (
-            <HoursRow
-              key={row.id}
-              t={t}
-              language={language}
-              today={today}
-              row={row}
-              object={objectById(row.work_jobs?.object_id)}
-              onSave={onSaveHours}
-              saving={savingId === row.id}
-            />
-          ))}
+          {dayRows.flatMap(myRow => {
+            const rows = crewRowsFor(myRow)
+            const showNames = rows.length > 1
+            return rows.map(row => {
+              const name = workers.find(item => item.id === row.worker_id)?.name || ''
+              const mine = row.worker_id === currentWorker?.id
+              return (
+                <HoursRow
+                  key={row.id || `${myRow.id}-${row.worker_id}`}
+                  t={t}
+                  language={language}
+                  today={today}
+                  row={row}
+                  object={objectById(row.work_jobs?.object_id)}
+                  workerLabel={showNames ? (mine ? t('planSelf') : (firstName(name) || name || t('planUnknownWorker'))) : ''}
+                  currentWorkerId={currentWorker?.id}
+                  onSave={onSaveHours}
+                  saving={savingId === row.id}
+                />
+              )
+            })
+          })}
         </div>
       )}
     </div>

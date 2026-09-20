@@ -144,6 +144,10 @@ export function rowWorkMinutes(row) {
   )
 }
 
+export function crewAssignees(job, statuses = ['assigned', 'approved']) {
+  return (job?.work_job_assignees ?? []).filter(row => statuses.includes(row.status))
+}
+
 export function formatSeenAt(value, language = 'de') {
   if (!value) return ''
   const dt = DateTime.fromISO(value, { zone: 'Europe/Berlin' }).setLocale(language)

@@ -9,7 +9,9 @@ import {
   assignmentRange,
   berlinWeekDays,
   berlinWeekStart,
+  crewAssignees,
   dayStampKey,
+  firstName,
   formatDisplayDate,
   formatSeenAt,
   formatUpdatedAt,
@@ -109,6 +111,24 @@ function AssignmentDetails({ t, job }) {
   )
 }
 
+function workerLabel(workers, workerId) {
+  const name = workers.find(item => item.id === workerId)?.name || ''
+  return firstName(name) || name
+}
+
+function CrewLine({ t, job, workers = [], currentWorkerId }) {
+  const others = crewAssignees(job)
+    .filter(row => row.worker_id && row.worker_id !== currentWorkerId)
+    .map(row => workerLabel(workers, row.worker_id))
+    .filter(Boolean)
+  if (!others.length) return null
+  return (
+    <span className="mt-1 block text-sm font-semibold text-cyan-100">
+      {t('planWithCrew').replace('{names}', others.join(', '))}
+    </span>
+  )
+}
+
 function NoticesCard({ t, onOpen }) {
   const [latest, setLatest] = useState(null)
   const [isNew, setIsNew] = useState(false)
@@ -163,6 +183,8 @@ function NextAssignmentCard({
   now,
   row,
   object,
+  workers = [],
+  currentWorkerId,
   onConfirm,
   onCannotCome,
   confirming = false,
@@ -234,6 +256,7 @@ function NextAssignmentCard({
         <div className="space-y-2">
           <h2 className="break-words text-xl font-bold text-white md:text-2xl">{place}</h2>
           {address && <p className="break-words text-sm leading-5 text-slate-200">{address}</p>}
+          <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId} />
           {(object?.manager || phone) && (
             <p className="text-sm text-slate-300">
               {object?.manager && <span>{t('responsible')}: {object.manager}</span>}
@@ -295,6 +318,8 @@ function ExpandableAssignment({
   now,
   row,
   object,
+  workers = [],
+  currentWorkerId,
   onConfirm,
   onCannotCome,
   confirming = false,
@@ -327,6 +352,7 @@ function ExpandableAssignment({
           </span>
           <span className="mt-1 block truncate text-base font-semibold text-white">{place}</span>
           <span className="mt-1 block truncate text-sm text-slate-300">{shortPlace(job, object)}</span>
+          <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId} />
         </span>
         <StatusBadge t={t} row={row} language={language} past={isJobPast(timedJob, now)} />
         <span className="sr-only">{detailsLabel}</span>
@@ -347,6 +373,8 @@ function ExpandableAssignment({
               now={now}
               row={row}
               object={object}
+              workers={workers}
+              currentWorkerId={currentWorkerId}
               onConfirm={onConfirm}
               onCannotCome={onCannotCome}
               confirming={confirming}
@@ -363,6 +391,7 @@ export default function EmployeeHome({
   t,
   language = 'de',
   currentWorker,
+  workers = [],
   objects = [],
   myPlan = [],
   myPending = [],
@@ -500,6 +529,8 @@ export default function EmployeeHome({
                 now={now}
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
+                workers={workers}
+                currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onCannotCome={openDecline}
                 confirming={confirmingId === row.id}
@@ -513,6 +544,8 @@ export default function EmployeeHome({
                 now={now}
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
+                workers={workers}
+                currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onCannotCome={openDecline}
                 confirming={confirmingId === row.id}
@@ -615,6 +648,8 @@ export default function EmployeeHome({
                 now={now}
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
+                workers={workers}
+                currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onCannotCome={openDecline}
                 confirming={confirmingId === row.id}
