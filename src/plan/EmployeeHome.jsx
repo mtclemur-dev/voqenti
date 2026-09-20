@@ -433,7 +433,8 @@ export default function EmployeeHome({
     return counts
   }, {})
   const liveDate = selectedDate < today ? today : selectedDate
-  const dayRows = sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)
+  const todayRows = sorted.filter(row => isoDate(row.work_jobs?.work_date) === today)
+  const otherDayRows = liveDate === today ? [] : sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)
   const weekDays = berlinWeekDays(berlinWeekStart(today))
   const weekMinutes = myPlan
     .filter(row => isAssignmentActive(row) && weekDays.includes(isoDate(row.work_jobs?.work_date)))
@@ -482,90 +483,15 @@ export default function EmployeeHome({
         </div>
       )}
 
-      {notifyPerm && notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && sorted.some(row => isAssignmentActive(row) && !row.seen_at) && (
-        <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3">
-          <p className="text-sm text-amber-50">{t('notifyEnableHint')}</p>
-          <button
-            type="button"
-            onClick={async () => {
-              const next = await requestNotifyPermission()
-              setNotifyPerm(next)
-            }}
-            className="mt-2 min-h-11 rounded-xl bg-amber-300 px-4 text-sm font-semibold text-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-          >
-            {t('enableNotifications')}
-          </button>
-        </div>
-      )}
-
-      {upcomingAbsences.length > 0 && (
-        <aside className="rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3">
-          <p className="flex items-center gap-2 text-sm font-semibold text-rose-50">
-            <IconAlert className="h-4 w-4" />
-            {t('absenceOfficeMarked')}
-          </p>
-          {upcomingAbsences.map(item => (
-            <p key={item.id} className="mt-1 text-sm text-rose-100">
-              {item.reason === 'vacation' ? t('absenceVacation') : t('absenceSick')}
-              {' · '}
-              {isoDate(item.start_date) ? formatDisplayDate(item.start_date) : ''} – {isoDate(item.end_date) ? formatDisplayDate(item.end_date) : ''}
-            </p>
-          ))}
-        </aside>
-      )}
-
-      <NoticesCard t={t} onOpen={onOpenNotices} />
-
-      {onOpenHours && (
-        <button
-          type="button"
-          onClick={onOpenHours}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-        >
-          <span className="text-sm font-semibold text-cyan-50">{t('hoursWeekTotal')}</span>
-          <span className="text-lg font-black text-white">{minutesLabel(weekMinutes, t)}</span>
-        </button>
-      )}
-
-      {dialogSuccess && (
-        <p className="rounded-2xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100" role="status">{dialogSuccess}</p>
-      )}
-
-      {myPending.length > 0 && (
-        <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
-          <p className="text-sm font-semibold text-amber-50">{t('planWaiting')}</p>
-          {myPending.map(row => (
-            <p key={row.id} className="mt-1 text-sm text-amber-100">
-              {formatDisplayDate(row.work_jobs?.work_date, language)}
-              {assignmentRange(row).start ? ` · ${assignmentRange(row).start}` : ''}
-              {' · '}
-              {row.work_jobs?.object_name || row.work_jobs?.location_text || t('planNoPlace')}
-            </p>
-          ))}
-        </div>
-      )}
-
-      <WeekBoard
-        t={t}
-        language={language}
-        today={today}
-        selectedDate={liveDate}
-        onSelectDate={(date) => {
-          if (date < today) return
-          setBoardDate(date)
-        }}
-        counts={boardCounts}
-        hidePast
-      />
-
-      {dayRows.length === 0 ? (
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 px-5 py-6 text-center text-sm text-slate-400">
-          {t('planDayEmpty')}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {dayRows.map(row => (
-            dayRows.length === 1 && isAssignmentActive(row) ? (
+      <section aria-label={t('planToday')} className="space-y-3">
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-cyan-200">{t('planToday')}</h2>
+        {todayRows.length === 0 ? (
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/70 px-5 py-6 text-center text-sm text-slate-400">
+            {t('planDayEmpty')}
+          </div>
+        ) : (
+          todayRows.map(row => (
+            isAssignmentActive(row) ? (
               <NextAssignmentCard
                 key={row.id}
                 t={t}
@@ -593,8 +519,110 @@ export default function EmployeeHome({
                 alert={isAssignmentInactive(row)}
               />
             )
+          ))
+        )}
+      </section>
+
+      {dialogSuccess && (
+        <p className="rounded-2xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100" role="status">{dialogSuccess}</p>
+      )}
+
+      {myPending.length > 0 && (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-50">{t('planWaiting')}</p>
+          {myPending.map(row => (
+            <p key={row.id} className="mt-1 text-sm text-amber-100">
+              {formatDisplayDate(row.work_jobs?.work_date, language)}
+              {assignmentRange(row).start ? ` · ${assignmentRange(row).start}` : ''}
+              {' · '}
+              {row.work_jobs?.object_name || row.work_jobs?.location_text || t('planNoPlace')}
+            </p>
           ))}
         </div>
+      )}
+
+      {upcomingAbsences.length > 0 && (
+        <aside className="rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-rose-50">
+            <IconAlert className="h-4 w-4" />
+            {t('absenceOfficeMarked')}
+          </p>
+          {upcomingAbsences.map(item => (
+            <p key={item.id} className="mt-1 text-sm text-rose-100">
+              {item.reason === 'vacation' ? t('absenceVacation') : t('absenceSick')}
+              {' · '}
+              {isoDate(item.start_date) ? formatDisplayDate(item.start_date) : ''} – {isoDate(item.end_date) ? formatDisplayDate(item.end_date) : ''}
+            </p>
+          ))}
+        </aside>
+      )}
+
+      {notifyPerm && notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && sorted.some(row => isAssignmentActive(row) && !row.seen_at) && (
+        <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3">
+          <p className="text-sm text-amber-50">{t('notifyEnableHint')}</p>
+          <button
+            type="button"
+            onClick={async () => {
+              const next = await requestNotifyPermission()
+              setNotifyPerm(next)
+            }}
+            className="mt-2 min-h-11 rounded-xl bg-amber-300 px-4 text-sm font-semibold text-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          >
+            {t('enableNotifications')}
+          </button>
+        </div>
+      )}
+
+      {onOpenHours && (
+        <button
+          type="button"
+          onClick={onOpenHours}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          <span className="text-sm font-semibold text-cyan-50">{t('hoursWeekTotal')}</span>
+          <span className="text-lg font-black text-white">{minutesLabel(weekMinutes, t)}</span>
+        </button>
+      )}
+
+      <NoticesCard t={t} onOpen={onOpenNotices} />
+
+      <WeekBoard
+        t={t}
+        language={language}
+        today={today}
+        selectedDate={liveDate}
+        onSelectDate={(date) => {
+          if (date < today) return
+          setBoardDate(date)
+        }}
+        counts={boardCounts}
+        hidePast
+      />
+
+      {liveDate !== today && (
+        otherDayRows.length === 0 ? (
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/70 px-5 py-6 text-center text-sm text-slate-400">
+            {t('planDayEmpty')}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {otherDayRows.map(row => (
+              <ExpandableAssignment
+                key={row.id}
+                t={t}
+                language={language}
+                today={today}
+                now={now}
+                row={row}
+                object={objectById(row.work_jobs?.object_id)}
+                onConfirm={onConfirm}
+                onCannotCome={openDecline}
+                confirming={confirmingId === row.id}
+                alert={isAssignmentInactive(row)}
+              />
+            ))}
+          </div>
+        )
       )}
 
       <CannotAttendDialog

@@ -606,7 +606,10 @@ export default function WorkPlan({
     finish()
   }, [isAdmin, workerId])
 
+  const livePlanOpen = view === 'plan' || view === 'openPosts' || view === 'hours' || view === 'mine'
+
   useEffect(() => {
+    if (!livePlanOpen) return undefined
     loadData('live')
     const refresh = debounce(() => loadData('live'), 500)
     const channel = supabase
@@ -619,7 +622,7 @@ export default function WorkPlan({
       refresh.cancel()
       supabase.removeChannel(channel)
     }
-  }, [loadData])
+  }, [livePlanOpen, loadData])
 
   useEffect(() => {
     if (view === 'history') loadData('history')

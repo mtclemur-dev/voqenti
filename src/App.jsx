@@ -948,29 +948,21 @@ function App() {
   }, [incarcaDashboardSummary, incarcaIstoric, loadLearningItem, userId, verificaSesiuneActiva])
 
   useEffect(() => {
-    if (view === 'plan' || view === 'openPosts' || view === 'notices' || view === 'guides' || view === 'history' || view === 'hours' || view === 'mine') {
-      incarcaObjects()
-      incarcaWorkers()
-    }
+    if (!userId) return
+    incarcaObjects()
+    incarcaWorkers()
+  }, [incarcaObjects, incarcaWorkers, userId])
+
+  useEffect(() => {
     if (view === 'reports') {
       incarcaReports()
-      incarcaObjects()
-      incarcaWorkers()
       incarcaInventory()
     }
-    if (view === 'pontaj') {
-      incarcaObjects()
-      incarcaWorkers()
-    }
-    if (view === 'times') {
-      incarcaWorkers()
-    }
     if (view === 'materials') {
-      incarcaObjects()
       incarcaMaterialbedarf()
       incarcaInventory()
     }
-  }, [incarcaInventory, incarcaMaterialbedarf, incarcaObjects, incarcaReports, incarcaWorkers, view, userId])
+  }, [incarcaInventory, incarcaMaterialbedarf, incarcaReports, view])
 
   useEffect(() => {
     if (view === 'times') incarcaWorkerEntries()
