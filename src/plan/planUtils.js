@@ -142,6 +142,35 @@ export function jobDurationLabel(job, t) {
   return minutes ? minutesLabel(minutes, t) : null
 }
 
+export function jobTone(job) {
+  if (job?.status === 'cancelled' || job?.status === 'canceled') return 'idle'
+  const people = job?.work_job_assignees ?? []
+  const active = people.filter(row => ['assigned', 'approved'].includes(row.status))
+  const declined = people.some(row => row.status === 'declined')
+  const needed = Math.max(Number(job?.needed_count) || 0, active.length, 1)
+  if (declined) return 'problem'
+  if (!active.length || active.length < needed) return 'attention'
+  if (active.some(row => !row.seen_at)) return 'attention'
+  if (active.length && active.every(row => row.seen_at)) return 'confirmed'
+  return 'open'
+}
+
+export function marksFromJobs(jobs) {
+  const marks = {}
+  for (const job of jobs || []) {
+    const date = isoDate(job.work_date)
+    if (!date) continue
+    const current = marks[date] || { jobs: false, attention: false, problem: false }
+    current.jobs = true
+    const cancelled = job.status === 'cancelled' || job.status === 'canceled'
+    const tone = jobTone(job)
+    if (cancelled || tone === 'problem') current.problem = true
+    else if (tone === 'attention') current.attention = true
+    marks[date] = current
+  }
+  return marks
+}
+
 export function rowWorkMinutes(row) {
   const job = row?.work_jobs
   const planned = assignmentRange(row, job)
