@@ -144,6 +144,10 @@ export function rowWorkMinutes(row) {
   )
 }
 
+export function selfLogMinutes(log) {
+  return durationMinutes(log?.work_date, log?.start_time, log?.end_time)
+}
+
 export function crewAssignees(job, statuses = ['assigned', 'approved']) {
   return (job?.work_job_assignees ?? []).filter(row => statuses.includes(row.status))
 }

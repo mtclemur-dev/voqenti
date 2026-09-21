@@ -5,6 +5,7 @@ import { IconAlert, IconBag, IconCheck, IconChevron, IconMap, IconNote, IconWork
 import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
 import { HoursRow } from './EmployeeHours'
+import SelfWorkForm from './SelfWorkForm'
 import {
   assignmentRange,
   berlinWeekDays,
@@ -25,6 +26,7 @@ import {
   jobPhone,
   minutesLabel,
   rowWorkMinutes,
+  selfLogMinutes,
   shortPlace,
   sortPlanRows,
 } from './planUtils'
@@ -420,6 +422,7 @@ export default function EmployeeHome({
   workers = [],
   objects = [],
   myPlan = [],
+  selfLogs = [],
   myPending = [],
   absences = [],
   loading = false,
@@ -427,9 +430,12 @@ export default function EmployeeHome({
   onRetry,
   onConfirm,
   onSaveHours,
+  onSaveSelfLog,
+  onDeleteSelfLog,
   onOpenNotices,
   onOpenHours,
   confirmingId = '',
+  savingSelf = false,
   boardDate,
   onBoardDateChange,
 }) {
@@ -490,6 +496,20 @@ export default function EmployeeHome({
   const weekMinutes = myPlan
     .filter(row => isAssignmentActive(row) && weekDays.includes(isoDate(row.work_jobs?.work_date)))
     .reduce((sum, row) => sum + rowWorkMinutes(row), 0)
+    + selfLogs.filter(item => weekDays.includes(isoDate(item.work_date))).reduce((sum, item) => sum + selfLogMinutes(item), 0)
+  const monthStart = now.startOf('month').toISODate()
+  const monthEnd = now.endOf('month').toISODate()
+  const presenceDays = new Set()
+  for (const row of myPlan) {
+    const date = isoDate(row.work_jobs?.work_date)
+    if (!isAssignmentActive(row) || !date || date < monthStart || date > monthEnd || date > today) continue
+    presenceDays.add(date)
+  }
+  for (const item of selfLogs) {
+    const date = isoDate(item.work_date)
+    if (!date || date < monthStart || date > monthEnd || date > today) continue
+    presenceDays.add(date)
+  }
 
   if (loading) {
     return (
@@ -559,6 +579,20 @@ export default function EmployeeHome({
         )}
       </section>
 
+      {onSaveSelfLog && (
+        <SelfWorkForm
+          t={t}
+          language={language}
+          today={today}
+          date={today}
+          objects={objects}
+          logs={selfLogs}
+          onSave={onSaveSelfLog}
+          onDelete={onDeleteSelfLog}
+          saving={savingSelf}
+        />
+      )}
+
       {myPending.length > 0 && (
         <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
           <p className="text-sm font-semibold text-amber-50">{t('planWaiting')}</p>
@@ -605,16 +639,21 @@ export default function EmployeeHome({
         </div>
       )}
 
-      {onOpenHours && (
+      <div className="grid gap-2 sm:grid-cols-2">
         <button
           type="button"
           onClick={onOpenHours}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          disabled={!onOpenHours}
+          className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-80"
         >
           <span className="text-sm font-semibold text-cyan-50">{t('hoursWeekTotal')}</span>
           <span className="text-lg font-black text-white">{minutesLabel(weekMinutes, t)}</span>
         </button>
-      )}
+        <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3">
+          <span className="text-sm font-semibold text-slate-300">{t('hoursPresence')}</span>
+          <span className="text-lg font-black text-white">{t('hoursPresenceCount').replace('{days}', String(presenceDays.size))}</span>
+        </div>
+      </div>
 
       <NoticesCard t={t} onOpen={onOpenNotices} />
 

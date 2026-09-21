@@ -504,6 +504,8 @@ export default function WorkPlan({
   const [duplicating, setDuplicating] = useState(() => Boolean(readUiMemory().duplicating))
   const [duplicatingNeed, setDuplicatingNeed] = useState(false)
   const [absences, setAbsences] = useState([])
+  const [selfLogs, setSelfLogs] = useState([])
+  const [savingSelf, setSavingSelf] = useState(false)
   const [absenceForm, setAbsenceForm] = useState(emptyAbsence)
   const [inviteName, setInviteName] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
@@ -569,6 +571,22 @@ export default function WorkPlan({
       setAbsences(error ? [] : (data ?? []))
     }
 
+    const loadSelfLogs = async () => {
+      if (!workerId) {
+        setSelfLogs([])
+        return
+      }
+      const { data, error } = await supabase
+        .from('work_self_logs')
+        .select('*')
+        .eq('worker_id', workerId)
+        .gte('work_date', yearStart)
+        .order('work_date', { ascending: false })
+        .order('start_time', { ascending: true })
+      if (error && !isMissingTable(error)) setErrorMessage(error.message)
+      setSelfLogs(error ? [] : (data ?? []))
+    }
+
     const finish = () => {
       firstLoad.current = false
       setLoading(false)
@@ -594,7 +612,7 @@ export default function WorkPlan({
       }
       setSetupNeeded(false)
       setJobs(data ?? [])
-      await loadAbsences()
+      await Promise.all([loadAbsences(), loadSelfLogs()])
       finish()
       return
     }
@@ -602,6 +620,7 @@ export default function WorkPlan({
     if (!workerId) {
       setMyRows([])
       setOpenJobs([])
+      setSelfLogs([])
       await loadAbsences()
       finish()
       return
@@ -640,7 +659,7 @@ export default function WorkPlan({
     const names = await loadCrewNamesForJobs(jobIds)
     setMyRows(attachCrewNames(mine, names))
     setOpenJobs(openData ?? [])
-    await loadAbsences()
+    await Promise.all([loadAbsences(), loadSelfLogs()])
     finish()
   }, [isAdmin, workerId])
 
@@ -655,6 +674,7 @@ export default function WorkPlan({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_job_assignees' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_absences' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_self_logs' }, refresh)
       .subscribe()
     return () => {
       refresh.cancel()
@@ -1425,6 +1445,42 @@ export default function WorkPlan({
       error = fallback.error
     }
     setConfirmingId('')
+    if (error) {
+      alert(`${t('planSaveError')} ${error.message}`)
+      return
+    }
+    loadData(view === 'history' ? 'history' : 'live')
+  }
+
+  const handleSaveSelfLog = async (payload) => {
+    if (!currentWorker?.id) {
+      alert(t('planWorkerMissing'))
+      return false
+    }
+    setSavingSelf(true)
+    const { error } = await supabase.from('work_self_logs').insert([{
+      worker_id: currentWorker.id,
+      work_date: payload.work_date,
+      object_id: payload.object_id || null,
+      place_text: payload.place_text || null,
+      task_text: payload.task_text || null,
+      start_time: payload.start_time || null,
+      end_time: payload.end_time || null,
+      updated_at: new Date().toISOString(),
+    }])
+    setSavingSelf(false)
+    if (error) {
+      alert(`${t(isMissingTable(error) ? 'selfWorkSetup' : 'planSaveError')} ${isMissingTable(error) ? '' : error.message}`.trim())
+      return false
+    }
+    loadData(view === 'history' ? 'history' : 'live')
+    return true
+  }
+
+  const handleDeleteSelfLog = async (item) => {
+    if (!item?.id) return
+    if (!confirm(t('selfWorkDeleteConfirm'))) return
+    const { error } = await supabase.from('work_self_logs').delete().eq('id', item.id)
     if (error) {
       alert(`${t('planSaveError')} ${error.message}`)
       return
@@ -2479,6 +2535,7 @@ export default function WorkPlan({
             workers={workers}
             objects={objects}
             myPlan={myPlan}
+            selfLogs={selfLogs}
             myPending={myPending}
             absences={absences}
             loading={loading}
@@ -2486,9 +2543,12 @@ export default function WorkPlan({
             onRetry={loadData}
             onConfirm={handleSeen}
             onSaveHours={handleSaveHours}
+            onSaveSelfLog={handleSaveSelfLog}
+            onDeleteSelfLog={handleDeleteSelfLog}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
+            savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
           />
@@ -2504,6 +2564,7 @@ export default function WorkPlan({
             workers={workers}
             objects={objects}
             myPlan={myPlan}
+            selfLogs={selfLogs}
             myPending={myPending}
             absences={absences}
             loading={loading}
@@ -2511,9 +2572,12 @@ export default function WorkPlan({
             onRetry={loadData}
             onConfirm={handleSeen}
             onSaveHours={handleSaveHours}
+            onSaveSelfLog={handleSaveSelfLog}
+            onDeleteSelfLog={handleDeleteSelfLog}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
+            savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
           />
@@ -2527,11 +2591,15 @@ export default function WorkPlan({
           objects={objects}
           currentWorker={currentWorker}
           myPlan={myPlan}
+          selfLogs={selfLogs}
           loading={loading}
           errorMessage={errorMessage}
           onRetry={loadData}
           onSaveHours={handleSaveHours}
+          onSaveSelfLog={handleSaveSelfLog}
+          onDeleteSelfLog={handleDeleteSelfLog}
           savingId={confirmingId}
+          savingSelf={savingSelf}
           boardDate={hoursDate}
           onBoardDateChange={setHoursDate}
         />

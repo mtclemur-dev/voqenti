@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import WeekBoard from './WeekBoard'
+import SelfWorkForm from './SelfWorkForm'
 import {
   assignmentRange,
   berlinWeekDays,
@@ -14,6 +15,7 @@ import {
   isoDate,
   minutesLabel,
   rowWorkMinutes,
+  selfLogMinutes,
   shortPlace,
 } from './planUtils'
 
@@ -125,11 +127,15 @@ export default function EmployeeHours({
   objects = [],
   currentWorker,
   myPlan = [],
+  selfLogs = [],
   loading = false,
   errorMessage = '',
   onRetry,
   onSaveHours,
+  onSaveSelfLog,
+  onDeleteSelfLog,
   savingId = '',
+  savingSelf = false,
   boardDate,
   onBoardDateChange,
 }) {
@@ -151,21 +157,35 @@ export default function EmployeeHours({
     return date.isValid && date.year === month.year && date.month === month.month
   })
   const weekMinutes = weekRows.reduce((sum, row) => sum + rowWorkMinutes(row), 0)
+    + selfLogs.filter(item => weekDays.includes(isoDate(item.work_date))).reduce((sum, item) => sum + selfLogMinutes(item), 0)
   const monthMinutes = monthRows.reduce((sum, row) => sum + rowWorkMinutes(row), 0)
-  const monthDays = Object.entries(monthRows.reduce((map, row) => {
+    + selfLogs.filter((item) => {
+      const date = DateTime.fromISO(isoDate(item.work_date), { zone: 'Europe/Berlin' })
+      return date.isValid && date.year === month.year && date.month === month.month
+    }).reduce((sum, item) => sum + selfLogMinutes(item), 0)
+  const monthMap = monthRows.reduce((map, row) => {
     const date = isoDate(row.work_jobs?.work_date)
     if (!date) return map
     map[date] = (map[date] || 0) + rowWorkMinutes(row)
     return map
-  }, {})).sort(([left], [right]) => left.localeCompare(right))
+  }, {})
+  for (const item of selfLogs) {
+    const date = isoDate(item.work_date)
+    const dt = DateTime.fromISO(date, { zone: 'Europe/Berlin' })
+    if (!date || !dt.isValid || dt.year !== month.year || dt.month !== month.month) continue
+    monthMap[date] = (monthMap[date] || 0) + selfLogMinutes(item)
+  }
+  const monthDays = Object.entries(monthMap).sort(([left], [right]) => left.localeCompare(right))
+  const presenceDays = monthDays.length
   const shiftMonth = (delta) => {
     const next = DateTime.fromISO(selectedDate, { zone: 'Europe/Berlin' }).plus({ months: delta }).startOf('month')
     setBoardDate(next.toISODate())
   }
-  const counts = weekRows.reduce((map, row) => {
-    const date = isoDate(row.work_jobs?.work_date)
-    if (!date) return map
-    map[date] = (map[date] || 0) + 1
+  const counts = weekDays.reduce((map, date) => {
+    const jobs = weekRows.filter(row => isoDate(row.work_jobs?.work_date) === date).length
+    const own = selfLogs.filter(item => isoDate(item.work_date) === date).length
+    const total = jobs + own
+    if (total) map[date] = total
     return map
   }, {})
 
@@ -197,7 +217,7 @@ export default function EmployeeHours({
         </div>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-2xl bg-cyan-500/10 px-4 py-3 ring-1 ring-cyan-400/20">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-200">{t('hoursWeekTotal')}</p>
           <p className="mt-1 text-2xl font-black text-white">{minutesLabel(weekMinutes, t)}</p>
@@ -205,6 +225,10 @@ export default function EmployeeHours({
         <div className="rounded-2xl bg-slate-800/80 px-4 py-3 ring-1 ring-white/10">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{t('hoursMonthTotal')}</p>
           <p className="mt-1 text-2xl font-black text-white">{minutesLabel(monthMinutes, t)}</p>
+        </div>
+        <div className="rounded-2xl bg-slate-800/80 px-4 py-3 ring-1 ring-white/10">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{t('hoursPresence')}</p>
+          <p className="mt-1 text-2xl font-black text-white">{t('hoursPresenceCount').replace('{days}', String(presenceDays))}</p>
         </div>
       </div>
 
@@ -254,11 +278,21 @@ export default function EmployeeHours({
         counts={counts}
       />
 
-      {dayRows.length === 0 ? (
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 px-5 py-6 text-center text-sm text-slate-400">
-          {t('hoursEmpty')}
-        </div>
-      ) : (
+      {onSaveSelfLog && (
+        <SelfWorkForm
+          t={t}
+          language={language}
+          today={today}
+          date={selectedDate}
+          objects={objects}
+          logs={selfLogs}
+          onSave={onSaveSelfLog}
+          onDelete={onDeleteSelfLog}
+          saving={savingSelf}
+        />
+      )}
+
+      {dayRows.length > 0 && (
         <div className="space-y-3">
           {dayRows.map(row => (
             <HoursRow
