@@ -37,6 +37,24 @@ function plannedMinutesForWorker(workerId, jobs) {
   return counted ? total : null
 }
 
+function plannedMinutesForDay(jobs) {
+  let total = 0
+  let counted = false
+  for (const job of jobs) {
+    if (job?.status === 'cancelled' || job?.status === 'canceled') continue
+    const people = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
+    for (const row of people) {
+      const range = assignmentRange(row, job)
+      if (!range.start || !range.end) continue
+      const minutes = durationMinutes(job.work_date, range.start, range.end)
+      if (!minutes) continue
+      total += minutes
+      counted = true
+    }
+  }
+  return counted ? total : null
+}
+
 function jobHasWorker(job, workerId) {
   return (job.work_job_assignees ?? []).some(row => row.worker_id === workerId && ['assigned', 'approved', 'declined'].includes(row.status))
 }
@@ -102,6 +120,7 @@ export default function AdminPlanBoard({
       })
   }, [dayRoster, rosterFilter, search, sortedJobs])
 
+  const dayMinutes = useMemo(() => plannedMinutesForDay(sortedJobs), [sortedJobs])
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs
@@ -148,6 +167,7 @@ export default function AdminPlanBoard({
           </h2>
           <p className="mt-1 text-sm text-slate-300">
             {fillText(t('adminDayJobs'), { count: String(sortedJobs.length) })}
+            {dayMinutes != null ? ` · ${fillText(t('adminDayHours'), { hours: minutesLabel(dayMinutes, t) })}` : ''}
             {' · '}
             {fillText(t('adminDayPlanned'), { count: String(dayRoster.working.length) })}
             {' · '}
