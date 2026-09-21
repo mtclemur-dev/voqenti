@@ -3,9 +3,9 @@ import { DateTime } from 'luxon'
 import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
-import WeekBoard from './plan/WeekBoard'
+import AdminPlanBoard, { marksFromJobs } from './plan/AdminPlanBoard'
 import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, jobDurationLabel, rangesOverlap, spanClockRange } from './plan/planUtils'
-import { IconAlert, IconMore, IconUser, IconWork } from './plan/icons'
+import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
 
@@ -377,7 +377,7 @@ function dayStamp(date, today, t) {
   return null
 }
 
-function JobCard({ job, t, mapsHref, badge, children, objectAddress }) {
+function JobCard({ job, t, mapsHref, badge, children, objectAddress, language = 'de', embedded = false }) {
   const place = job.location_text || job.object_name || t('planNoPlace')
   const stamp = badge
   const dateLabel = formatDisplayDate(job.work_date)
@@ -394,7 +394,7 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress }) {
   const unseen = activePeople.filter(row => !row.seen_at).length
   const coverOk = filled >= needed
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+    <div className={embedded ? 'px-1 pt-1' : 'rounded-2xl border border-white/10 bg-slate-900/80 p-4'}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -459,6 +459,9 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress }) {
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{job.notes_text}</p>
         </div>
       )}
+      {job.updated_at && (
+        <p className="mt-3 text-xs text-slate-400">{t('lastUpdated')}: {formatUpdatedAt(job.updated_at, language)}</p>
+      )}
       {children}
     </div>
   )
@@ -519,9 +522,9 @@ export default function WorkPlan({
   const [boardOpenId, setBoardOpenId] = useState(() => stringOr(readUiMemory().boardOpenId))
   const [adminTab, setAdminTab] = useState(() => oneOf(readUiMemory().adminTab, ADMIN_TABS, 'board'))
   const [jobFormOpen, setJobFormOpen] = useState(() => Boolean(readUiMemory().jobFormOpen))
-  const [rosterFilter, setRosterFilter] = useState(() => oneOf(readUiMemory().rosterFilter, ROSTER_FILTERS, 'working'))
+  const [rosterFilter, setRosterFilter] = useState(() => oneOf(readUiMemory().rosterFilter, ROSTER_FILTERS, ''))
   const [rosterSearch, setRosterSearch] = useState('')
-  const [rosterOpen, setRosterOpen] = useState(false)
+  const [focusWorkerId, setFocusWorkerId] = useState('')
   const [jobMenuId, setJobMenuId] = useState('')
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
   const [editingObjectId, setEditingObjectId] = useState(null)
@@ -825,17 +828,12 @@ export default function WorkPlan({
     () => jobs.filter(job => job.kind !== 'open_post' && isoDate(job.work_date) >= today),
     [jobs, today],
   )
-  const boardCounts = useMemo(() => {
-    const counts = {}
-    for (const job of plannedJobs) {
-      const date = isoDate(job.work_date)
-      if (!date) continue
-      counts[date] = (counts[date] || 0) + 1
-    }
-    return counts
-  }, [plannedJobs])
+  const boardMarks = useMemo(() => marksFromJobs(plannedJobs), [plannedJobs])
   const liveBoardDate = boardDate < today ? today : boardDate
-  const boardJobs = plannedJobs.filter(job => isoDate(job.work_date) === liveBoardDate)
+  const boardJobs = useMemo(
+    () => plannedJobs.filter(job => isoDate(job.work_date) === liveBoardDate),
+    [plannedJobs, liveBoardDate],
+  )
   const seriesJobs = useMemo(
     () => relatedSeriesJobs(jobs, jobs.find(job => job.id === editingId), today),
     [editingId, jobs, today],
@@ -1778,17 +1776,6 @@ export default function WorkPlan({
     }
     return { working, free, off }
   }, [absences, activeWorkers, liveBoardDate, boardJobs, busyOnBoardDate, t])
-  const plannedGroups = boardJobs.map(job => ({
-    id: job.id,
-    start: formatClock(job.start_time),
-    place: job.object_name || job.location_text || t('planNoPlace'),
-    count: (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status)).length,
-    people: (job.work_job_assignees ?? [])
-      .filter(row => ['assigned', 'approved'].includes(row.status))
-      .map(row => workerName(row.worker_id)),
-  })).filter(group => group.people.length)
-  const freeVisible = dayRoster.free.filter(person => (person.name || '').toLowerCase().includes(rosterSearch.trim().toLowerCase()))
-  const rosterLimit = rosterOpen ? 99 : 6
   const filteredWorkers = activeWorkers
     .filter(worker => (worker.name || '').toLowerCase().includes(workerSearch.trim().toLowerCase()))
     .slice()
@@ -1816,6 +1803,8 @@ export default function WorkPlan({
         key={job.id}
         job={job}
         t={t}
+        language={language}
+        embedded
         mapsHref={mapsHref(job)}
         badge={dayStamp(job.work_date, today, t) || (past ? t('planDone') : null)}
         objectAddress={object?.address || ''}
@@ -1845,13 +1834,6 @@ export default function WorkPlan({
           </button>
           <button type="button" onClick={() => startDuplicate(job)} className="min-h-11 rounded-xl bg-slate-800 px-4 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
             {t('planCopy')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setBoardOpenId(current => current === job.id ? '' : job.id)}
-            className="min-h-11 rounded-xl bg-slate-800 px-4 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-          >
-            {t('planDetails')}
           </button>
           <div className="relative">
             <button
@@ -1925,7 +1907,7 @@ export default function WorkPlan({
               role="tab"
               aria-selected={adminTab === item.id}
               onClick={() => setAdminTab(item.id)}
-              className={`min-h-11 rounded-lg px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+              className={`min-h-11 rounded-lg px-2.5 text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
                 adminTab === item.id
                   ? 'bg-white/10 text-white ring-1 ring-cyan-300/40'
                   : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
@@ -2125,7 +2107,39 @@ export default function WorkPlan({
       )}
 
       {view === 'plan' && isAdmin && adminTab === 'board' && (
-        <div className="flex flex-col-reverse gap-5">
+        <AdminPlanBoard
+          t={t}
+          language={language}
+          today={today}
+          liveBoardDate={liveBoardDate}
+          boardJobs={boardJobs}
+          boardMarks={boardMarks}
+          dayRoster={dayRoster}
+          rosterFilter={rosterFilter}
+          onRosterFilter={setRosterFilter}
+          rosterSearch={rosterSearch}
+          onRosterSearch={setRosterSearch}
+          focusWorkerId={focusWorkerId}
+          onFocusWorker={setFocusWorkerId}
+          boardOpenId={boardOpenId}
+          onToggleJob={(id) => setBoardOpenId(current => current === id ? '' : id)}
+          onSelectDate={(date) => {
+            if (date < today) return
+            setBoardDate(date)
+            setBoardOpenId('')
+            setForm(current => ({ ...current, work_date: date }))
+          }}
+          onNewJob={() => {
+            setEditingId(null)
+            setDuplicating(false)
+            setForm({ ...emptyForm(), work_date: liveBoardDate })
+            setJobFormOpen(true)
+          }}
+          objects={objects}
+          workerName={workerName}
+          renderJob={renderAdminJob}
+          jobFormOpen={Boolean(jobFormOpen || editingId || duplicating)}
+        >
       {(jobFormOpen || editingId || duplicating) && (
         <form id="plan-job-form" onSubmit={handleSave} className="rounded-[1.75rem] bg-slate-900/85 p-5 ring-1 ring-slate-700">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -2360,170 +2374,7 @@ export default function WorkPlan({
           </button>
         </form>
       )}
-        <div className="space-y-3">
-          <WeekBoard
-            t={t}
-            language={language}
-            today={today}
-            selectedDate={liveBoardDate}
-            onSelectDate={(date) => {
-              if (date < today) return
-              setBoardDate(date)
-              setBoardOpenId('')
-              setForm(current => ({ ...current, work_date: date }))
-            }}
-            counts={boardCounts}
-            hidePast
-          />
-          <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'free', label: t('planRosterFree'), count: dayRoster.free.length, Icon: IconUser, tone: 'emerald' },
-              { id: 'working', label: t('planRosterBusy'), count: dayRoster.working.length, Icon: IconWork, tone: 'amber' },
-              { id: 'off', label: t('planRosterOff'), count: dayRoster.off.length, Icon: IconAlert, tone: 'rose' },
-            ].map(card => {
-              const on = rosterFilter === card.id
-              return (
-                <button
-                  key={card.id}
-                  type="button"
-                  onClick={() => { setRosterFilter(card.id); setRosterOpen(false) }}
-                  aria-pressed={on}
-                  className={`rounded-2xl px-2 py-3 text-left ring-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                    on
-                      ? card.tone === 'emerald'
-                        ? 'bg-emerald-400/20 ring-emerald-300/50'
-                        : card.tone === 'amber'
-                          ? 'bg-amber-400/20 ring-amber-300/50'
-                          : 'bg-rose-400/20 ring-rose-300/50'
-                      : 'bg-slate-900/70 ring-white/10 hover:bg-slate-800'
-                  }`}
-                >
-                  <card.Icon className={`h-5 w-5 ${card.tone === 'emerald' ? 'text-emerald-200' : card.tone === 'amber' ? 'text-amber-200' : 'text-rose-200'}`} />
-                  <p className="mt-1 text-2xl font-black text-white">{card.count}</p>
-                  <p className="text-[11px] font-semibold text-slate-200">{card.label}</p>
-                </button>
-              )
-            })}
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-            {rosterFilter === 'free' && (
-              <>
-                <input
-                  value={rosterSearch}
-                  onChange={e => setRosterSearch(e.target.value)}
-                  placeholder={t('workerSearch')}
-                  className="min-h-11 w-full rounded-xl bg-slate-800 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-                />
-                <ul className="mt-2 space-y-1">
-                  {freeVisible.length === 0 ? (
-                    <li className="text-sm text-slate-400">—</li>
-                  ) : freeVisible.slice(0, rosterLimit).map(person => (
-                    <li key={person.id} className="rounded-lg px-2 py-2 text-sm text-white">{person.name}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {rosterFilter === 'working' && (
-              <div className="space-y-3">
-                {plannedGroups.length === 0 ? (
-                  <p className="text-sm text-slate-400">—</p>
-                ) : plannedGroups.slice(0, rosterLimit).map(group => (
-                  <div key={group.id}>
-                    <p className="text-sm font-semibold text-white">
-                      {group.start ? `${group.start} · ` : ''}{group.place}
-                      {' · '}{group.count}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-300">{group.people.join(', ')}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {rosterFilter === 'off' && (
-              <ul className="space-y-2">
-                {dayRoster.off.length === 0 ? (
-                  <li className="text-sm text-slate-400">—</li>
-                ) : dayRoster.off.slice(0, rosterLimit).map(person => (
-                  <li key={person.id} className="text-sm text-white">
-                    <span className="font-semibold">{person.name}</span>
-                    <span className="block text-slate-300">{person.label}{person.start ? ` · ${formatDisplayDate(person.start)}${person.end && person.end !== person.start ? ` – ${formatDisplayDate(person.end)}` : ''}` : ''}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {((rosterFilter === 'free' && freeVisible.length > 6) || (rosterFilter === 'working' && plannedGroups.length > 6) || (rosterFilter === 'off' && dayRoster.off.length > 6)) && (
-              <button
-                type="button"
-                onClick={() => setRosterOpen(current => !current)}
-                className="mt-2 min-h-11 w-full rounded-xl bg-slate-800 text-sm font-semibold text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-              >
-                {rosterOpen ? t('collapseDetails') : t('expandDetails')}
-              </button>
-            )}
-          </div>
-          </div>
-          <div className="space-y-3">
-          {plannedJobs.length === 0 ? (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">
-              {t('planEmptyAdmin')}
-            </div>
-          ) : boardJobs.length === 0 ? (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">
-              {t('planDayEmpty')}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {boardJobs.map(job => {
-                const people = (job.work_job_assignees ?? [])
-                  .filter(row => ['assigned', 'approved'].includes(row.status))
-                  .map(row => workerName(row.worker_id))
-                const start = String(job.start_time || '').slice(0, 5)
-                const place = job.location_text || job.object_name || t('planNoPlace')
-                const open = boardJobs.length === 1 || boardOpenId === job.id
-                return (
-                  <div key={job.id} className="space-y-2">
-                    {boardJobs.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setBoardOpenId(open ? '' : job.id)}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold text-white">
-                            {start ? `${start} · ` : ''}{place}
-                          </span>
-                          <span className="mt-0.5 block truncate text-xs text-slate-300">
-                            {people.join(', ') || t('workers')}
-                          </span>
-                        </span>
-                        <span className="text-slate-400">{open ? '–' : '+'}</span>
-                      </button>
-                    )}
-                    {open && renderAdminJob(job)}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          {!(jobFormOpen || editingId || duplicating) && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(null)
-                setDuplicating(false)
-                setForm({ ...emptyForm(), work_date: liveBoardDate })
-                setJobFormOpen(true)
-              }}
-              className="w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white"
-            >
-              {t('adminNewJob')}
-            </button>
-          )}
-          </div>
-        </div>
-        </div>
-        </div>
+        </AdminPlanBoard>
       )}
 
       {!isAdmin && (

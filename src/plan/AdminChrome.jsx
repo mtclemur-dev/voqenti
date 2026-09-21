@@ -1,10 +1,11 @@
+import { useEffect, useRef, useState } from 'react'
 import { IconBell, IconUser } from './icons'
 import { firstName, useGreetingKey } from './planUtils'
 
-function navClass(active) {
-  return `min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-    active ? 'bg-cyan-600 text-white' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
-  }`
+function navClass(active, compact = false) {
+  return `min-h-11 rounded-xl font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+    compact ? 'px-2.5 text-[13px]' : 'px-3 text-sm'
+  } ${active ? 'bg-cyan-600 text-white' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'}`
 }
 
 export function AdminHeader({ t, displayName, unread = 0, onOpenInbox, onOpenProfile }) {
@@ -45,30 +46,119 @@ export function AdminHeader({ t, displayName, unread = 0, onOpenInbox, onOpenPro
   )
 }
 
-export function AdminPrimaryNav({ t, view, onOpenView, showMine = false }) {
-  const adminViews = ['pontaj', 'reports', 'times', 'materials']
-  const items = [
-    { id: 'plan', label: t('adminNavPlan'), active: view === 'plan' },
-    showMine && { id: 'mine', label: t('navHome'), active: view === 'mine' },
-    showMine && { id: 'hours', label: t('navHours'), active: view === 'hours' },
-    { id: 'openPosts', label: t('openPosts'), active: view === 'openPosts' },
-    { id: 'notices', label: t('notices'), active: view === 'notices' },
-    { id: 'guides', label: t('guides'), active: view === 'guides' },
-    { id: 'history', label: t('history'), active: view === 'history' },
-    { id: 'pontaj', label: t('adminMenu'), active: adminViews.includes(view) },
-  ].filter(Boolean)
+function NavMenu({ id, label, active, open, onToggle, children }) {
   return (
-    <nav aria-label={t('mainNav')} className="mb-4 flex flex-wrap gap-1.5">
-      {items.map(item => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => onOpenView(item.id)}
-          className={navClass(item.active)}
+    <div className="relative" data-nav-menu={id}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={onToggle}
+        className={navClass(active, true)}
+      >
+        {label}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 z-30 mt-1 min-w-44 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-lg shadow-slate-950/40"
         >
-          {item.label}
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function menuItemClass(active) {
+  return `block min-h-11 w-full rounded-lg px-3 text-left text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+    active ? 'bg-cyan-600 text-white' : 'text-slate-200 hover:bg-slate-800'
+  }`
+}
+
+export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, inboxOpen = false, onOpenInbox }) {
+  const [menu, setMenu] = useState('')
+  const rootRef = useRef(null)
+  const adminViews = ['pontaj', 'reports', 'times', 'materials']
+  const moreActive = ['openPosts', 'guides', 'history', ...adminViews].includes(view)
+  const commActive = view === 'notices' || inboxOpen
+
+  useEffect(() => {
+    setMenu('')
+  }, [view, inboxOpen])
+
+  useEffect(() => {
+    if (!menu) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') setMenu('')
+    }
+    const onPointer = (event) => {
+      if (!rootRef.current?.contains(event.target)) setMenu('')
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPointer)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPointer)
+    }
+  }, [menu])
+
+  const openView = (next) => {
+    setMenu('')
+    onOpenView(next)
+  }
+
+  return (
+    <nav ref={rootRef} aria-label={t('mainNav')} className="mb-4 flex flex-wrap gap-1.5">
+      <button type="button" onClick={() => openView('plan')} className={navClass(view === 'plan', true)}>
+        {t('adminNavPlan')}
+      </button>
+      {showMine && (
+        <button type="button" onClick={() => openView('mine')} className={navClass(view === 'mine', true)}>
+          {t('navHome')}
         </button>
-      ))}
+      )}
+      {showMine && (
+        <button type="button" onClick={() => openView('hours')} className={navClass(view === 'hours', true)}>
+          {t('navHours')}
+        </button>
+      )}
+      <NavMenu
+        id="comm"
+        label={t('adminNavComm')}
+        active={commActive}
+        open={menu === 'comm'}
+        onToggle={() => setMenu(current => current === 'comm' ? '' : 'comm')}
+      >
+        <button type="button" role="menuitem" onClick={() => openView('notices')} className={menuItemClass(view === 'notices')}>
+          {t('notices')}
+        </button>
+        {onOpenInbox && (
+          <button type="button" role="menuitem" onClick={() => { setMenu(''); onOpenInbox() }} className={menuItemClass(inboxOpen)}>
+            {t('inbox')}
+          </button>
+        )}
+      </NavMenu>
+      <NavMenu
+        id="more"
+        label={t('adminNavMore')}
+        active={moreActive}
+        open={menu === 'more'}
+        onToggle={() => setMenu(current => current === 'more' ? '' : 'more')}
+      >
+        <button type="button" role="menuitem" onClick={() => openView('openPosts')} className={menuItemClass(view === 'openPosts')}>
+          {t('openPosts')}
+        </button>
+        <button type="button" role="menuitem" onClick={() => openView('guides')} className={menuItemClass(view === 'guides')}>
+          {t('guides')}
+        </button>
+        <button type="button" role="menuitem" onClick={() => openView('history')} className={menuItemClass(view === 'history')}>
+          {t('history')}
+        </button>
+        <button type="button" role="menuitem" onClick={() => openView('pontaj')} className={menuItemClass(adminViews.includes(view))}>
+          {t('adminMenu')}
+        </button>
+      </NavMenu>
     </nav>
   )
 }

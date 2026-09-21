@@ -13,6 +13,14 @@ export function firstName(fullName) {
   return parts[0] || ''
 }
 
+export function workerInitials(name) {
+  const text = String(name || '').replaceAll(',', ' ').trim()
+  const parts = text.split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
 export function greetingKey(now = DateTime.now().setZone('Europe/Berlin')) {
   const hour = now.hour
   if (hour >= 5 && hour < 12) return 'helloMorning'
