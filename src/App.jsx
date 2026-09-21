@@ -2667,7 +2667,9 @@ function App() {
                   displayName={displayName}
                   userId={user.id}
                   workers={workers}
+                  objects={objects}
                   currentWorker={currentWorker}
+                  onOpenPlan={() => setView('plan')}
                 />
               </div>
             )}

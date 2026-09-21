@@ -133,7 +133,7 @@ function GuideCard({ item, featured = false, t, isAdmin, onEdit, onDelete, onOpe
   )
 }
 
-export default function CompanyBoard({ t, view, isAdmin, displayName, userId, workers = [], currentWorker }) {
+export default function CompanyBoard({ t, view, isAdmin, displayName, userId, workers = [], currentWorker, objects = [], onOpenPlan }) {
   const [notices, setNotices] = useState([])
   const [replies, setReplies] = useState([])
   const [noticeForm, setNoticeForm] = useState(emptyNotice)
@@ -407,6 +407,8 @@ export default function CompanyBoard({ t, view, isAdmin, displayName, userId, wo
       return (
         <SafetyShoeLesson
           t={t}
+          objects={objects}
+          onOpenPlan={onOpenPlan}
           onClose={() => {
             setLessonOpen(false)
             setLessonDone(isSafetyShoeLessonDone())
