@@ -1857,7 +1857,7 @@ export default function WorkPlan({
           <button type="button" onClick={() => startDuplicate(job)} className="min-h-11 rounded-xl bg-slate-800 px-4 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
             {t('planCopy')}
           </button>
-          <div className="relative">
+          <div className="relative z-30">
             <button
               type="button"
               aria-haspopup="menu"
@@ -1869,7 +1869,7 @@ export default function WorkPlan({
               <IconMore />
             </button>
             {menuOpen && (
-              <div role="menu" className="absolute right-0 z-20 mt-1 min-w-44 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl">
+              <div role="menu" className="absolute bottom-full right-0 z-40 mb-1 min-w-44 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl">
                 <button
                   type="button"
                   role="menuitem"

@@ -148,7 +148,7 @@ export default function AdminPlanBoard({
   const openForm = () => onNewJob?.(liveBoardDate)
 
   return (
-    <div className="space-y-5 overflow-x-hidden">
+    <div className="space-y-5">
       <WeekBoard
         t={t}
         language={language}
@@ -340,8 +340,8 @@ export default function AdminPlanBoard({
                   <li
                     key={job.id}
                     className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
-                      matched ? 'opacity-100' : 'opacity-40'
-                    }`}
+                      open ? 'relative z-20' : ''
+                    } ${matched ? '' : 'opacity-40'}`}
                   >
                     <button
                       type="button"
@@ -371,8 +371,8 @@ export default function AdminPlanBoard({
                     </button>
                     <div
                       id={detailsId}
-                      className={`overflow-hidden border-white/10 transition-all duration-200 motion-reduce:transition-none ${
-                        open ? 'max-h-[80rem] border-t opacity-100' : 'max-h-0 opacity-0'
+                      className={`border-white/10 transition-[max-height,opacity] duration-200 motion-reduce:transition-none ${
+                        open ? 'max-h-none overflow-visible border-t opacity-100' : 'max-h-0 overflow-hidden opacity-0'
                       }`}
                     >
                       {open && (
