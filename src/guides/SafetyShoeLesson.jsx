@@ -117,25 +117,7 @@ export default function SafetyShoeLesson({ t, onClose, onOpenPlan, objects = [] 
     setSourcesOpen(false)
   }
 
-  const title = screen.type === 'intro'
-    ? t('shoeLessonTitle')
-    : screen.type === 'why'
-      ? t('shoeWhyTitle')
-      : screen.type === 'who'
-        ? t('shoeWhoTitle')
-        : screen.type === 'marks'
-          ? t('shoeMarkTitle')
-          : screen.type === 'examples'
-            ? t('shoeExTitle')
-            : screen.type === 'inspect'
-              ? t('shoeLookTitle')
-              : screen.type === 'care'
-                ? t('shoeCareTitle')
-                : screen.type === 'unfit'
-                  ? t('shoeUnfitTitle')
-                  : screen.type === 'quiz'
-                    ? t('shoeQuizTitle')
-                    : t('shoeSummaryTitle')
+  const title = t(screen.titleKey)
 
   return (
     <section className="space-y-4">

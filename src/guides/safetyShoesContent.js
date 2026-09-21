@@ -29,10 +29,11 @@ export const lessonSources = [
 ]
 
 export const lessonScreens = [
-  { id: 'intro', type: 'intro' },
+  { id: 'intro', type: 'intro', titleKey: 'shoeLessonTitle' },
   {
     id: 'why',
     type: 'why',
+    titleKey: 'shoeWhyTitle',
     cards: [
       { id: 'fall', art: 'hazardFall', titleKey: 'shoeWhyFallTitle', exampleKey: 'shoeWhyFallExample', protectKey: 'shoeWhyFallProtect' },
       { id: 'crush', art: 'hazardCrush', titleKey: 'shoeWhyCrushTitle', exampleKey: 'shoeWhyCrushExample', protectKey: 'shoeWhyCrushProtect' },
@@ -45,6 +46,7 @@ export const lessonScreens = [
   {
     id: 'who',
     type: 'who',
+    titleKey: 'shoeWhoTitle',
     cards: [
       { id: 'employer', art: 'roleEmployer', titleKey: 'shoeWhoEmployerTitle', points: ['shoeWhoEmployer1', 'shoeWhoEmployer2', 'shoeWhoEmployer3', 'shoeWhoEmployer4'] },
       { id: 'worker', art: 'roleWorker', titleKey: 'shoeWhoWorkerTitle', points: ['shoeWhoWorker1', 'shoeWhoWorker2', 'shoeWhoWorker3'] },
@@ -53,6 +55,7 @@ export const lessonScreens = [
   {
     id: 'marks',
     type: 'marks',
+    titleKey: 'shoeMarkTitle',
     basics: [
       { code: 'S', key: 'shoeMarkS' },
       { code: 'P', key: 'shoeMarkP' },
@@ -74,6 +77,7 @@ export const lessonScreens = [
   {
     id: 'examples',
     type: 'examples',
+    titleKey: 'shoeExTitle',
     cards: [
       { id: 'indoor', art: 'sceneIndoor', titleKey: 'shoeExIndoorTitle', riskKey: 'shoeExIndoorRisk', pointKey: 'shoeExIndoorPoint' },
       { id: 'water', art: 'sceneWater', titleKey: 'shoeExWaterTitle', riskKey: 'shoeExWaterRisk', pointKey: 'shoeExWaterPoint' },
@@ -86,6 +90,7 @@ export const lessonScreens = [
   {
     id: 'inspect',
     type: 'inspect',
+    titleKey: 'shoeLookTitle',
     checks: [
       'shoeLookSole',
       'shoeLookSeam',
@@ -106,6 +111,7 @@ export const lessonScreens = [
   {
     id: 'care',
     type: 'care',
+    titleKey: 'shoeCareTitle',
     rules: [
       'shoeCare1',
       'shoeCare2',
@@ -121,6 +127,7 @@ export const lessonScreens = [
   {
     id: 'unfit',
     type: 'unfit',
+    titleKey: 'shoeUnfitTitle',
     cases: [
       'shoeUnfitSmall',
       'shoeUnfitSlip',
@@ -131,6 +138,7 @@ export const lessonScreens = [
   {
     id: 'quiz',
     type: 'quiz',
+    titleKey: 'shoeQuizTitle',
     questions: [
       {
         id: 'who',
@@ -192,6 +200,7 @@ export const lessonScreens = [
   {
     id: 'summary',
     type: 'summary',
+    titleKey: 'shoeSummaryTitle',
     rules: ['shoeRule1', 'shoeRule2', 'shoeRule3', 'shoeRule4', 'shoeRule5'],
   },
 ]

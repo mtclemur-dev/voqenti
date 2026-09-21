@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from './supabaseClient'
 import SafetyShoeLesson from './guides/SafetyShoeLesson'
-import { isSafetyShoeLessonDone } from './guides/safetyShoesContent'
+import { GuideArt } from './guides/GuideArt'
+import { isSafetyShoeLessonDone, lessonScreens } from './guides/safetyShoesContent'
 import { debounce } from './plan/planUtils'
 
 function isMissingTable(error) {
@@ -425,8 +426,17 @@ export default function CompanyBoard({ t, view, isAdmin, displayName, userId, wo
           className="w-full rounded-[1.75rem] border border-cyan-300/25 bg-slate-900/80 p-5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
           <p className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-200">{t('guides')}</p>
-          <h3 className="mt-2 text-xl font-black text-white">{t('shoeLessonTitle')}</h3>
+          <GuideArt name="introShoe" className="mx-auto mt-3 h-28 w-full max-w-sm text-cyan-200" title={t('shoeIntroArt')} decorative={false} />
+          <h3 className="mt-3 text-xl font-black text-white">{t('shoeLessonTitle')}</h3>
           <p className="mt-2 text-sm text-slate-300">{t('shoeLessonLead')}</p>
+          <ol className="mt-4 space-y-1.5">
+            {lessonScreens.map((screen, index) => (
+              <li key={screen.id} className="flex gap-2 text-sm text-slate-200">
+                <span className="w-5 shrink-0 font-bold tabular-nums text-cyan-200">{index + 1}.</span>
+                <span>{t(screen.titleKey)}</span>
+              </li>
+            ))}
+          </ol>
           {lessonDone && <p className="mt-3 text-xs font-semibold text-cyan-100">{t('shoeLessonDoneBadge')}</p>}
           <span className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-cyan-500 px-4 text-sm font-semibold text-slate-950">
             {t('shoeLessonOpen')}
