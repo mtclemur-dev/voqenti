@@ -9,6 +9,7 @@ import {
   jobTone,
   longWeekdayDate,
   minutesLabel,
+  rowWorkMinutes,
   shortPlace,
   workerInitials,
 } from './planUtils'
@@ -21,15 +22,16 @@ const TONE = {
   idle: 'bg-slate-500',
 }
 
-function plannedMinutesForWorker(workerId, jobs) {
+const DAY_TARGET_MINUTES = 7 * 60
+
+function dayMinutesForWorker(workerId, jobs) {
   let total = 0
   let counted = false
   for (const job of jobs) {
+    if (job?.status === 'cancelled' || job?.status === 'canceled') continue
     const row = (job.work_job_assignees ?? []).find(item => item.worker_id === workerId && ['assigned', 'approved'].includes(item.status))
     if (!row) continue
-    const range = assignmentRange(row, job)
-    if (!range.start || !range.end) continue
-    const minutes = durationMinutes(job.work_date, range.start, range.end)
+    const minutes = rowWorkMinutes({ ...row, work_jobs: job })
     if (!minutes) continue
     total += minutes
     counted = true
@@ -115,12 +117,22 @@ export default function AdminPlanBoard({
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(item => {
         const jobCount = sortedJobs.filter(job => jobHasWorker(job, item.id)).length
-        const minutes = item.status === 'working' ? plannedMinutesForWorker(item.id, sortedJobs) : null
-        return { ...item, jobCount, minutes }
+        const minutes = item.status === 'working' ? dayMinutesForWorker(item.id, sortedJobs) : null
+        return { ...item, jobCount, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
       })
   }, [dayRoster, rosterFilter, search, sortedJobs])
 
   const dayMinutes = useMemo(() => plannedMinutesForDay(sortedJobs), [sortedJobs])
+  const shortPeople = useMemo(
+    () => dayRoster.working
+      .map(item => {
+        const minutes = dayMinutesForWorker(item.id, sortedJobs)
+        return { ...item, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
+      })
+      .filter(item => item.short)
+      .sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || '')),
+    [dayRoster.working, sortedJobs],
+  )
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs
@@ -231,6 +243,44 @@ export default function AdminPlanBoard({
         })}
       </div>
 
+      {shortPeople.length > 0 && (
+        <section className="rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-400/15 via-slate-900/80 to-slate-900/80 p-4">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-200">{t('adminUnderHoursTitle')}</p>
+              <p className="mt-1 text-sm text-amber-50/90">{t('adminUnderHoursHint')}</p>
+            </div>
+            <p className="shrink-0 text-3xl font-black tabular-nums text-white">{shortPeople.length}</p>
+          </div>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {shortPeople.map(person => {
+              const selected = focusWorkerId === person.id
+              const fill = Math.max(8, Math.round((person.minutes / DAY_TARGET_MINUTES) * 100))
+              return (
+                <li key={person.id}>
+                  <button
+                    type="button"
+                    onClick={() => onFocusWorker(selected ? '' : person.id)}
+                    aria-pressed={selected}
+                    className={`w-full rounded-xl px-3 py-2.5 text-left ring-1 transition hover:bg-slate-950/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                      selected ? 'bg-slate-950/70 ring-cyan-300/50' : 'bg-slate-950/35 ring-amber-300/20'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm font-semibold text-white">{person.name}</span>
+                      <span className="shrink-0 text-sm font-bold tabular-nums text-amber-100">{minutesLabel(person.minutes, t)}</span>
+                    </span>
+                    <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                      <span className="block h-full rounded-full bg-amber-300" style={{ width: `${fill}%` }} />
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
       {children}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -285,7 +335,7 @@ export default function AdminPlanBoard({
                           <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
                           <span className="mt-0.5 block truncate text-xs text-slate-300">
                             {person.status === 'working'
-                              ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''} · ${statusLabel}`
+                              ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
                               : person.status === 'off'
                                 ? `${person.label} · ${statusLabel}`
                                 : statusLabel}
