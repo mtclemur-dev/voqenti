@@ -2469,6 +2469,7 @@ export default function WorkPlan({
           errorMessage={errorMessage}
           onRetry={loadData}
           onSaveHours={handleSaveHours}
+          onConfirm={handleSeen}
           onSaveSelfLog={handleSaveSelfLog}
           onDeleteSelfLog={handleDeleteSelfLog}
           savingId={confirmingId}

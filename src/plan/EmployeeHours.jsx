@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import WeekBoard from './WeekBoard'
 import SelfWorkForm from './SelfWorkForm'
@@ -13,6 +13,7 @@ import {
   formatSeenAt,
   isAssignmentActive,
   isoDate,
+  isJobPast,
   minutesLabel,
   rowWorkMinutes,
   selfLogMinutes,
@@ -57,7 +58,7 @@ function TimeField({ label, value, onChange }) {
   )
 }
 
-export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, saving, compact = false }) {
+export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false }) {
   const job = row.work_jobs
   const date = isoDate(job?.work_date)
   const canEdit = Boolean(onSave && date && date <= today)
@@ -78,9 +79,38 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
       .replace('{name}', changerMine ? t('planSelf') : (firstName(changerName) || changerName || t('planUnknownWorker')))
       .replace('{time}', formatSeenAt(row.hours_changed_at, language))
     : ''
+  const cardRef = useRef(null)
+  const rowRef = useRef(row)
+  useEffect(() => {
+    rowRef.current = row
+  }, [row])
+  const now = DateTime.now().setZone('Europe/Berlin')
+  const canMark = Boolean(onConfirm && isAssignmentActive(row) && !isJobPast({ ...job, start_time: planned.start || job?.start_time, end_time: planned.end || job?.end_time }, now) && !row.seen_at)
+  useEffect(() => {
+    if (!canMark) return undefined
+    const node = cardRef.current
+    const mark = () => onConfirm(rowRef.current)
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      mark()
+      return undefined
+    }
+    let timer
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) {
+        clearTimeout(timer)
+        return
+      }
+      timer = setTimeout(mark, 500)
+    }, { threshold: 0.35 })
+    observer.observe(node)
+    return () => {
+      clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [canMark, onConfirm, row.id, row.seen_at])
 
   return (
-    <article className={compact ? 'rounded-2xl border border-slate-800 bg-slate-950/50 p-3' : 'rounded-2xl border border-slate-800 bg-slate-900/80 p-4'}>
+    <article ref={cardRef} className={compact ? 'rounded-2xl border border-slate-800 bg-slate-950/50 p-3' : 'rounded-2xl border border-slate-800 bg-slate-900/80 p-4'}>
       {!compact && (
         <>
           <p className="text-xs text-slate-400">{formatDisplayDate(date, language)}</p>
@@ -132,6 +162,7 @@ export default function EmployeeHours({
   errorMessage = '',
   onRetry,
   onSaveHours,
+  onConfirm,
   onSaveSelfLog,
   onDeleteSelfLog,
   savingId = '',
@@ -305,6 +336,7 @@ export default function EmployeeHours({
               workerLabel=""
               currentWorkerId={currentWorker?.id}
               onSave={onSaveHours}
+              onConfirm={onConfirm}
               saving={savingId === row.id}
             />
           ))}

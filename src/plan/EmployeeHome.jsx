@@ -37,6 +37,37 @@ function hasText(value) {
   return Boolean(String(value || '').trim())
 }
 
+function useMarkSeenWhenVisible(row, onConfirm, enabled) {
+  const nodeRef = useRef(null)
+  const rowRef = useRef(row)
+  useEffect(() => {
+    rowRef.current = row
+  }, [row])
+  useEffect(() => {
+    if (!enabled || !onConfirm || row.seen_at) return undefined
+    const node = nodeRef.current
+    const mark = () => onConfirm(rowRef.current)
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      mark()
+      return undefined
+    }
+    let timer
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) {
+        clearTimeout(timer)
+        return
+      }
+      timer = setTimeout(mark, 500)
+    }, { threshold: 0.35 })
+    observer.observe(node)
+    return () => {
+      clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [enabled, onConfirm, row.id, row.seen_at])
+  return nodeRef
+}
+
 function StatusBadge({ t, row, language, past = false }) {
   if (isJobCancelled(row.work_jobs)) {
     return (
@@ -225,35 +256,7 @@ function NextAssignmentCard({
   const address = object?.address || job.location_text
   const timeLabel = [start, end].filter(Boolean).join(' – ')
   const busy = confirming || confirmingId === row.id
-  const cardRef = useRef(null)
-  const rowRef = useRef(row)
-
-  useEffect(() => {
-    rowRef.current = row
-  }, [row])
-
-  useEffect(() => {
-    if (!canAct || row.seen_at || busy) return undefined
-    const node = cardRef.current
-    const mark = () => onConfirm?.(rowRef.current)
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      mark()
-      return undefined
-    }
-    let timer
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry?.isIntersecting) {
-        clearTimeout(timer)
-        return
-      }
-      timer = setTimeout(mark, 800)
-    }, { threshold: 0.55 })
-    observer.observe(node)
-    return () => {
-      clearTimeout(timer)
-      observer.disconnect()
-    }
-  }, [busy, canAct, onConfirm, row.id, row.seen_at])
+  const cardRef = useMarkSeenWhenVisible(row, onConfirm, canAct && !busy)
 
   return (
     <article ref={cardRef} className={embedded ? '' : 'rounded-3xl border border-slate-800 bg-slate-900/90 p-4 md:p-5'}>
@@ -306,6 +309,7 @@ function NextAssignmentCard({
             workerLabel=""
             currentWorkerId={currentWorkerId}
             onSave={onSaveHours}
+            onConfirm={onConfirm}
             saving={confirmingId === row.id}
             compact
           />
@@ -359,9 +363,11 @@ function ExpandableAssignment({
   const start = range.start
   const place = object?.name || job.object_name || t('planNoPlace')
   const detailsLabel = open ? t('collapseDetails') : t('expandDetails')
+  const canMark = isAssignmentActive(row) && !isJobPast(timedJob, now)
+  const cardRef = useMarkSeenWhenVisible(row, onConfirm, canMark)
 
   return (
-    <article className={`rounded-2xl border p-3 ${alert ? 'border-rose-400/25 bg-rose-500/10' : 'border-slate-800 bg-slate-900/70'}`}>
+    <article ref={cardRef} className={`rounded-2xl border p-3 ${alert ? 'border-rose-400/25 bg-rose-500/10' : 'border-slate-800 bg-slate-900/70'}`}>
       <button
         type="button"
         onClick={() => setOpen(current => {
