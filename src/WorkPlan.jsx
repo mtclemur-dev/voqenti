@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, jobDurationLabel, marksFromJobs, rangesOverlap, spanClockRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, jobDurationLabel, marksFromJobs, minutesLabel, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
@@ -667,13 +667,15 @@ export default function WorkPlan({
   }, [isAdmin, workerId])
 
   const livePlanOpen = view === 'plan' || view === 'openPosts' || view === 'hours' || view === 'mine'
+  const historyOpen = view === 'history'
 
   useEffect(() => {
-    if (!livePlanOpen) return undefined
-    loadData('live')
-    const refresh = debounce(() => loadData('live'), 500)
+    if (!livePlanOpen && !historyOpen) return undefined
+    const mode = historyOpen ? 'history' : 'live'
+    loadData(mode)
+    const refresh = debounce(() => loadData(mode), 500)
     const channel = supabase
-      .channel('work-plan-live')
+      .channel(historyOpen ? 'work-plan-history' : 'work-plan-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_job_assignees' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_absences' }, refresh)
@@ -683,11 +685,7 @@ export default function WorkPlan({
       refresh.cancel()
       supabase.removeChannel(channel)
     }
-  }, [livePlanOpen, loadData])
-
-  useEffect(() => {
-    if (view === 'history') loadData('history')
-  }, [loadData, view])
+  }, [historyOpen, livePlanOpen, loadData])
 
   const setField = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const setNeedField = (key, value) => setNeedForm(current => ({ ...current, [key]: value }))
@@ -861,6 +859,7 @@ export default function WorkPlan({
         rows.push({
           key: `${job.id}-${row.worker_id}`,
           job,
+          row,
           workerId: row.worker_id,
           workerName: name,
         })
@@ -876,19 +875,42 @@ export default function WorkPlan({
       list.push(row)
       groups.set(row.workerId, list)
     }
-    return [...groups.entries()].map(([workerId, entries]) => ({
-      workerId,
-      workerName: entries[0]?.workerName ?? workerName(workerId),
-      entries,
-      places: [...new Set(entries.map(item => item.job.location_text || item.job.object_name).filter(Boolean))],
-    })).sort((a, b) => a.workerName.localeCompare(b.workerName))
+    return [...groups.entries()].map(([workerId, entries]) => {
+      let minutes = 0
+      let counted = false
+      for (const item of entries) {
+        const value = rowWorkMinutes({ ...item.row, work_jobs: item.job })
+        if (!value) continue
+        minutes += value
+        counted = true
+      }
+      return {
+        workerId,
+        workerName: entries[0]?.workerName ?? workerName(workerId),
+        entries,
+        minutes: counted ? minutes : null,
+        places: [...new Set(entries.map(item => item.job.location_text || item.job.object_name).filter(Boolean))],
+      }
+    }).sort((a, b) => a.workerName.localeCompare(b.workerName))
   }, [historyEntries, workerName])
 
   const historyJobs = useMemo(() => {
     const groups = new Map()
     for (const row of historyEntries) {
       const current = groups.get(row.job.id) ?? { job: row.job, people: [] }
-      current.people.push(row.workerName)
+      const planned = assignmentRange(row.row, row.job)
+      const range = clockRange(
+        row.row?.actual_start || planned.start,
+        row.row?.actual_end || planned.end,
+      )
+      const minutes = rowWorkMinutes({ ...row.row, work_jobs: row.job })
+      current.people.push({
+        workerId: row.workerId,
+        workerName: row.workerName,
+        minutes: minutes || null,
+        range: clockRangeLabel(range),
+        changed: Boolean(row.row?.actual_start || row.row?.actual_end),
+      })
       groups.set(row.job.id, current)
     }
     return [...groups.values()].sort((a, b) => (
@@ -2744,16 +2766,47 @@ export default function WorkPlan({
             </div>
           ) : historyJobs.length === 0 ? (
             <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-400">{t('historyEmpty')}</div>
-          ) : historyJobs.map(row => (
-            <article key={row.job.id} className="rounded-[1.75rem] border border-slate-800 bg-slate-900/80 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">{formatJobWhen(row.job)}</p>
-              <h3 className="mt-1 text-xl font-black text-white">{row.job.location_text || row.job.object_name || t('planNoPlace')}</h3>
-              <p className="mt-2 text-sm text-slate-200">{row.people.join(', ') || t('workers')}</p>
-              {row.job.task_text && (
-                <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">{row.job.task_text}</p>
-              )}
-            </article>
-          ))}
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-cyan-200">{t('historyHoursCaption')}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {historyByPerson.map(group => (
+                    <div key={group.workerId} className="flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-cyan-300/20 bg-slate-900/80 px-4 py-3">
+                      <p className="min-w-0 truncate text-sm font-semibold text-white">{group.workerName}</p>
+                      <p className="shrink-0 text-sm font-bold tabular-nums text-cyan-100">
+                        {group.minutes != null ? minutesLabel(group.minutes, t) : '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {historyJobs.map(row => (
+                <article key={row.job.id} className="rounded-[1.75rem] border border-slate-800 bg-slate-900/80 p-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">{formatJobWhen(row.job)}</p>
+                  <h3 className="mt-1 text-xl font-black text-white">{row.job.location_text || row.job.object_name || t('planNoPlace')}</h3>
+                  <div className="mt-2 space-y-1">
+                    {row.people.length === 0 ? (
+                      <p className="text-sm text-slate-200">{t('workers')}</p>
+                    ) : row.people.map(person => (
+                      <p key={person.workerId} className="text-sm text-slate-200">
+                        {person.workerName}
+                        {person.range ? ` · ${person.range}` : ''}
+                        {person.minutes != null ? (
+                          <span className={person.changed ? 'font-semibold text-cyan-100' : ''}>
+                            {` · ${minutesLabel(person.minutes, t)}`}
+                          </span>
+                        ) : null}
+                      </p>
+                    ))}
+                  </div>
+                  {row.job.task_text && (
+                    <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">{row.job.task_text}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
