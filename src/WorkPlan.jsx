@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
@@ -82,6 +82,22 @@ function attachCrewNames(rows, names) {
     const list = byJob[job.id]
     if (!list?.length) return row
     return { ...row, work_jobs: { ...job, crew_names: [...new Set(list)] } }
+  })
+}
+
+function attachCrewToJobs(jobs, names) {
+  const byJob = {}
+  for (const item of names) {
+    const jobId = item.job_id
+    const name = String(item.worker_name || '').trim()
+    if (!jobId || !name) continue
+    ;(byJob[jobId] ??= []).push(name)
+  }
+  return (jobs ?? []).map(job => {
+    const extra = byJob[job.id] || []
+    const current = Array.isArray(job.crew_names) ? job.crew_names.filter(Boolean) : []
+    const merged = [...new Set([...current, ...extra])]
+    return merged.length ? { ...job, crew_names: merged } : job
   })
 }
 
@@ -666,7 +682,9 @@ export default function WorkPlan({
     const jobIds = [...new Set(mine.map(row => row.work_jobs?.id || row.job_id).filter(Boolean))]
     const names = await loadCrewNamesForJobs(jobIds)
     setMyRows(attachCrewNames(mine, names))
-    setOpenJobs(openData ?? [])
+    const openIds = [...new Set((openData ?? []).map(job => job.id).filter(Boolean))]
+    const openNames = await loadCrewNamesForJobs(openIds)
+    setOpenJobs(attachCrewToJobs(openData ?? [], openNames))
     await Promise.all([loadAbsences(), loadSelfLogs()])
     finish()
   }, [isAdmin, workerId])
@@ -1304,6 +1322,30 @@ export default function WorkPlan({
     || null
   )
 
+  const openGoingNames = (job) => {
+    const names = []
+    const add = (raw) => {
+      const full = String(raw || '').trim()
+      if (!full) return
+      const mine = currentWorker?.name || ''
+      const label = mine && (full === mine || firstName(full) === firstName(mine))
+        ? t('planSelf')
+        : (firstName(full) || full)
+      if (!label || names.includes(label)) return
+      names.push(label)
+    }
+    const stored = Array.isArray(job?.crew_names)
+      ? job.crew_names
+      : String(job?.crew_names || '').split(',')
+    stored.forEach(add)
+    for (const row of job?.work_job_assignees ?? []) {
+      if (!['assigned', 'approved', 'pending'].includes(row.status)) continue
+      add(workerName(row.worker_id))
+    }
+    if (['assigned', 'approved', 'pending'].includes(myOpenRow(job)?.status)) add(currentWorker?.name)
+    return names
+  }
+
   const handleApply = async (job) => {
     if (!currentWorker?.id) {
       alert(t('planWorkerMissing'))
@@ -1327,6 +1369,13 @@ export default function WorkPlan({
     if (error) {
       alert(`${t('planApplyError')} ${error.message}`)
       return
+    }
+    const nextNames = [...new Set([
+      ...(Array.isArray(job.crew_names) ? job.crew_names : []),
+      currentWorker.name,
+    ].filter(Boolean))]
+    if (nextNames.length) {
+      await supabase.from('work_jobs').update({ crew_names: nextNames, updated_at: new Date().toISOString() }).eq('id', job.id)
     }
     loadData(view === 'history' ? 'history' : 'live')
   }
@@ -2655,6 +2704,7 @@ export default function WorkPlan({
             </div>
           ) : listedOpenJobs.map(job => {
             const mine = myOpenRow(job)
+            const going = openGoingNames(job)
             const remaining = Math.max(0, (job.needed_count ?? 1) - (job.filled_count ?? 0))
             const publicAt = job.public_at ? DateTime.fromISO(job.public_at).setZone('Europe/Berlin') : null
             const earlyWindow = publicAt?.isValid && publicAt > DateTime.now().setZone('Europe/Berlin')
@@ -2681,6 +2731,11 @@ export default function WorkPlan({
                   </a>
                 )}
                 {job.task_text && <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-amber-50">{job.task_text}</p>}
+                {going.length > 0 && (
+                  <p className="mt-3 text-sm font-semibold text-emerald-100">
+                    {t('openPostGoing').replace('{names}', going.join(', '))}
+                  </p>
+                )}
                 {isAdmin && (
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => startEditNeed(job)} className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white">{t('edit')}</button>

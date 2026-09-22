@@ -27,7 +27,7 @@ BEGIN
         FROM public.work_job_assignees a
         JOIN public.workers w ON w.id = a.worker_id
         WHERE a.job_id = target
-          AND a.status IN ('assigned', 'approved')
+          AND a.status IN ('assigned', 'approved', 'pending')
         ORDER BY w.name
       )
   WHERE id = target;
@@ -52,11 +52,18 @@ AS $$
   FROM public.work_job_assignees a
   JOIN public.workers w ON w.id = a.worker_id
   WHERE a.job_id = ANY (p_job_ids)
-    AND a.status IN ('assigned', 'approved')
+    AND a.status IN ('assigned', 'approved', 'pending')
     AND w.name IS NOT NULL
     AND btrim(w.name) <> ''
     AND (
       public.is_work_planner()
+      OR EXISTS (
+        SELECT 1
+        FROM public.work_jobs
+        WHERE work_jobs.id = a.job_id
+          AND work_jobs.kind = 'open_post'
+          AND work_jobs.status = 'active'
+      )
       OR EXISTS (
         SELECT 1
         FROM public.work_job_assignees mine
