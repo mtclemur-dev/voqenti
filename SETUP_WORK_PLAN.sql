@@ -192,14 +192,22 @@ CREATE POLICY "Work assignees insert"
     public.is_work_planner()
     OR (
       worker_id = public.current_worker_id()
-      AND status = 'pending'
+      AND status IN ('assigned', 'pending', 'declined', 'thinking')
       AND EXISTS (
         SELECT 1
         FROM public.work_jobs
         WHERE work_jobs.id = job_id
           AND work_jobs.kind = 'open_post'
           AND work_jobs.status = 'active'
-          AND work_jobs.filled_count < work_jobs.needed_count
+      )
+      AND (
+        status IN ('declined', 'thinking')
+        OR EXISTS (
+          SELECT 1
+          FROM public.work_jobs
+          WHERE work_jobs.id = job_id
+            AND work_jobs.filled_count < work_jobs.needed_count
+        )
       )
     )
   );

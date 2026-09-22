@@ -58,7 +58,7 @@ export default function Inbox({
   const loadItems = useCallback(async () => {
     let query = supabase
       .from('work_notifications')
-      .select('*, work_jobs(id, status, work_date)')
+      .select('*, work_jobs(id, status, work_date, start_time, end_time)')
       .order('created_at', { ascending: false })
       .limit(40)
 
@@ -167,7 +167,8 @@ export default function Inbox({
       jobId: item.job_id,
       workerId: currentWorker.id,
       choice,
-      isPlanner: isAdmin,
+      startTime: item.work_jobs?.start_time,
+      endTime: item.work_jobs?.end_time,
     })
     setBusyId('')
     if (error) {

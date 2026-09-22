@@ -770,7 +770,6 @@ export default function WorkPlan({
       if (exceptJobId && job.id === exceptJobId) continue
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
-      if (job.kind === 'open_post') continue
       if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (['assigned', 'approved'].includes(row.status)) busy.add(row.worker_id)
@@ -785,7 +784,6 @@ export default function WorkPlan({
       if (exceptJobId && job.id === exceptJobId) continue
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
-      if (job.kind === 'open_post') continue
       if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (row.worker_id !== workerId) continue
@@ -802,7 +800,6 @@ export default function WorkPlan({
       if (exceptJobId && job.id === exceptJobId) continue
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
-      if (job.kind === 'open_post') continue
       if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (row.worker_id !== workerId) continue
@@ -852,7 +849,7 @@ export default function WorkPlan({
   }
 
   const plannedJobs = useMemo(() => {
-    const rows = jobs.filter(job => job.kind !== 'open_post')
+    const rows = jobs.filter(job => job.status !== 'cancelled' && job.status !== 'canceled')
     return hideOwnerPlan ? rows.filter(job => !jobIsOwnerPrivate(job, ownerIds)) : rows
   }, [hideOwnerPlan, jobs, ownerIds])
   const boardMarks = useMemo(() => marksFromJobs(plannedJobs), [plannedJobs])
@@ -1102,8 +1099,12 @@ export default function WorkPlan({
       bring_text: form.bring_text.trim() || null,
       remember_text: form.remember_text.trim() || null,
       notes_text: form.notes_text.trim() || null,
-      kind: 'assigned',
-      needed_count: Math.max(1, form.worker_ids.length),
+      kind: jobs.find(item => item.id === editingId)?.kind === 'open_post' ? 'open_post' : 'assigned',
+      needed_count: Math.max(
+        1,
+        form.worker_ids.length,
+        jobs.find(item => item.id === editingId)?.kind === 'open_post' ? Number(jobs.find(item => item.id === editingId)?.needed_count) || 1 : 1,
+      ),
       status: 'active',
       updated_at: new Date().toISOString(),
       crew_names: crewNamesFor(form.worker_ids, workers),
@@ -1397,7 +1398,8 @@ export default function WorkPlan({
       jobId: job.id,
       workerId: currentWorker.id,
       choice,
-      isPlanner: isAdmin,
+      startTime: job.start_time,
+      endTime: job.end_time,
     })
     if (error) {
       alert(`${t('planApplyError')} ${error.message}`)

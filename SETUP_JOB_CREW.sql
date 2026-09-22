@@ -94,6 +94,15 @@ BEGIN
   IF OLD.worker_id IS DISTINCT FROM public.current_worker_id() THEN
     RAISE EXCEPTION 'not allowed';
   END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM public.work_jobs
+    WHERE work_jobs.id = NEW.job_id
+      AND work_jobs.kind = 'open_post'
+      AND work_jobs.status = 'active'
+  ) AND NEW.status IN ('assigned', 'pending', 'declined', 'thinking') THEN
+    RETURN NEW;
+  END IF;
   IF OLD.status = 'declined' THEN
     RAISE EXCEPTION 'not allowed';
   END IF;
