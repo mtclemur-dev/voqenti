@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, workdaysInRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -25,6 +25,7 @@ const emptyForm = () => {
     notes_text: '',
     worker_ids: [],
     until_date: today,
+    weekdays: [...WORK_WEEKDAYS],
     applyTimeToAll: false,
     worker_hours: {},
   }
@@ -138,6 +139,12 @@ function restoreJobForm(saved) {
     notes_text: stringOr(saved.notes_text),
     worker_ids: Array.isArray(saved.worker_ids) ? saved.worker_ids.filter(id => typeof id === 'string') : [],
     until_date: isoDateOr(saved.until_date, isoDateOr(saved.work_date, base.until_date)),
+    weekdays: (() => {
+      const days = Array.isArray(saved.weekdays)
+        ? saved.weekdays.map(Number).filter(day => day >= 1 && day <= 7)
+        : []
+      return days.length ? [...new Set(days)].sort((a, b) => a - b) : [...WORK_WEEKDAYS]
+    })(),
     applyTimeToAll: Boolean(saved.applyTimeToAll),
     worker_hours: hours,
   }
@@ -711,6 +718,15 @@ export default function WorkPlan({
   }, [historyOpen, livePlanOpen, loadData])
 
   const setField = (key, value) => setForm(current => ({ ...current, [key]: value }))
+  const toggleWeekday = (day) => {
+    setForm(current => {
+      const selected = current.weekdays.includes(day)
+      const next = selected
+        ? current.weekdays.filter(item => item !== day)
+        : [...current.weekdays, day].sort((a, b) => a - b)
+      return { ...current, weekdays: next.length ? next : [day] }
+    })
+  }
   const setNeedField = (key, value) => setNeedForm(current => ({ ...current, [key]: value }))
 
   const selectedObject = objects.find(item => item.id === form.object_id)
@@ -861,8 +877,8 @@ export default function WorkPlan({
     [editingId, jobs, today],
   )
   const formWorkdays = useMemo(
-    () => workdaysInRange(form.work_date, form.until_date || form.work_date),
-    [form.until_date, form.work_date],
+    () => datesInRange(form.work_date, form.until_date || form.work_date, form.weekdays?.length ? form.weekdays : WORK_WEEKDAYS),
+    [form.until_date, form.weekdays, form.work_date],
   )
 
   const historyEntries = useMemo(() => {
@@ -1007,6 +1023,7 @@ export default function WorkPlan({
       .map(row => row.worker_id)
       .filter(id => !absenceOnDate(absences, id, workDate)),
     until_date: workDate,
+    weekdays: [...WORK_WEEKDAYS],
     applyTimeToAll: false,
     worker_hours: workerHoursFromAssignees({ ...job, work_job_assignees: (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status) && !absenceOnDate(absences, row.worker_id, workDate)) }),
   })
@@ -1069,7 +1086,7 @@ export default function WorkPlan({
     event.preventDefault()
     if (!isAdmin) return
     if (!form.work_date) return alert(t('planDateRequired'))
-    const planDays = workdaysInRange(form.work_date, form.until_date || form.work_date)
+    const planDays = datesInRange(form.work_date, form.until_date || form.work_date, form.weekdays?.length ? form.weekdays : WORK_WEEKDAYS)
     if (!planDays.length) return alert(t('planNoWorkdays'))
     if (planDays.length > 60) return alert(t('planRangeTooLong'))
     const firstDate = editingId ? form.work_date : planDays[0]
@@ -2349,6 +2366,24 @@ export default function WorkPlan({
               min={form.work_date}
               onChange={value => setField('until_date', !value || value < form.work_date ? form.work_date : value)}
             />
+          </div>
+          <div className="mt-3">
+            <p className="text-xs text-slate-400">{t('planWeekdays')}</p>
+            <div className="mt-2 grid grid-cols-7 gap-1">
+              {[1, 2, 3, 4, 5, 6, 7].map(day => {
+                const on = form.weekdays.includes(day)
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleWeekday(day)}
+                    className={`min-h-11 rounded-xl text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${on ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                  >
+                    {weekdayLabel(day, language)}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           {formWorkdays.length > 1 && (
             <p className="mt-2 text-xs text-cyan-100">

@@ -357,19 +357,33 @@ export function isWeekend(value) {
   return dt.isValid && dt.weekday >= 6
 }
 
-export function workdaysInRange(from, until, { keepSingleWeekend = true } = {}) {
+export const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
+
+export function weekdayLabel(weekday, language = 'de') {
+  const dt = DateTime.fromObject({ weekday }, { zone: 'Europe/Berlin' }).setLocale(language)
+  return dt.isValid ? dt.toFormat('ccc') : ''
+}
+
+export function datesInRange(from, until, weekdays = WORK_WEEKDAYS, { keepSingleIfEmpty = true } = {}) {
   const start = isoDate(from)
   if (!start) return []
   const endRaw = isoDate(until) || start
   const first = DateTime.fromISO(start, { zone: 'Europe/Berlin' })
   const last = DateTime.fromISO(endRaw < start ? start : endRaw, { zone: 'Europe/Berlin' })
   if (!first.isValid || !last.isValid) return []
+  const allowed = new Set((weekdays || []).map(Number).filter(day => day >= 1 && day <= 7))
   const dates = []
   for (let day = first; day <= last; day = day.plus({ days: 1 })) {
-    if (day.weekday < 6) dates.push(day.toISODate())
+    if (allowed.has(day.weekday)) dates.push(day.toISODate())
   }
-  if (!dates.length && keepSingleWeekend && start === last.toISODate()) return [start]
+  if (!dates.length && keepSingleIfEmpty && start === last.toISODate()) return [start]
   return dates
+}
+
+export function workdaysInRange(from, until, options = {}) {
+  return datesInRange(from, until, WORK_WEEKDAYS, {
+    keepSingleIfEmpty: options.keepSingleWeekend !== false,
+  })
 }
 
 export function nextWeekday(value) {
