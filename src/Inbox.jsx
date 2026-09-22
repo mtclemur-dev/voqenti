@@ -3,6 +3,8 @@ import { DateTime } from 'luxon'
 import { supabase } from './supabaseClient'
 import { debounce } from './plan/planUtils'
 import { scheduleJobReminders, showJobNotice } from './plan/jobReminders'
+import OpenPostActions from './plan/OpenPostActions'
+import { respondToOpenPost } from './plan/openPostRespond'
 
 function notificationJobDate(item) {
   const match = String(item?.work_jobs?.work_date || '').match(/^(\d{4}-\d{2}-\d{2})/)
@@ -40,6 +42,8 @@ export default function Inbox({
   const [internalOpen, setInternalOpen] = useState(false)
   const [items, setItems] = useState([])
   const [available, setAvailable] = useState(true)
+  const [answers, setAnswers] = useState({})
+  const [busyId, setBusyId] = useState('')
   const seenIds = useRef(new Set())
   const ready = useRef(false)
   const tRef = useRef(t)
@@ -155,6 +159,25 @@ export default function Inbox({
     else onOpenView('plan')
   }
 
+  const answerHelp = async (item, choice, event) => {
+    event.stopPropagation()
+    if (!currentWorker?.id || !item.job_id) return
+    setBusyId(item.id)
+    const { error } = await respondToOpenPost({
+      jobId: item.job_id,
+      workerId: currentWorker.id,
+      choice,
+      isPlanner: isAdmin,
+    })
+    setBusyId('')
+    if (error) {
+      alert(`${t('planApplyError')} ${error.message}`)
+      return
+    }
+    setAnswers(current => ({ ...current, [item.job_id]: choice }))
+    await markRead([item.id])
+  }
+
   if (!available) return null
 
   return (
@@ -196,16 +219,27 @@ export default function Inbox({
             <div className="max-h-80 space-y-2 overflow-auto">
               {items.map(item => {
                 const copy = labelFor(item, t)
+                const help = item.kind === 'open_post' && currentWorker?.id
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => openItem(item)}
                     className={`w-full rounded-xl px-3 py-2 text-left ${item.read_at ? 'bg-slate-900 text-slate-300' : 'bg-cyan-500/15 text-white'}`}
                   >
-                    <p className="text-sm font-semibold">{copy.title}</p>
-                    {copy.body && <p className="mt-1 text-xs text-slate-300">{copy.body}</p>}
-                  </button>
+                    <button type="button" onClick={() => openItem(item)} className="w-full text-left">
+                      <p className="text-sm font-semibold">{copy.title}</p>
+                      {copy.body && <p className="mt-1 text-xs text-slate-300">{copy.body}</p>}
+                    </button>
+                    {help && (
+                      <div className="mt-2">
+                        <OpenPostActions
+                          t={t}
+                          answer={answers[item.job_id] || ''}
+                          busy={busyId === item.id}
+                          onChoose={(choice) => answerHelp(item, choice, { stopPropagation() {} })}
+                        />
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>

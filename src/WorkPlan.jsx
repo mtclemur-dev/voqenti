@@ -4,7 +4,9 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
+import OpenPostActions from './plan/OpenPostActions'
+import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
@@ -655,7 +657,7 @@ export default function WorkPlan({
         .from('work_job_assignees')
         .select('*, work_jobs!inner(*)')
         .eq('worker_id', workerId)
-        .in('status', ['assigned', 'approved', 'pending', 'declined'])
+        .in('status', ['assigned', 'approved', 'pending', 'declined', 'thinking'])
         .neq('work_jobs.status', 'cancelled')
         .gte('work_jobs.work_date', yearStart),
       supabase
@@ -1313,6 +1315,28 @@ export default function WorkPlan({
       return
     }
     resetNeedForm()
+    if (!editingNeedId && result.data?.id) {
+      const { data: already } = await supabase
+        .from('work_notifications')
+        .select('id')
+        .eq('job_id', result.data.id)
+        .eq('kind', 'open_post')
+        .limit(1)
+      if (!already?.length) {
+        const body = [formatDisplayDate(result.data.work_date), result.data.location_text || result.data.object_name].filter(Boolean).join(' · ')
+        const notes = activeWorkers
+          .filter(worker => worker.id && !isOwnerWorker(worker))
+          .map(worker => ({
+            audience: 'worker',
+            worker_id: worker.id,
+            title: 'notifyOpenPost',
+            body,
+            kind: 'open_post',
+            job_id: result.data.id,
+          }))
+        if (notes.length) await supabase.from('work_notifications').insert(notes)
+      }
+    }
     loadData(view === 'history' ? 'history' : 'live')
   }
 
@@ -1321,6 +1345,14 @@ export default function WorkPlan({
     || myRows.find(row => row.job_id === job?.id)
     || null
   )
+  const helpAsks = (isAdmin ? jobs : openJobs)
+    .filter(job => (
+      job.kind === 'open_post'
+      && job.status === 'active'
+      && isoDate(job.work_date) >= today
+      && !['assigned', 'approved', 'declined'].includes(myOpenRow(job)?.status)
+    ))
+    .map(job => ({ ...job, my_status: myOpenRow(job)?.status || '' }))
 
   const openGoingNames = (job) => {
     const names = []
@@ -1346,39 +1378,44 @@ export default function WorkPlan({
     return names
   }
 
-  const handleApply = async (job) => {
+  const handleHelpRespond = async (job, choice) => {
     if (!currentWorker?.id) {
       alert(t('planWorkerMissing'))
       return
     }
-    const mine = myOpenRow(job)
-    if (mine && ['assigned', 'approved', 'pending'].includes(mine.status)) return
-    const already = (isAdmin ? myPlan : myRows).some(row =>
-      ['assigned', 'approved'].includes(row.status) && isoDate(row.work_jobs?.work_date) === isoDate(job.work_date),
-    )
-    if (already && !window.confirm(t('planAlreadyBooked'))) return
-    if (absenceOnDate(absences, currentWorker.id, job.work_date)) {
-      alert(t('absenceBlockedApply'))
-      return
+    if (choice === 'go') {
+      if (absenceOnDate(absences, currentWorker.id, job.work_date)) {
+        alert(t('absenceBlockedApply'))
+        return
+      }
+      const already = (isAdmin ? myPlan : myRows).some(row =>
+        ['assigned', 'approved'].includes(row.status) && isoDate(row.work_jobs?.work_date) === isoDate(job.work_date),
+      )
+      if (already && !window.confirm(t('planAlreadyBooked'))) return
     }
-    const { error } = await supabase.from('work_job_assignees').insert([{
-      job_id: job.id,
-      worker_id: currentWorker.id,
-      status: isAdmin ? 'assigned' : 'pending',
-    }])
+    const { error } = await respondToOpenPost({
+      jobId: job.id,
+      workerId: currentWorker.id,
+      choice,
+      isPlanner: isAdmin,
+    })
     if (error) {
       alert(`${t('planApplyError')} ${error.message}`)
       return
     }
-    const nextNames = [...new Set([
-      ...(Array.isArray(job.crew_names) ? job.crew_names : []),
-      currentWorker.name,
-    ].filter(Boolean))]
-    if (nextNames.length) {
-      await supabase.from('work_jobs').update({ crew_names: nextNames, updated_at: new Date().toISOString() }).eq('id', job.id)
+    if (choice === 'go') {
+      const nextNames = [...new Set([
+        ...(Array.isArray(job.crew_names) ? job.crew_names : []),
+        currentWorker.name,
+      ].filter(Boolean))]
+      if (nextNames.length) {
+        await supabase.from('work_jobs').update({ crew_names: nextNames, updated_at: new Date().toISOString() }).eq('id', job.id)
+      }
     }
     loadData(view === 'history' ? 'history' : 'live')
   }
+
+  const handleApply = (job) => handleHelpRespond(job, 'go')
 
   const handleDecision = async (assigneeId, status) => {
     if (status === 'approved') {
@@ -2526,6 +2563,8 @@ export default function WorkPlan({
             savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
+            helpAsks={helpAsks}
+            onHelpRespond={handleHelpRespond}
           />
         </div>
       )}
@@ -2742,16 +2781,17 @@ export default function WorkPlan({
                     <button type="button" onClick={() => handleCancelJob(job)} className="col-span-2 rounded-md bg-rose-500/20 px-3 py-2 text-sm font-semibold text-rose-100">{t('planCancel')}</button>
                   </div>
                 )}
-                {['assigned', 'approved'].includes(mine?.status) ? (
-                  <div className="mt-3 rounded-md bg-emerald-500/20 px-3 py-2 text-center text-sm font-semibold text-emerald-50">{t('planJoined')}</div>
-                ) : mine?.status === 'pending' ? (
-                  <div className="mt-3 rounded-md bg-amber-500/20 px-3 py-2 text-center text-sm font-semibold text-amber-50">{t('planWaiting')}</div>
-                ) : absenceOnDate(absences, currentWorker?.id, job.work_date) ? (
+                {absenceOnDate(absences, currentWorker?.id, job.work_date) && !['assigned', 'approved', 'pending'].includes(mine?.status) ? (
                   <div className="mt-3 rounded-md bg-rose-500/20 px-3 py-2 text-center text-sm font-semibold text-rose-100">{t('absenceBlockedApply')}</div>
                 ) : currentWorker?.id ? (
-                  <button type="button" onClick={() => handleApply(job)} className="mt-3 w-full rounded-xl bg-amber-400 px-4 py-3 font-semibold text-slate-950">
-                    {t('planJoin')}
-                  </button>
+                  <div className="mt-3">
+                    <OpenPostActions
+                      t={t}
+                      answer={openPostAnswer(mine)}
+                      busy={confirmingId === job.id}
+                      onChoose={(choice) => handleHelpRespond(job, choice)}
+                    />
+                  </div>
                 ) : null}
               </article>
             )

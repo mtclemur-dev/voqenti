@@ -6,6 +6,8 @@ import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
 import { HoursRow } from './EmployeeHours'
 import SelfWorkForm from './SelfWorkForm'
+import OpenPostActions from './OpenPostActions'
+import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
   berlinWeekDays,
@@ -445,6 +447,8 @@ export default function EmployeeHome({
   boardDate,
   onBoardDateChange,
   allowPastHours = false,
+  helpAsks = [],
+  onHelpRespond,
 }) {
   const [now] = useState(() => DateTime.now().setZone('Europe/Berlin'))
   const today = now.toISODate()
@@ -548,6 +552,31 @@ export default function EmployeeHome({
             </button>
           )}
         </div>
+      )}
+
+      {helpAsks.length > 0 && onHelpRespond && (
+        <section className="space-y-3" aria-label={t('notifyOpenPost')}>
+          {helpAsks.map(job => (
+            <article key={job.id} className="rounded-3xl border border-amber-300/30 bg-amber-400/12 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-200">{t('notifyOpenPost')}</p>
+              <h3 className="mt-2 text-lg font-black text-white">{job.location_text || job.object_name || t('planNoPlace')}</h3>
+              <p className="mt-1 text-sm font-semibold text-amber-100">
+                {formatDisplayDate(job.work_date, language)}
+                {assignmentRange({ work_jobs: job }, job).start ? ` · ${assignmentRange({ work_jobs: job }, job).start}` : ''}
+                {assignmentRange({ work_jobs: job }, job).end ? ` – ${assignmentRange({ work_jobs: job }, job).end}` : ''}
+              </p>
+              {job.task_text ? <p className="mt-2 whitespace-pre-wrap text-sm text-amber-50">{job.task_text}</p> : null}
+              <div className="mt-3">
+                <OpenPostActions
+                  t={t}
+                  answer={openPostAnswer({ status: job.my_status })}
+                  busy={confirmingId === job.id}
+                  onChoose={(choice) => onHelpRespond(job, choice)}
+                />
+              </div>
+            </article>
+          ))}
+        </section>
       )}
 
       <section aria-label={t('planToday')} className="space-y-3">
