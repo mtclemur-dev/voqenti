@@ -2253,7 +2253,6 @@ export default function WorkPlan({
           ownerIds={ownerIds}
           selfLogs={selfLogs}
           currentWorkerId={currentWorker?.id || ''}
-          currentWorkerName={currentWorker?.name || ''}
           onNewJob={() => {
             setEditingId(null)
             setDuplicating(false)

@@ -120,7 +120,6 @@ export default function AdminPlanBoard({
   ownerIds,
   selfLogs = [],
   currentWorkerId = '',
-  currentWorkerName = '',
   children,
 }) {
   const hiddenOwnerIds = ownerIds instanceof Set ? ownerIds : new Set(ownerIds || [])
@@ -168,7 +167,7 @@ export default function AdminPlanBoard({
     const seen = new Set()
     const add = (item, minutes) => {
       if (!item?.id || seen.has(item.id)) return
-      if (hideOwnerHours && hiddenOwnerIds.has(item.id)) return
+      if (item.id === currentWorkerId || hiddenOwnerIds.has(item.id)) return
       if (minutes == null || minutes >= DAY_TARGET_MINUTES) return
       seen.add(item.id)
       rows.push({ ...item, minutes, short: true })
@@ -176,16 +175,8 @@ export default function AdminPlanBoard({
     for (const item of dayRoster.working) {
       add(item, dayMinutesForWorker(item.id, sortedJobs, extraMinutesFor(item.id)))
     }
-    const self = [...dayRoster.working, ...dayRoster.free, ...dayRoster.off]
-      .find(item => item.id === currentWorkerId)
-      || (currentWorkerId ? { id: currentWorkerId, name: currentWorkerName || t('planSelf') } : null)
-    if (self && !dayRoster.off.some(item => item.id === currentWorkerId)) {
-      const extra = extraMinutesFor(self.id)
-      const minutes = dayMinutesForWorker(self.id, sortedJobs, extra)
-      add(self, minutes != null ? minutes : 0)
-    }
     return rows.sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || ''))
-  }, [currentWorkerId, currentWorkerName, dayRoster.free, dayRoster.off, dayRoster.working, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, sortedJobs, t])
+  }, [currentWorkerId, dayRoster.working, extraMinutesFor, hiddenOwnerIds, sortedJobs])
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs
