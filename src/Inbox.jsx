@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from './supabaseClient'
-import { debounce } from './plan/planUtils'
+import { debounce, isOfficePlanner } from './plan/planUtils'
 import { scheduleJobReminders, showJobNotice } from './plan/jobReminders'
 import OpenPostActions from './plan/OpenPostActions'
 import { respondToOpenPost } from './plan/openPostRespond'
@@ -161,7 +161,7 @@ export default function Inbox({
 
   const answerHelp = async (item, choice, event) => {
     event.stopPropagation()
-    if (!currentWorker?.id || !item.job_id) return
+    if (!currentWorker?.id || !item.job_id || isOfficePlanner(currentWorker)) return
     setBusyId(item.id)
     const { error } = await respondToOpenPost({
       jobId: item.job_id,
@@ -220,7 +220,7 @@ export default function Inbox({
             <div className="max-h-80 space-y-2 overflow-auto">
               {items.map(item => {
                 const copy = labelFor(item, t)
-                const help = item.kind === 'open_post' && currentWorker?.id
+                const help = item.kind === 'open_post' && currentWorker?.id && !isOfficePlanner(currentWorker)
                 return (
                   <div
                     key={item.id}

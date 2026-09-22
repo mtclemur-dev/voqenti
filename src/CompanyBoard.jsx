@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import SafetyShoeLesson from './guides/SafetyShoeLesson'
 import { GuideArt } from './guides/GuideArt'
 import { isSafetyShoeLessonDone, lessonScreens } from './guides/safetyShoesContent'
-import { debounce } from './plan/planUtils'
+import { debounce, isOfficePlanner } from './plan/planUtils'
 
 function isMissingTable(error) {
   const message = error?.message?.toLowerCase() ?? ''
@@ -152,7 +152,7 @@ export default function CompanyBoard({ t, view, isAdmin, displayName, userId, wo
   const today = berlinToday()
   const readToday = readDays.includes(today)
   const streak = countStreak(readDays)
-  const activeWorkers = workers.filter(worker => worker.active !== false)
+  const activeWorkers = workers.filter(worker => worker.active !== false && !isOfficePlanner(worker))
 
   const board = view === 'guides' ? 'guide' : 'hiring'
   const boardVisible = view === 'notices' || view === 'guides'

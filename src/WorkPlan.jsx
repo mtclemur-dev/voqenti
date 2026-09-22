@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -774,8 +774,11 @@ export default function WorkPlan({
   ), [jobs, today])
 
   const workerName = (workerId) => workers.find(item => item.id === workerId)?.name ?? t('planUnknownWorker')
-  const activeWorkers = workers.filter(worker => worker.active !== false)
+  const activeWorkers = workers.filter(worker => worker.active !== false && !isOfficePlanner(worker))
+  const inviteWorkers = workers.filter(worker => worker.active !== false)
+  const officeSelf = isOfficePlanner(currentWorker)
   const ownerIds = useMemo(() => ownerWorkerIdSet(workers), [workers])
+  const officeIds = useMemo(() => new Set(workers.filter(isOfficePlanner).map(worker => worker.id).filter(Boolean)), [workers])
   const busyElsewhere = (date, exceptJobId) => {
     const day = isoDate(date)
     const busy = new Set()
@@ -786,6 +789,7 @@ export default function WorkPlan({
       if (job.status === 'cancelled' || job.status === 'canceled') continue
       if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
+        if (officeIds.has(row.worker_id)) continue
         if (['assigned', 'approved'].includes(row.status)) busy.add(row.worker_id)
       }
     }
@@ -898,6 +902,7 @@ export default function WorkPlan({
       const assignees = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
       for (const row of assignees) {
         if (historyWorkerId && row.worker_id !== historyWorkerId) continue
+        if (officeIds.has(row.worker_id)) continue
         if (hideOwnerPlan && ownerIds.has(row.worker_id)) continue
         const name = workerName(row.worker_id)
         if (search && !name.toLowerCase().includes(search)) continue
@@ -911,7 +916,7 @@ export default function WorkPlan({
       }
     }
     return rows.sort((a, b) => `${b.job.work_date}${b.job.start_time || ''}`.localeCompare(`${a.job.work_date}${a.job.start_time || ''}`))
-  }, [hideOwnerPlan, historyFrom, historyObjectId, historySearch, historyTo, historyWorkerId, jobs, objects, ownerIds, workerName])
+  }, [hideOwnerPlan, historyFrom, historyObjectId, historySearch, historyTo, historyWorkerId, jobs, objects, officeIds, ownerIds, workerName])
 
   const historyByPerson = useMemo(() => {
     const groups = new Map()
@@ -1021,7 +1026,7 @@ export default function WorkPlan({
     worker_ids: (job.work_job_assignees ?? [])
       .filter(row => ['assigned', 'approved'].includes(row.status))
       .map(row => row.worker_id)
-      .filter(id => !absenceOnDate(absences, id, workDate)),
+      .filter(id => !absenceOnDate(absences, id, workDate) && !officeIds.has(id)),
     until_date: workDate,
     weekdays: [...WORK_WEEKDAYS],
     applyTimeToAll: false,
@@ -1404,7 +1409,7 @@ export default function WorkPlan({
   }
 
   const handleHelpRespond = async (job, choice) => {
-    if (!currentWorker?.id) {
+    if (!currentWorker?.id || officeSelf) {
       alert(t('planWorkerMissing'))
       return
     }
@@ -1571,6 +1576,7 @@ export default function WorkPlan({
   }, [t])
 
   const handleSaveHours = async (row, start, end) => {
+    if (officeSelf) return
     if (hideOwnerPlan && ownerIds.has(row.worker_id)) return
     if (!isAdmin && currentWorker?.id && row.worker_id && row.worker_id !== currentWorker.id) return
     setConfirmingId(row.id)
@@ -1606,7 +1612,7 @@ export default function WorkPlan({
   }
 
   const handleSaveSelfLog = async (payload) => {
-    if (!currentWorker?.id) {
+    if (!currentWorker?.id || officeSelf) {
       alert(t('planWorkerMissing'))
       return false
     }
@@ -1956,7 +1962,7 @@ export default function WorkPlan({
     })
   const setupExtra = t('planSetupExtra')
   const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today && !(hideOwnerPlan && ownerIds.has(item.worker_id)))
-  const pendingInvites = activeWorkers.filter(worker => !String(worker.email || '').trim())
+  const pendingInvites = inviteWorkers.filter(worker => !String(worker.email || '').trim())
 
   const renderAdminJob = (job) => {
     const people = job.work_job_assignees ?? []
@@ -2318,6 +2324,7 @@ export default function WorkPlan({
           }}
           hideOwnerHours={hideOwnerPlan}
           ownerIds={ownerIds}
+          skipWorkerIds={officeIds}
           selfLogs={selfLogs}
           currentWorkerId={currentWorker?.id || ''}
           onNewJob={() => {
@@ -2615,7 +2622,7 @@ export default function WorkPlan({
         </div>
       )}
 
-      {isAdmin && (
+      {isAdmin && !officeSelf && (
         <div className={view === 'mine' ? '' : 'hidden'} aria-hidden={view !== 'mine'}>
           <EmployeeHome
             t={t}
@@ -2645,7 +2652,7 @@ export default function WorkPlan({
         </div>
       )}
 
-      <div className={view === 'hours' ? '' : 'hidden'} aria-hidden={view !== 'hours'}>
+      <div className={view === 'hours' && !officeSelf ? '' : 'hidden'} aria-hidden={view !== 'hours' || officeSelf}>
         <EmployeeHours
           t={t}
           language={language}
@@ -2829,7 +2836,7 @@ export default function WorkPlan({
                 )}
                 {absenceOnDate(absences, currentWorker?.id, job.work_date) && !['assigned', 'approved', 'pending'].includes(mine?.status) ? (
                   <div className="mt-3 rounded-md bg-rose-500/20 px-3 py-2 text-center text-sm font-semibold text-rose-100">{t('absenceBlockedApply')}</div>
-                ) : currentWorker?.id ? (
+                ) : currentWorker?.id && !officeSelf ? (
                   <div className="mt-3">
                     <OpenPostActions
                       t={t}
@@ -2885,7 +2892,7 @@ export default function WorkPlan({
               {t('workers')}
               <select value={historyWorkerId} onChange={e => { setHistoryWorkerId(e.target.value); setHistorySearch('') }} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100">
                 <option value="">{t('historyAllWorkers')}</option>
-                {workers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id)).map(worker => (
+                {activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id)).map(worker => (
                   <option key={worker.id} value={worker.id}>{worker.name}</option>
                 ))}
               </select>

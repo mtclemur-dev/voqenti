@@ -10,7 +10,7 @@ import Inbox from './Inbox'
 import { EmployeeBottomNav, EmployeeDesktopNav, EmployeeHeader, EmployeeProfilePanel } from './plan/EmployeeChrome'
 import { AdminHeader, AdminPrimaryNav } from './plan/AdminChrome'
 import SafetyShoeLesson from './guides/SafetyShoeLesson'
-import { firstName, isPlannerRole, OWNER_EMAIL, useGreetingKey } from './plan/planUtils'
+import { firstName, isOfficePlanner, isPlannerRole, OWNER_EMAIL, useGreetingKey } from './plan/planUtils'
 import { APP_VIEWS, isoDateOr, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
 
 function inviteLoginEmail(workerId) {
@@ -173,6 +173,7 @@ function App() {
   }, [workers])
   const isVorarbeiter = currentWorker?.role?.toLowerCase() === 'vorarbeiter' || currentWorker?.name?.toLowerCase().includes('plamadeala victor')
   const isPlanner = Boolean(user && !isAdmin && isPlannerRole(currentWorker?.role))
+  const officePlanner = isOfficePlanner(currentWorker)
   const canPlan = isAdmin || isPlanner
   const canEditLockedReports = isAdmin || isVorarbeiter
   const t = useCallback((key) => uiTranslations[language]?.[key] ?? uiTranslations.de[key] ?? key, [language])
@@ -182,7 +183,8 @@ function App() {
   }, [language])
   useEffect(() => {
     if (isPlanner && ['pontaj', 'reports', 'times', 'materials'].includes(view)) setView('plan')
-  }, [isPlanner, view])
+    if (officePlanner && ['mine', 'hours'].includes(view)) setView('plan')
+  }, [isPlanner, officePlanner, view])
   useEffect(() => {
     writeUiMemory({
       view,
@@ -341,7 +343,7 @@ function App() {
   const secondsToMinutes = (seconds = 0) => Math.max(0, Math.round(Number(seconds || 0) / 60))
 
   const selectedReportObject = objects.find(object => object.id === selectedObjectId)
-  const sortedWorkers = [...workers].sort((a, b) => sortByName(a, b))
+  const sortedWorkers = [...workers].filter(worker => !isOfficePlanner(worker)).sort((a, b) => sortByName(a, b))
   const materialUsageCounts = materialRequests.reduce((counts, request) => {
     ;(request.material_request_items ?? []).forEach(item => {
       if (item.material_item_id) counts[item.material_item_id] = (counts[item.material_item_id] ?? 0) + 1
@@ -2535,7 +2537,7 @@ function App() {
                 <AdminPrimaryNav
                   t={t}
                   view={view}
-                  showMine={Boolean(currentWorker)}
+                  showMine={Boolean(currentWorker) && !officePlanner}
                   showAdminTools={isAdmin}
                   inboxOpen={inboxOpen}
                   onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}

@@ -118,11 +118,14 @@ export default function AdminPlanBoard({
   jobFormOpen = false,
   hideOwnerHours = false,
   ownerIds,
+  skipWorkerIds,
   selfLogs = [],
   currentWorkerId = '',
   children,
 }) {
   const hiddenOwnerIds = ownerIds instanceof Set ? ownerIds : new Set(ownerIds || [])
+  const skippedIds = skipWorkerIds instanceof Set ? skipWorkerIds : new Set(skipWorkerIds || [])
+  const hiddenHourIds = useMemo(() => new Set([...hiddenOwnerIds, ...skippedIds]), [hiddenOwnerIds, skippedIds])
   const extraMinutesFor = (workerId) => (
     workerId && workerId === currentWorkerId
       ? selfLogMinutesForDay(selfLogs, workerId, liveBoardDate)
@@ -146,7 +149,7 @@ export default function AdminPlanBoard({
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(item => {
         const jobCount = sortedJobs.filter(job => jobHasWorker(job, item.id)).length
-        const hideHours = hideOwnerHours && hiddenOwnerIds.has(item.id)
+        const hideHours = skippedIds.has(item.id) || (hideOwnerHours && hiddenOwnerIds.has(item.id))
         const extra = extraMinutesFor(item.id)
         const minutes = hideHours
           ? null
@@ -156,18 +159,18 @@ export default function AdminPlanBoard({
         const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
         return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES }
       })
-  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, sortedJobs])
+  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
 
   const dayMinutes = useMemo(
-    () => plannedMinutesForDay(sortedJobs, hideOwnerHours ? hiddenOwnerIds : null),
-    [hiddenOwnerIds, hideOwnerHours, sortedJobs],
+    () => plannedMinutesForDay(sortedJobs, hiddenHourIds.size ? hiddenHourIds : null),
+    [hiddenHourIds, sortedJobs],
   )
   const shortPeople = useMemo(() => {
     const rows = []
     const seen = new Set()
     const add = (item, minutes) => {
       if (!item?.id || seen.has(item.id)) return
-      if (item.id === currentWorkerId || hiddenOwnerIds.has(item.id)) return
+      if (item.id === currentWorkerId || hiddenOwnerIds.has(item.id) || skippedIds.has(item.id)) return
       if (minutes == null || minutes >= DAY_TARGET_MINUTES) return
       seen.add(item.id)
       rows.push({ ...item, minutes, short: true })
@@ -176,7 +179,7 @@ export default function AdminPlanBoard({
       add(item, dayMinutesForWorker(item.id, sortedJobs, extraMinutesFor(item.id)))
     }
     return rows.sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || ''))
-  }, [currentWorkerId, dayRoster.working, extraMinutesFor, hiddenOwnerIds, sortedJobs])
+  }, [currentWorkerId, dayRoster.working, extraMinutesFor, hiddenOwnerIds, skippedIds, sortedJobs])
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs

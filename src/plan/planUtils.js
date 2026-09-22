@@ -203,6 +203,11 @@ export function isOwnerWorker(worker) {
   return String(worker.name || '').toLowerCase().includes('plamadeala victor')
 }
 
+export function isOfficePlanner(worker) {
+  if (!worker || isOwnerWorker(worker)) return false
+  return String(worker.role || '').toLowerCase() === PLANNER_INVITE_ROLE
+}
+
 export function ownerWorkerIdSet(workers = []) {
   return new Set(workers.filter(isOwnerWorker).map(worker => worker.id).filter(Boolean))
 }
