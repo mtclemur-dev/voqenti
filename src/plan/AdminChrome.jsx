@@ -45,7 +45,7 @@ export function AdminHeader({ t, displayName, unread = 0, onOpenInbox, onOpenPro
   )
 }
 
-export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, showAdminTools = true, inboxOpen = false, onOpenInbox }) {
+export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, showAdminTools = true }) {
   const adminViews = ['pontaj', 'reports', 'times', 'materials']
   return (
     <nav aria-label={t('mainNav')} className="mb-4 flex flex-wrap gap-1.5">
@@ -65,11 +65,6 @@ export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, showAdm
       <button type="button" onClick={() => onOpenView('notices')} className={navClass(view === 'notices', true)}>
         {t('notices')}
       </button>
-      {onOpenInbox && (
-        <button type="button" onClick={onOpenInbox} className={navClass(inboxOpen, true)}>
-          {t('inbox')}
-        </button>
-      )}
       <button type="button" onClick={() => onOpenView('openPosts')} className={navClass(view === 'openPosts', true)}>
         {t('openPosts')}
       </button>

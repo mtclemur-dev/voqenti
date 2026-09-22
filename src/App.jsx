@@ -2539,8 +2539,6 @@ function App() {
                   view={view}
                   showMine={Boolean(currentWorker) && !officePlanner}
                   showAdminTools={isAdmin}
-                  inboxOpen={inboxOpen}
-                  onOpenInbox={() => { setProfileOpen(false); setInboxOpen(current => !current) }}
                   onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
                 />
                 <Inbox
