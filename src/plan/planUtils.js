@@ -189,6 +189,31 @@ export function crewAssignees(job, statuses = ['assigned', 'approved']) {
   return (job?.work_job_assignees ?? []).filter(row => statuses.includes(row.status))
 }
 
+export const OWNER_EMAIL = 'mtclemur@gmail.com'
+export const PLANNER_ROLES = ['admin', 'vorarbeiter']
+export const PLANNER_INVITE_ROLE = 'admin'
+
+export function isPlannerRole(role) {
+  return PLANNER_ROLES.includes(String(role || '').toLowerCase())
+}
+
+export function isOwnerWorker(worker) {
+  if (!worker) return false
+  if (String(worker.email || '').toLowerCase() === OWNER_EMAIL) return true
+  return String(worker.name || '').toLowerCase().includes('plamadeala victor')
+}
+
+export function ownerWorkerIdSet(workers = []) {
+  return new Set(workers.filter(isOwnerWorker).map(worker => worker.id).filter(Boolean))
+}
+
+export function jobIsOwnerPrivate(job, ownerIds) {
+  if (!ownerIds?.size) return false
+  const people = crewAssignees(job)
+  if (!people.length) return false
+  return people.every(row => ownerIds.has(row.worker_id))
+}
+
 export function formatSeenAt(value, language = 'de') {
   if (!value) return ''
   const dt = DateTime.fromISO(value, { zone: 'Europe/Berlin' }).setLocale(language)

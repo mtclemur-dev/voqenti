@@ -76,7 +76,7 @@ function menuItemClass(active) {
   }`
 }
 
-export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, inboxOpen = false, onOpenInbox }) {
+export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, showAdminTools = true, inboxOpen = false, onOpenInbox }) {
   const [menu, setMenu] = useState('')
   const rootRef = useRef(null)
   const adminViews = ['pontaj', 'reports', 'times', 'materials']
@@ -155,9 +155,11 @@ export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, inboxOp
         <button type="button" role="menuitem" onClick={() => openView('history')} className={menuItemClass(view === 'history')}>
           {t('history')}
         </button>
-        <button type="button" role="menuitem" onClick={() => openView('pontaj')} className={menuItemClass(adminViews.includes(view))}>
-          {t('adminMenu')}
-        </button>
+        {showAdminTools && (
+          <button type="button" role="menuitem" onClick={() => openView('pontaj')} className={menuItemClass(adminViews.includes(view))}>
+            {t('adminMenu')}
+          </button>
+        )}
       </NavMenu>
     </nav>
   )

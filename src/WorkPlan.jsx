@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, jobDurationLabel, marksFromJobs, minutesLabel, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, debounce, formatClock, formatUpdatedAt, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
@@ -472,6 +472,8 @@ export default function WorkPlan({
   language = 'de',
   view,
   isAdmin,
+  hideOwnerPlan = false,
+  canGrantPlanner = false,
   workers,
   objects,
   currentWorker,
@@ -511,6 +513,7 @@ export default function WorkPlan({
   const [savingSelf, setSavingSelf] = useState(false)
   const [absenceForm, setAbsenceForm] = useState(emptyAbsence)
   const [inviteName, setInviteName] = useState('')
+  const [invitePrivileged, setInvitePrivileged] = useState(false)
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteCopied, setInviteCopied] = useState('')
   const [editingAbsenceId, setEditingAbsenceId] = useState(null)
@@ -557,7 +560,9 @@ export default function WorkPlan({
     setErrorMessage('')
     if (firstLoad.current) setLoading(true)
     const historyFromDate = DateTime.now().setZone('Europe/Berlin').minus({ years: 2 }).startOf('year').toISODate()
-    const liveFromDate = DateTime.now().setZone('Europe/Berlin').minus({ days: 7 }).toISODate()
+    const liveFromDate = isAdmin
+      ? historyFromDate
+      : DateTime.now().setZone('Europe/Berlin').minus({ days: 7 }).toISODate()
     const liveToDate = DateTime.now().setZone('Europe/Berlin').plus({ days: 90 }).toISODate()
     const upcomingFromDate = DateTime.now().setZone('Europe/Berlin').minus({ days: 1 }).toISODate()
     const yearStart = DateTime.now().setZone('Europe/Berlin').startOf('year').toISODate()
@@ -568,7 +573,7 @@ export default function WorkPlan({
       const { data, error } = await supabase
         .from('work_absences')
         .select('*')
-        .gte('end_date', todayDate)
+        .gte('end_date', isAdmin ? fromDate : todayDate)
         .order('start_date', { ascending: true })
       if (error && !isMissingTable(error)) setErrorMessage(error.message)
       setAbsences(error ? [] : (data ?? []))
@@ -736,6 +741,7 @@ export default function WorkPlan({
 
   const workerName = (workerId) => workers.find(item => item.id === workerId)?.name ?? t('planUnknownWorker')
   const activeWorkers = workers.filter(worker => worker.active !== false)
+  const ownerIds = useMemo(() => ownerWorkerIdSet(workers), [workers])
   const busyElsewhere = (date, exceptJobId) => {
     const day = isoDate(date)
     const busy = new Set()
@@ -745,6 +751,7 @@ export default function WorkPlan({
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
       if (job.kind === 'open_post') continue
+      if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (['assigned', 'approved'].includes(row.status)) busy.add(row.worker_id)
       }
@@ -759,6 +766,7 @@ export default function WorkPlan({
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
       if (job.kind === 'open_post') continue
+      if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (row.worker_id !== workerId) continue
         if (!['assigned', 'approved'].includes(row.status)) continue
@@ -775,6 +783,7 @@ export default function WorkPlan({
       if (isoDate(job.work_date) !== day) continue
       if (job.status === 'cancelled' || job.status === 'canceled') continue
       if (job.kind === 'open_post') continue
+      if (hideOwnerPlan && jobIsOwnerPrivate(job, ownerIds)) continue
       for (const row of job.work_job_assignees ?? []) {
         if (row.worker_id !== workerId) continue
         if (!['assigned', 'approved'].includes(row.status)) continue
@@ -822,12 +831,12 @@ export default function WorkPlan({
     }))
   }
 
-  const plannedJobs = useMemo(
-    () => jobs.filter(job => job.kind !== 'open_post' && isoDate(job.work_date) >= today),
-    [jobs, today],
-  )
+  const plannedJobs = useMemo(() => {
+    const rows = jobs.filter(job => job.kind !== 'open_post')
+    return hideOwnerPlan ? rows.filter(job => !jobIsOwnerPrivate(job, ownerIds)) : rows
+  }, [hideOwnerPlan, jobs, ownerIds])
   const boardMarks = useMemo(() => marksFromJobs(plannedJobs), [plannedJobs])
-  const liveBoardDate = boardDate < today ? today : boardDate
+  const liveBoardDate = boardDate || today
   const boardJobs = useMemo(
     () => plannedJobs.filter(job => isoDate(job.work_date) === liveBoardDate),
     [plannedJobs, liveBoardDate],
@@ -854,6 +863,7 @@ export default function WorkPlan({
       const assignees = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
       for (const row of assignees) {
         if (historyWorkerId && row.worker_id !== historyWorkerId) continue
+        if (hideOwnerPlan && ownerIds.has(row.worker_id)) continue
         const name = workerName(row.worker_id)
         if (search && !name.toLowerCase().includes(search)) continue
         rows.push({
@@ -866,7 +876,7 @@ export default function WorkPlan({
       }
     }
     return rows.sort((a, b) => `${b.job.work_date}${b.job.start_time || ''}`.localeCompare(`${a.job.work_date}${a.job.start_time || ''}`))
-  }, [historyFrom, historyObjectId, historySearch, historyTo, historyWorkerId, jobs, objects, workerName])
+  }, [hideOwnerPlan, historyFrom, historyObjectId, historySearch, historyTo, historyWorkerId, jobs, objects, ownerIds, workerName])
 
   const historyByPerson = useMemo(() => {
     const groups = new Map()
@@ -922,11 +932,12 @@ export default function WorkPlan({
     const search = historySearch.trim().toLowerCase()
     const present = new Set(historyByPerson.map(group => group.workerId))
     return activeWorkers.filter(worker => {
+      if (hideOwnerPlan && ownerIds.has(worker.id)) return false
       if (historyWorkerId && worker.id !== historyWorkerId) return false
       if (search && !(worker.name || '').toLowerCase().includes(search)) return false
       return !present.has(worker.id)
     })
-  }, [activeWorkers, historyByPerson, historySearch, historyWorkerId])
+  }, [activeWorkers, hideOwnerPlan, historyByPerson, historySearch, historyWorkerId, ownerIds])
 
   const extraRanking = useMemo(() => {
     const counts = extraCountsByWorker(jobs, extraYear)
@@ -941,12 +952,13 @@ export default function WorkPlan({
         early: threshold != null && (counts.get(worker.id) || 0) >= threshold,
       }))
       .filter(row => {
+        if (hideOwnerPlan && ownerIds.has(row.worker.id)) return false
         if (historyWorkerId && row.worker.id !== historyWorkerId) return false
         if (search && !(row.worker.name || '').toLowerCase().includes(search)) return false
         return true
       })
       .sort((a, b) => b.count - a.count || (a.worker.name || '').localeCompare(b.worker.name || ''))
-  }, [activeWorkers, extraYear, historySearch, historyWorkerId, jobs])
+  }, [activeWorkers, extraYear, hideOwnerPlan, historySearch, historyWorkerId, jobs, ownerIds])
 
   const resetForm = () => {
     setEditingId(null)
@@ -1439,6 +1451,7 @@ export default function WorkPlan({
   }, [t])
 
   const handleSaveHours = async (row, start, end) => {
+    if (hideOwnerPlan && ownerIds.has(row.worker_id)) return
     if (!isAdmin && currentWorker?.id && row.worker_id && row.worker_id !== currentWorker.id) return
     setConfirmingId(row.id)
     const payload = {
@@ -1603,6 +1616,7 @@ export default function WorkPlan({
     event.preventDefault()
     if (!isAdmin) return
     const workerId = absenceForm.worker_id
+    if (hideOwnerPlan && ownerIds.has(workerId)) return
     if (!workerId) return alert(t('planWorkerMissing'))
     const reason = absenceForm.reason === 'vacation' ? 'vacation' : 'sick'
     const reasonLabel = reason === 'vacation' ? t('absenceVacation') : t('absenceSick')
@@ -1729,12 +1743,23 @@ export default function WorkPlan({
     if (!name) return alert(t('inviteNameMissing'))
     setInviteBusy(true)
     const { data, error } = await supabase.rpc('create_worker_invite', { p_name: name })
+    if (!error && invitePrivileged && canGrantPlanner) {
+      const { data: created } = await supabase
+        .from('workers')
+        .select('id, name, email, role')
+        .ilike('name', name)
+      const target = (created ?? []).find(item => String(item.name || '').trim().toLowerCase() === name.toLowerCase())
+      if (target?.id) {
+        await supabase.from('workers').update({ role: PLANNER_INVITE_ROLE }).eq('id', target.id)
+      }
+    }
     setInviteBusy(false)
     if (error) {
       alert(`${t('planSaveError')} ${error.message}`)
       return
     }
     setInviteName('')
+    setInvitePrivileged(false)
     onReloadWorkers?.()
     if (data) {
       const token = String(data)
@@ -1810,7 +1835,7 @@ export default function WorkPlan({
       return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '')
     })
   const setupExtra = t('planSetupExtra')
-  const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today)
+  const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today && !(hideOwnerPlan && ownerIds.has(item.worker_id)))
   const pendingInvites = activeWorkers.filter(worker => !String(worker.email || '').trim())
 
   const renderAdminJob = (job) => {
@@ -1950,7 +1975,7 @@ export default function WorkPlan({
               {t('absenceWorker')}
               <select value={absenceForm.worker_id} onChange={e => setAbsenceForm(current => ({ ...current, worker_id: e.target.value }))} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100">
                 <option value="">{t('workerSelect')}</option>
-                {activeWorkers.map(worker => (
+                {activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id)).map(worker => (
                   <option key={worker.id} value={worker.id}>{worker.name}</option>
                 ))}
               </select>
@@ -2095,6 +2120,20 @@ export default function WorkPlan({
               {inviteBusy ? '...' : t('inviteWhatsApp')}
             </button>
           </div>
+          {canGrantPlanner && (
+            <label className="mt-3 flex items-start gap-2 rounded-xl bg-slate-950/70 px-3 py-3 text-sm text-slate-100">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={invitePrivileged}
+                onChange={e => setInvitePrivileged(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">{t('invitePrivileged')}</span>
+                {t('invitePrivilegedHint') ? <span className="mt-1 block text-xs text-slate-400">{t('invitePrivilegedHint')}</span> : null}
+              </span>
+            </label>
+          )}
           {inviteCopied === 'new' && (
             <p className="mt-2 text-xs text-cyan-100">{t('inviteCopied')}</p>
           )}
@@ -2102,7 +2141,10 @@ export default function WorkPlan({
             <div className="mt-3 space-y-2">
               {pendingInvites.map(worker => (
                 <div key={worker.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-950/50 px-3 py-2">
-                  <p className="text-sm text-white">{worker.name} · {t('invitePending')}</p>
+                  <p className="text-sm text-white">
+                    {worker.name} · {t('invitePending')}
+                    {isPlannerRole(worker.role) ? ` · ${t('invitePlannerBadge')}` : ''}
+                  </p>
                   <div className="flex shrink-0 gap-3">
                     <button
                       type="button"
@@ -2146,11 +2188,12 @@ export default function WorkPlan({
           boardOpenId={boardOpenId}
           onToggleJob={(id) => setBoardOpenId(current => current === id ? '' : id)}
           onSelectDate={(date) => {
-            if (date < today) return
             setBoardDate(date)
             setBoardOpenId('')
             setForm(current => ({ ...current, work_date: date }))
           }}
+          hideOwnerHours={hideOwnerPlan}
+          ownerIds={ownerIds}
           onNewJob={() => {
             setEditingId(null)
             setDuplicating(false)
@@ -2687,7 +2730,7 @@ export default function WorkPlan({
               {t('workers')}
               <select value={historyWorkerId} onChange={e => { setHistoryWorkerId(e.target.value); setHistorySearch('') }} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100">
                 <option value="">{t('historyAllWorkers')}</option>
-                {workers.map(worker => (
+                {workers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id)).map(worker => (
                   <option key={worker.id} value={worker.id}>{worker.name}</option>
                 ))}
               </select>

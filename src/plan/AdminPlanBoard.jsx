@@ -39,13 +39,14 @@ function dayMinutesForWorker(workerId, jobs) {
   return counted ? total : null
 }
 
-function plannedMinutesForDay(jobs) {
+function plannedMinutesForDay(jobs, skipIds) {
   let total = 0
   let counted = false
   for (const job of jobs) {
     if (job?.status === 'cancelled' || job?.status === 'canceled') continue
     const people = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
     for (const row of people) {
+      if (skipIds?.has(row.worker_id)) continue
       const range = assignmentRange(row, job)
       if (!range.start || !range.end) continue
       const minutes = durationMinutes(job.work_date, range.start, range.end)
@@ -97,8 +98,11 @@ export default function AdminPlanBoard({
   workerName,
   renderJob,
   jobFormOpen = false,
+  hideOwnerHours = false,
+  ownerIds,
   children,
 }) {
+  const hiddenOwnerIds = ownerIds instanceof Set ? ownerIds : new Set(ownerIds || [])
   const [peopleOpen, setPeopleOpen] = useState(false)
   const search = rosterSearch.trim().toLowerCase()
   const sortedJobs = useMemo(
@@ -117,21 +121,27 @@ export default function AdminPlanBoard({
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(item => {
         const jobCount = sortedJobs.filter(job => jobHasWorker(job, item.id)).length
-        const minutes = item.status === 'working' ? dayMinutesForWorker(item.id, sortedJobs) : null
+        const minutes = item.status === 'working' && !(hideOwnerHours && hiddenOwnerIds.has(item.id))
+          ? dayMinutesForWorker(item.id, sortedJobs)
+          : null
         return { ...item, jobCount, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
       })
-  }, [dayRoster, rosterFilter, search, sortedJobs])
+  }, [dayRoster, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, sortedJobs])
 
-  const dayMinutes = useMemo(() => plannedMinutesForDay(sortedJobs), [sortedJobs])
+  const dayMinutes = useMemo(
+    () => plannedMinutesForDay(sortedJobs, hideOwnerHours ? hiddenOwnerIds : null),
+    [hiddenOwnerIds, hideOwnerHours, sortedJobs],
+  )
   const shortPeople = useMemo(
     () => dayRoster.working
+      .filter(item => !(hideOwnerHours && hiddenOwnerIds.has(item.id)))
       .map(item => {
         const minutes = dayMinutesForWorker(item.id, sortedJobs)
         return { ...item, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
       })
       .filter(item => item.short)
       .sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || '')),
-    [dayRoster.working, sortedJobs],
+    [dayRoster.working, hiddenOwnerIds, hideOwnerHours, sortedJobs],
   )
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
@@ -169,7 +179,6 @@ export default function AdminPlanBoard({
         onSelectDate={onSelectDate}
         marks={boardMarks}
         compact
-        hidePast
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
