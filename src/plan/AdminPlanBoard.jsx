@@ -8,8 +8,10 @@ import {
   formatClock,
   jobTone,
   longWeekdayDate,
+  isoDate,
   minutesLabel,
   rowWorkMinutes,
+  selfLogMinutes,
   shortPlace,
   workerInitials,
 } from './planUtils'
@@ -24,7 +26,7 @@ const TONE = {
 
 const DAY_TARGET_MINUTES = 7 * 60
 
-function dayMinutesForWorker(workerId, jobs) {
+function dayMinutesForWorker(workerId, jobs, extraMinutes = 0) {
   let total = 0
   let counted = false
   for (const job of jobs) {
@@ -36,7 +38,23 @@ function dayMinutesForWorker(workerId, jobs) {
     total += minutes
     counted = true
   }
+  if (extraMinutes) {
+    total += extraMinutes
+    counted = true
+  }
   return counted ? total : null
+}
+
+function selfLogMinutesForDay(logs, workerId, date) {
+  if (!workerId || !date) return 0
+  let total = 0
+  for (const item of logs || []) {
+    if (item.worker_id && item.worker_id !== workerId) continue
+    if (isoDate(item.work_date) !== date) continue
+    const minutes = selfLogMinutes(item)
+    if (minutes) total += minutes
+  }
+  return total
 }
 
 function plannedMinutesForDay(jobs, skipIds) {
@@ -100,9 +118,17 @@ export default function AdminPlanBoard({
   jobFormOpen = false,
   hideOwnerHours = false,
   ownerIds,
+  selfLogs = [],
+  currentWorkerId = '',
+  currentWorkerName = '',
   children,
 }) {
   const hiddenOwnerIds = ownerIds instanceof Set ? ownerIds : new Set(ownerIds || [])
+  const extraMinutesFor = (workerId) => (
+    workerId && workerId === currentWorkerId
+      ? selfLogMinutesForDay(selfLogs, workerId, liveBoardDate)
+      : 0
+  )
   const [peopleOpen, setPeopleOpen] = useState(false)
   const search = rosterSearch.trim().toLowerCase()
   const sortedJobs = useMemo(
@@ -121,28 +147,45 @@ export default function AdminPlanBoard({
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(item => {
         const jobCount = sortedJobs.filter(job => jobHasWorker(job, item.id)).length
-        const minutes = item.status === 'working' && !(hideOwnerHours && hiddenOwnerIds.has(item.id))
-          ? dayMinutesForWorker(item.id, sortedJobs)
-          : null
-        return { ...item, jobCount, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
+        const hideHours = hideOwnerHours && hiddenOwnerIds.has(item.id)
+        const extra = extraMinutesFor(item.id)
+        const minutes = hideHours
+          ? null
+          : item.status === 'working' || extra
+            ? dayMinutesForWorker(item.id, sortedJobs, extra)
+            : (item.id === currentWorkerId ? (extra || 0) : null)
+        const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
+        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES }
       })
-  }, [dayRoster, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, sortedJobs])
+  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, sortedJobs])
 
   const dayMinutes = useMemo(
     () => plannedMinutesForDay(sortedJobs, hideOwnerHours ? hiddenOwnerIds : null),
     [hiddenOwnerIds, hideOwnerHours, sortedJobs],
   )
-  const shortPeople = useMemo(
-    () => dayRoster.working
-      .filter(item => !(hideOwnerHours && hiddenOwnerIds.has(item.id)))
-      .map(item => {
-        const minutes = dayMinutesForWorker(item.id, sortedJobs)
-        return { ...item, minutes, short: minutes != null && minutes < DAY_TARGET_MINUTES }
-      })
-      .filter(item => item.short)
-      .sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || '')),
-    [dayRoster.working, hiddenOwnerIds, hideOwnerHours, sortedJobs],
-  )
+  const shortPeople = useMemo(() => {
+    const rows = []
+    const seen = new Set()
+    const add = (item, minutes) => {
+      if (!item?.id || seen.has(item.id)) return
+      if (hideOwnerHours && hiddenOwnerIds.has(item.id)) return
+      if (minutes == null || minutes >= DAY_TARGET_MINUTES) return
+      seen.add(item.id)
+      rows.push({ ...item, minutes, short: true })
+    }
+    for (const item of dayRoster.working) {
+      add(item, dayMinutesForWorker(item.id, sortedJobs, extraMinutesFor(item.id)))
+    }
+    const self = [...dayRoster.working, ...dayRoster.free, ...dayRoster.off]
+      .find(item => item.id === currentWorkerId)
+      || (currentWorkerId ? { id: currentWorkerId, name: currentWorkerName || t('planSelf') } : null)
+    if (self && !dayRoster.off.some(item => item.id === currentWorkerId)) {
+      const extra = extraMinutesFor(self.id)
+      const minutes = dayMinutesForWorker(self.id, sortedJobs, extra)
+      add(self, minutes != null ? minutes : 0)
+    }
+    return rows.sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || ''))
+  }, [currentWorkerId, currentWorkerName, dayRoster.free, dayRoster.off, dayRoster.working, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, sortedJobs, t])
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs

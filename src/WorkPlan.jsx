@@ -2194,6 +2194,9 @@ export default function WorkPlan({
           }}
           hideOwnerHours={hideOwnerPlan}
           ownerIds={ownerIds}
+          selfLogs={selfLogs}
+          currentWorkerId={currentWorker?.id || ''}
+          currentWorkerName={currentWorker?.name || ''}
           onNewJob={() => {
             setEditingId(null)
             setDuplicating(false)
@@ -2496,6 +2499,7 @@ export default function WorkPlan({
             savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
+            allowPastHours
           />
         </div>
       )}

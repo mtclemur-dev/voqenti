@@ -444,6 +444,7 @@ export default function EmployeeHome({
   savingSelf = false,
   boardDate,
   onBoardDateChange,
+  allowPastHours = false,
 }) {
   const [now] = useState(() => DateTime.now().setZone('Europe/Berlin'))
   const today = now.toISODate()
@@ -461,8 +462,10 @@ export default function EmployeeHome({
   }, [])
   const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today && item.worker_id === currentWorker?.id)
   const sorted = useMemo(
-    () => [...myPlan].filter(row => !isJobCancelled(row.work_jobs) && isoDate(row.work_jobs?.work_date) >= today).sort(sortPlanRows),
-    [myPlan, today],
+    () => [...myPlan]
+      .filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today))
+      .sort(sortPlanRows),
+    [allowPastHours, myPlan, today],
   )
   useEffect(() => {
     if (notifyPerm !== 'granted') return undefined
@@ -495,7 +498,13 @@ export default function EmployeeHome({
     counts[date] = (counts[date] || 0) + 1
     return counts
   }, {})
-  const liveDate = selectedDate < today ? today : selectedDate
+  for (const item of selfLogs) {
+    const date = isoDate(item.work_date)
+    if (!date || (!allowPastHours && date < today)) continue
+    boardCounts[date] = (boardCounts[date] || 0) + 1
+  }
+  const liveDate = allowPastHours ? selectedDate : (selectedDate < today ? today : selectedDate)
+  const hoursDate = allowPastHours ? liveDate : today
   const todayRows = sorted.filter(row => isoDate(row.work_jobs?.work_date) === today)
   const otherDayRows = liveDate === today ? [] : sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)
   const weekDays = berlinWeekDays(berlinWeekStart(today))
@@ -590,7 +599,7 @@ export default function EmployeeHome({
           t={t}
           language={language}
           today={today}
-          date={today}
+          date={hoursDate}
           objects={objects}
           logs={selfLogs}
           onSave={onSaveSelfLog}
@@ -669,11 +678,11 @@ export default function EmployeeHome({
         today={today}
         selectedDate={liveDate}
         onSelectDate={(date) => {
-          if (date < today) return
+          if (!allowPastHours && date < today) return
           setBoardDate(date)
         }}
         counts={boardCounts}
-        hidePast
+        hidePast={!allowPastHours}
       />
 
       {liveDate !== today && (
