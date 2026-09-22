@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -1234,16 +1234,19 @@ export default function WorkPlan({
         .update({ seen_at: null, updated_at: new Date().toISOString() })
         .eq('job_id', jobId)
         .in('worker_id', form.worker_ids)
-      await supabase.from('work_notifications').insert(
-        form.worker_ids.map(worker_id => ({
-          audience: 'worker',
-          worker_id,
-          title: 'notifyPlanUpdated',
-          body: [formatDisplayDate(payload.work_date), payload.location_text].filter(Boolean).join(' · '),
-          kind: 'plan',
-          job_id: jobId,
-        })),
-      )
+      const noticeIds = form.worker_ids.filter(id => !skipPlanNotice(workers.find(item => item.id === id)))
+      if (noticeIds.length) {
+        await supabase.from('work_notifications').insert(
+          noticeIds.map(worker_id => ({
+            audience: 'worker',
+            worker_id,
+            title: 'notifyPlanUpdated',
+            body: [formatDisplayDate(payload.work_date), payload.location_text].filter(Boolean).join(' · '),
+            kind: 'plan',
+            job_id: jobId,
+          })),
+        )
+      }
     }
 
     if (editingId && form.applyTimeToAll) {
@@ -1262,14 +1265,16 @@ export default function WorkPlan({
           alert(`${t('planSaveError')} ${seriesError.message}`)
           return
         }
-        const notes = series.flatMap(job => assignedWorkerIds(job).map(worker_id => ({
-          audience: 'worker',
-          worker_id,
-          title: 'notifyPlanUpdated',
-          body: [formatDisplayDate(job.work_date), job.location_text || payload.location_text].filter(Boolean).join(' · '),
-          kind: 'plan',
-          job_id: job.id,
-        })))
+        const notes = series.flatMap(job => assignedWorkerIds(job)
+          .filter(id => !skipPlanNotice(workers.find(item => item.id === id)))
+          .map(worker_id => ({
+            audience: 'worker',
+            worker_id,
+            title: 'notifyPlanUpdated',
+            body: [formatDisplayDate(job.work_date), job.location_text || payload.location_text].filter(Boolean).join(' · '),
+            kind: 'plan',
+            job_id: job.id,
+          })))
         if (notes.length) await supabase.from('work_notifications').insert(notes)
       }
     }

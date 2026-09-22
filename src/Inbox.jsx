@@ -62,9 +62,7 @@ export default function Inbox({
       .order('created_at', { ascending: false })
       .limit(40)
 
-    if (isAdmin && workerId) {
-      query = query.or(`audience.eq.planner,worker_id.eq.${workerId}`)
-    } else if (isAdmin) {
+    if (isAdmin) {
       query = query.eq('audience', 'planner')
     } else if (workerId) {
       query = query.eq('worker_id', workerId).eq('audience', 'worker')
@@ -77,9 +75,7 @@ export default function Inbox({
     let { data, error } = await query
     if (error && !isMissingTable(error)) {
       query = supabase.from('work_notifications').select('*').order('created_at', { ascending: false }).limit(40)
-      if (isAdmin && workerId) {
-        query = query.or(`audience.eq.planner,worker_id.eq.${workerId}`)
-      } else if (isAdmin) {
+      if (isAdmin) {
         query = query.eq('audience', 'planner')
       } else if (workerId) {
         query = query.eq('worker_id', workerId).eq('audience', 'worker')

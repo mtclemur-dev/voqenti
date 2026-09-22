@@ -208,6 +208,10 @@ export function isOfficePlanner(worker) {
   return String(worker.role || '').toLowerCase() === PLANNER_INVITE_ROLE
 }
 
+export function skipPlanNotice(worker) {
+  return isOwnerWorker(worker) || isOfficePlanner(worker)
+}
+
 export function ownerWorkerIdSet(workers = []) {
   return new Set(workers.filter(isOwnerWorker).map(worker => worker.id).filter(Boolean))
 }

@@ -92,8 +92,19 @@ BEGIN
 
   IF (TG_OP = 'INSERT' AND NEW.status IN ('assigned', 'approved'))
      OR (TG_OP = 'UPDATE' AND NEW.status IN ('assigned', 'approved') AND OLD.status NOT IN ('assigned', 'approved')) THEN
-    INSERT INTO public.work_notifications (audience, worker_id, title, body, kind, job_id)
-    VALUES ('worker', NEW.worker_id, 'notifyPlan', concat_ws(' · ', job_when, job_place), 'plan', NEW.job_id);
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.workers w
+      WHERE w.id = NEW.worker_id
+        AND (
+          lower(COALESCE(w.email, '')) = 'mtclemur@gmail.com'
+          OR lower(COALESCE(w.name, '')) LIKE '%plamadeala victor%'
+          OR lower(COALESCE(w.role, '')) = 'admin'
+        )
+    ) THEN
+      INSERT INTO public.work_notifications (audience, worker_id, title, body, kind, job_id)
+      VALUES ('worker', NEW.worker_id, 'notifyPlan', concat_ws(' · ', job_when, job_place), 'plan', NEW.job_id);
+    END IF;
   END IF;
 
   IF TG_OP = 'UPDATE' AND NEW.status = 'declined' AND OLD.status IS DISTINCT FROM 'declined' THEN
