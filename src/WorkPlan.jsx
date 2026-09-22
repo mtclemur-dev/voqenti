@@ -1298,13 +1298,21 @@ export default function WorkPlan({
     loadData(view === 'history' ? 'history' : 'live')
   }
 
+  const myOpenRow = (job) => (
+    (job?.work_job_assignees ?? []).find(row => row.worker_id === currentWorker?.id)
+    || myRows.find(row => row.job_id === job?.id)
+    || null
+  )
+
   const handleApply = async (job) => {
     if (!currentWorker?.id) {
       alert(t('planWorkerMissing'))
       return
     }
-    const already = myRows.some(row =>
-      ['assigned', 'approved'].includes(row.status) && row.work_jobs?.work_date === job.work_date,
+    const mine = myOpenRow(job)
+    if (mine && ['assigned', 'approved', 'pending'].includes(mine.status)) return
+    const already = (isAdmin ? myPlan : myRows).some(row =>
+      ['assigned', 'approved'].includes(row.status) && isoDate(row.work_jobs?.work_date) === isoDate(job.work_date),
     )
     if (already && !window.confirm(t('planAlreadyBooked'))) return
     if (absenceOnDate(absences, currentWorker.id, job.work_date)) {
@@ -1314,7 +1322,7 @@ export default function WorkPlan({
     const { error } = await supabase.from('work_job_assignees').insert([{
       job_id: job.id,
       worker_id: currentWorker.id,
-      status: 'pending',
+      status: isAdmin ? 'assigned' : 'pending',
     }])
     if (error) {
       alert(`${t('planApplyError')} ${error.message}`)
@@ -2646,7 +2654,7 @@ export default function WorkPlan({
               {t('openPostsEmpty')}
             </div>
           ) : listedOpenJobs.map(job => {
-            const mine = myRows.find(row => row.job_id === job.id)
+            const mine = myOpenRow(job)
             const remaining = Math.max(0, (job.needed_count ?? 1) - (job.filled_count ?? 0))
             const publicAt = job.public_at ? DateTime.fromISO(job.public_at).setZone('Europe/Berlin') : null
             const earlyWindow = publicAt?.isValid && publicAt > DateTime.now().setZone('Europe/Berlin')
@@ -2673,21 +2681,24 @@ export default function WorkPlan({
                   </a>
                 )}
                 {job.task_text && <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-amber-50">{job.task_text}</p>}
-                {isAdmin ? (
+                {isAdmin && (
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => startEditNeed(job)} className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white">{t('edit')}</button>
                     <button type="button" onClick={() => startDuplicateNeed(job)} className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white">{t('planCopy')}</button>
                     <button type="button" onClick={() => handleCancelJob(job)} className="col-span-2 rounded-md bg-rose-500/20 px-3 py-2 text-sm font-semibold text-rose-100">{t('planCancel')}</button>
                   </div>
+                )}
+                {['assigned', 'approved'].includes(mine?.status) ? (
+                  <div className="mt-3 rounded-md bg-emerald-500/20 px-3 py-2 text-center text-sm font-semibold text-emerald-50">{t('planJoined')}</div>
                 ) : mine?.status === 'pending' ? (
-                  <div className="mt-4 rounded-md bg-amber-500/20 px-3 py-2 text-center text-sm font-semibold text-amber-50">{t('planWaiting')}</div>
+                  <div className="mt-3 rounded-md bg-amber-500/20 px-3 py-2 text-center text-sm font-semibold text-amber-50">{t('planWaiting')}</div>
                 ) : absenceOnDate(absences, currentWorker?.id, job.work_date) ? (
-                  <div className="mt-4 rounded-md bg-rose-500/20 px-3 py-2 text-center text-sm font-semibold text-rose-100">{t('absenceBlockedApply')}</div>
-                ) : (
-                  <button type="button" onClick={() => handleApply(job)} className="mt-4 w-full rounded-xl bg-amber-400 px-4 py-3 font-semibold text-slate-950">
+                  <div className="mt-3 rounded-md bg-rose-500/20 px-3 py-2 text-center text-sm font-semibold text-rose-100">{t('absenceBlockedApply')}</div>
+                ) : currentWorker?.id ? (
+                  <button type="button" onClick={() => handleApply(job)} className="mt-3 w-full rounded-xl bg-amber-400 px-4 py-3 font-semibold text-slate-950">
                     {t('planJoin')}
                   </button>
-                )}
+                ) : null}
               </article>
             )
           })}
