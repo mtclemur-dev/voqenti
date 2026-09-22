@@ -357,6 +357,30 @@ export function isWeekend(value) {
   return dt.isValid && dt.weekday >= 6
 }
 
+export function workdaysInRange(from, until, { keepSingleWeekend = true } = {}) {
+  const start = isoDate(from)
+  if (!start) return []
+  const endRaw = isoDate(until) || start
+  const first = DateTime.fromISO(start, { zone: 'Europe/Berlin' })
+  const last = DateTime.fromISO(endRaw < start ? start : endRaw, { zone: 'Europe/Berlin' })
+  if (!first.isValid || !last.isValid) return []
+  const dates = []
+  for (let day = first; day <= last; day = day.plus({ days: 1 })) {
+    if (day.weekday < 6) dates.push(day.toISODate())
+  }
+  if (!dates.length && keepSingleWeekend && start === last.toISODate()) return [start]
+  return dates
+}
+
+export function nextWeekday(value) {
+  const start = isoDate(value)
+  let day = (start
+    ? DateTime.fromISO(start, { zone: 'Europe/Berlin' })
+    : DateTime.now().setZone('Europe/Berlin')).plus({ days: 1 })
+  while (day.isValid && day.weekday >= 6) day = day.plus({ days: 1 })
+  return day.toISODate() || ''
+}
+
 export function dayNumber(value) {
   const iso = isoDate(value)
   if (!iso) return ''

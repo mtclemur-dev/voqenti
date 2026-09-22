@@ -4,28 +4,31 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, debounce, firstName, formatClock, formatUpdatedAt, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, spanClockRange, workdaysInRange } from './plan/planUtils'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
 
-const emptyForm = () => ({
-  work_date: DateTime.now().setZone('Europe/Berlin').toISODate(),
-  start_time: '',
-  end_time: '',
-  object_id: '',
-  location_text: '',
-  task_text: '',
-  bring_text: '',
-  remember_text: '',
-  notes_text: '',
-  worker_ids: [],
-  extraDays: 0,
-  applyTimeToAll: false,
-  worker_hours: {},
-})
+const emptyForm = () => {
+  const today = DateTime.now().setZone('Europe/Berlin').toISODate()
+  return {
+    work_date: today,
+    start_time: '',
+    end_time: '',
+    object_id: '',
+    location_text: '',
+    task_text: '',
+    bring_text: '',
+    remember_text: '',
+    notes_text: '',
+    worker_ids: [],
+    until_date: today,
+    applyTimeToAll: false,
+    worker_hours: {},
+  }
+}
 
 const emptyAbsence = () => ({
   worker_id: '',
@@ -134,7 +137,7 @@ function restoreJobForm(saved) {
     remember_text: stringOr(saved.remember_text),
     notes_text: stringOr(saved.notes_text),
     worker_ids: Array.isArray(saved.worker_ids) ? saved.worker_ids.filter(id => typeof id === 'string') : [],
-    extraDays: Number.isFinite(Number(saved.extraDays)) ? Math.max(0, Math.min(60, Number(saved.extraDays))) : 0,
+    until_date: isoDateOr(saved.until_date, isoDateOr(saved.work_date, base.until_date)),
     applyTimeToAll: Boolean(saved.applyTimeToAll),
     worker_hours: hours,
   }
@@ -173,13 +176,6 @@ function jobMapsHref(job, objects) {
   const query = object?.address || job.location_text || job.object_name
   if (!query) return null
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
-}
-
-function extraDatesAfter(startIso, extraDays) {
-  const n = Math.max(0, Number(extraDays) || 0)
-  const start = isoDate(startIso)
-  if (!start || !n) return []
-  return Array.from({ length: n }, (_, index) => plusDays(start, index + 1))
 }
 
 function isActiveAssignedJob(job) {
@@ -335,13 +331,15 @@ function formatDisplayDate(value) {
 const pickerStyle = { colorScheme: 'light', appearance: 'auto', WebkitAppearance: 'auto' }
 const pickerClass = 'min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900'
 
-function DateField({ label, value, onChange, className = 'block text-xs text-slate-400' }) {
+function DateField({ label, value, onChange, min, max, className = 'block text-xs text-slate-400' }) {
   return (
     <label className={className}>
       {label}
       <input
         type="date"
         value={isoDate(value)}
+        min={isoDate(min) || undefined}
+        max={isoDate(max) || undefined}
         onChange={e => onChange(isoDate(e.target.value))}
         className={`${pickerClass} mt-1`}
         style={pickerStyle}
@@ -862,6 +860,10 @@ export default function WorkPlan({
     () => relatedSeriesJobs(jobs, jobs.find(job => job.id === editingId), today),
     [editingId, jobs, today],
   )
+  const formWorkdays = useMemo(
+    () => workdaysInRange(form.work_date, form.until_date || form.work_date),
+    [form.until_date, form.work_date],
+  )
 
   const historyEntries = useMemo(() => {
     const search = historySearch.trim().toLowerCase()
@@ -1004,7 +1006,7 @@ export default function WorkPlan({
       .filter(row => ['assigned', 'approved'].includes(row.status))
       .map(row => row.worker_id)
       .filter(id => !absenceOnDate(absences, id, workDate)),
-    extraDays: 0,
+    until_date: workDate,
     applyTimeToAll: false,
     worker_hours: workerHoursFromAssignees({ ...job, work_job_assignees: (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status) && !absenceOnDate(absences, row.worker_id, workDate)) }),
   })
@@ -1023,7 +1025,7 @@ export default function WorkPlan({
   const startDuplicate = (job) => {
     setEditingId(null)
     setDuplicating(true)
-    const date = plusDays(job.work_date, 1)
+    const date = nextWeekday(job.work_date)
     setForm(formFromJob(job, date))
     if (date) setBoardDate(date)
     setAdminTab('board')
@@ -1067,14 +1069,19 @@ export default function WorkPlan({
     event.preventDefault()
     if (!isAdmin) return
     if (!form.work_date) return alert(t('planDateRequired'))
+    const planDays = workdaysInRange(form.work_date, form.until_date || form.work_date)
+    if (!planDays.length) return alert(t('planNoWorkdays'))
+    if (planDays.length > 60) return alert(t('planRangeTooLong'))
+    const firstDate = editingId ? form.work_date : planDays[0]
+    const extraDates = planDays.filter(day => day !== firstDate)
     if (!form.location_text.trim() && !form.object_id) return alert(t('planPlaceRequired'))
     if (form.worker_ids.length === 0) return alert(t('planWorkersRequired'))
-    const blocked = form.worker_ids.filter(id => absenceOnDate(absences, id, form.work_date))
+    const blocked = form.worker_ids.filter(id => absenceOnDate(absences, id, firstDate))
     if (blocked.length) {
       return alert(`${t('absenceBlocked')}: ${blocked.map(workerName).join(', ')}`)
     }
     const overlapping = form.worker_ids.map(id => {
-      const hit = overlapJobForWorker(id, form.work_date, formRangeFor(id), editingId)
+      const hit = overlapJobForWorker(id, firstDate, formRangeFor(id), editingId)
       return hit ? { id, hit } : null
     }).filter(Boolean)
     if (overlapping.length) {
@@ -1089,7 +1096,7 @@ export default function WorkPlan({
     const hoursList = form.worker_ids.map(id => formRangeFor(id))
     const spanned = spanClockRange(hoursList, { start: form.start_time, end: form.end_time })
     const payload = {
-      work_date: form.work_date,
+      work_date: firstDate,
       start_time: spanned.start || form.start_time || null,
       end_time: spanned.end || form.end_time || null,
       object_id: form.object_id || null,
@@ -1244,7 +1251,7 @@ export default function WorkPlan({
         if (notes.length) await supabase.from('work_notifications').insert(notes)
       }
     }
-    if (Number(form.extraDays) > 0) {
+    if (extraDates.length) {
       await copyJobToDates(
         {
           ...result.data,
@@ -1258,7 +1265,7 @@ export default function WorkPlan({
             }
           }),
         },
-        extraDatesAfter(form.work_date, form.extraDays),
+        extraDates,
       )
     }
 
@@ -1506,7 +1513,7 @@ export default function WorkPlan({
   }
 
   const handleAddNextDay = async (job) => {
-    const nextDate = plusDays(job.work_date, 1)
+    const nextDate = nextWeekday(job.work_date)
     if (!nextDate) return
     setCopyingId(job.id)
     await copyJobToDates(job, [nextDate])
@@ -2286,7 +2293,11 @@ export default function WorkPlan({
           onSelectDate={(date) => {
             setBoardDate(date)
             setBoardOpenId('')
-            setForm(current => ({ ...current, work_date: date }))
+            setForm(current => ({
+              ...current,
+              work_date: date,
+              until_date: !current.until_date || current.until_date < date ? date : current.until_date,
+            }))
           }}
           hideOwnerHours={hideOwnerPlan}
           ownerIds={ownerIds}
@@ -2295,7 +2306,7 @@ export default function WorkPlan({
           onNewJob={() => {
             setEditingId(null)
             setDuplicating(false)
-            setForm({ ...emptyForm(), work_date: liveBoardDate })
+            setForm({ ...emptyForm(), work_date: liveBoardDate, until_date: liveBoardDate })
             setJobFormOpen(true)
           }}
           objects={objects}
@@ -2320,25 +2331,41 @@ export default function WorkPlan({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <DateField
-              label={t('planDate')}
+              label={t('planDateFrom')}
               value={form.work_date}
+              max={form.until_date}
               onChange={value => {
-                setField('work_date', value)
+                setForm(current => ({
+                  ...current,
+                  work_date: value,
+                  until_date: !current.until_date || current.until_date < value ? value : current.until_date,
+                }))
                 if (value) setBoardDate(value)
               }}
             />
-            <div className="grid grid-cols-2 gap-2">
-              <TimeField
-                label={t('planStart')}
-                value={form.start_time}
-                onChange={value => setField('start_time', value)}
-              />
-              <TimeField
-                label={t('planEnd')}
-                value={form.end_time}
-                onChange={value => setField('end_time', value)}
-              />
-            </div>
+            <DateField
+              label={t('planDateUntil')}
+              value={form.until_date || form.work_date}
+              min={form.work_date}
+              onChange={value => setField('until_date', !value || value < form.work_date ? form.work_date : value)}
+            />
+          </div>
+          {formWorkdays.length > 1 && (
+            <p className="mt-2 text-xs text-cyan-100">
+              {t('planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
+            </p>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <TimeField
+              label={t('planStart')}
+              value={form.start_time}
+              onChange={value => setField('start_time', value)}
+            />
+            <TimeField
+              label={t('planEnd')}
+              value={form.end_time}
+              onChange={value => setField('end_time', value)}
+            />
           </div>
           {form.worker_ids.length > 0 && (
             <button
@@ -2509,24 +2536,6 @@ export default function WorkPlan({
               })}
             </div>
           )}
-
-          <label className="mt-3 block text-xs text-slate-400">
-              {t('planExtraDays')}
-              <select
-                value={form.extraDays}
-                onChange={e => setField('extraDays', Number(e.target.value))}
-                className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              >
-                <option value={0}>0</option>
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-                <option value={3}>3</option>
-                <option value={4}>4</option>
-                <option value={5}>5</option>
-                <option value={6}>6</option>
-                <option value={7}>7</option>
-              </select>
-            </label>
 
           <button
             type="submit"
