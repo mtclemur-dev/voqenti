@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
 import { IconBell, IconUser } from './icons'
 import { firstName, useGreetingKey } from './planUtils'
 
@@ -46,121 +45,45 @@ export function AdminHeader({ t, displayName, unread = 0, onOpenInbox, onOpenPro
   )
 }
 
-function NavMenu({ id, label, active, open, onToggle, children }) {
-  return (
-    <div className="relative" data-nav-menu={id}>
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={onToggle}
-        className={navClass(active, true)}
-      >
-        {label}
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute left-0 z-30 mt-1 min-w-44 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-lg shadow-slate-950/40"
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function menuItemClass(active) {
-  return `block min-h-11 w-full rounded-lg px-3 text-left text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-    active ? 'bg-cyan-600 text-white' : 'text-slate-200 hover:bg-slate-800'
-  }`
-}
-
 export function AdminPrimaryNav({ t, view, onOpenView, showMine = false, showAdminTools = true, inboxOpen = false, onOpenInbox }) {
-  const [menu, setMenu] = useState('')
-  const rootRef = useRef(null)
   const adminViews = ['pontaj', 'reports', 'times', 'materials']
-  const moreActive = ['openPosts', 'guides', 'history', ...adminViews].includes(view)
-  const commActive = view === 'notices' || inboxOpen
-
-  useEffect(() => {
-    setMenu('')
-  }, [view, inboxOpen])
-
-  useEffect(() => {
-    if (!menu) return undefined
-    const onKey = (event) => {
-      if (event.key === 'Escape') setMenu('')
-    }
-    const onPointer = (event) => {
-      if (!rootRef.current?.contains(event.target)) setMenu('')
-    }
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', onPointer)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', onPointer)
-    }
-  }, [menu])
-
-  const openView = (next) => {
-    setMenu('')
-    onOpenView(next)
-  }
-
   return (
-    <nav ref={rootRef} aria-label={t('mainNav')} className="mb-4 flex flex-wrap gap-1.5">
-      <button type="button" onClick={() => openView('plan')} className={navClass(view === 'plan', true)}>
+    <nav aria-label={t('mainNav')} className="mb-4 flex flex-wrap gap-1.5">
+      <button type="button" onClick={() => onOpenView('plan')} className={navClass(view === 'plan', true)}>
         {t('adminNavPlan')}
       </button>
       {showMine && (
-        <button type="button" onClick={() => openView('mine')} className={navClass(view === 'mine', true)}>
+        <button type="button" onClick={() => onOpenView('mine')} className={navClass(view === 'mine', true)}>
           {t('navHome')}
         </button>
       )}
       {showMine && (
-        <button type="button" onClick={() => openView('hours')} className={navClass(view === 'hours', true)}>
+        <button type="button" onClick={() => onOpenView('hours')} className={navClass(view === 'hours', true)}>
           {t('navHours')}
         </button>
       )}
-      <NavMenu
-        id="comm"
-        label={t('adminNavComm')}
-        active={commActive}
-        open={menu === 'comm'}
-        onToggle={() => setMenu(current => current === 'comm' ? '' : 'comm')}
-      >
-        <button type="button" role="menuitem" onClick={() => openView('notices')} className={menuItemClass(view === 'notices')}>
-          {t('notices')}
+      <button type="button" onClick={() => onOpenView('notices')} className={navClass(view === 'notices', true)}>
+        {t('notices')}
+      </button>
+      {onOpenInbox && (
+        <button type="button" onClick={onOpenInbox} className={navClass(inboxOpen, true)}>
+          {t('inbox')}
         </button>
-        {onOpenInbox && (
-          <button type="button" role="menuitem" onClick={() => { setMenu(''); onOpenInbox() }} className={menuItemClass(inboxOpen)}>
-            {t('inbox')}
-          </button>
-        )}
-      </NavMenu>
-      <NavMenu
-        id="more"
-        label={t('adminNavMore')}
-        active={moreActive}
-        open={menu === 'more'}
-        onToggle={() => setMenu(current => current === 'more' ? '' : 'more')}
-      >
-        <button type="button" role="menuitem" onClick={() => openView('openPosts')} className={menuItemClass(view === 'openPosts')}>
-          {t('openPosts')}
+      )}
+      <button type="button" onClick={() => onOpenView('openPosts')} className={navClass(view === 'openPosts', true)}>
+        {t('openPosts')}
+      </button>
+      <button type="button" onClick={() => onOpenView('guides')} className={navClass(view === 'guides', true)}>
+        {t('guides')}
+      </button>
+      <button type="button" onClick={() => onOpenView('history')} className={navClass(view === 'history', true)}>
+        {t('history')}
+      </button>
+      {showAdminTools && (
+        <button type="button" onClick={() => onOpenView('pontaj')} className={navClass(adminViews.includes(view), true)}>
+          {t('adminMenu')}
         </button>
-        <button type="button" role="menuitem" onClick={() => openView('guides')} className={menuItemClass(view === 'guides')}>
-          {t('guides')}
-        </button>
-        <button type="button" role="menuitem" onClick={() => openView('history')} className={menuItemClass(view === 'history')}>
-          {t('history')}
-        </button>
-        {showAdminTools && (
-          <button type="button" role="menuitem" onClick={() => openView('pontaj')} className={menuItemClass(adminViews.includes(view))}>
-            {t('adminMenu')}
-          </button>
-        )}
-      </NavMenu>
+      )}
     </nav>
   )
 }
