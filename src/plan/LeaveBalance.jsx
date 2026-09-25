@@ -56,37 +56,35 @@ export function MyLeaveCard({ t, language, year, worker, absences = [] }) {
     .reduce((sum, item) => sum + vacationDaysInRange(item.start_date, item.end_date, year), 0)
 
   return (
-    <section className={`overflow-hidden rounded-[1.75rem] border border-white/[0.05] bg-gradient-to-b ${tone.wash} to-slate-950/30 px-5 py-7`}>
-      <p className="text-[10px] font-medium uppercase tracking-[0.34em] text-white/35">
-        {t('leaveMyTitle')}
-        <span className="text-white/20"> · {year}</span>
-      </p>
-      <div className="mt-6 flex items-end justify-between gap-6">
+    <section className={`overflow-hidden rounded-2xl border border-white/[0.05] bg-gradient-to-b ${tone.wash} to-slate-950/25 px-4 py-4`}>
+      <div className="flex items-end justify-between gap-4">
         <div>
-          <p className={`text-[3rem] font-light leading-none tabular-nums tracking-tight ${tone.ink}`}>{balance.left}</p>
-          <p className="mt-2 text-[13px] font-light text-white/50">{leftLabel(balance.left, t)}</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
+            {t('leaveMyTitle')}
+            <span className="text-white/20"> · {year}</span>
+          </p>
+          <p className={`mt-2 text-2xl font-light leading-none tabular-nums ${tone.ink}`}>{balance.left}</p>
+          <p className="mt-1.5 text-[12px] font-light text-white/45">{leftLabel(balance.left, t)}</p>
         </div>
-        <p className="pb-1 text-right text-[12px] font-light leading-5 text-white/32">
+        <p className="pb-0.5 text-right text-[12px] font-light text-white/30">
           {daysLabel(balance.used, t)}
-          <span className="text-white/20"> / {daysLabel(balance.limit, t)}</span>
+          <span className="text-white/18"> / {daysLabel(balance.limit, t)}</span>
         </p>
       </div>
-      <RemainBar used={balance.used} limit={balance.limit} tone={tone} />
-      {t('leaveMyHint') ? <p className="mt-5 text-[13px] font-light leading-6 text-white/38">{t('leaveMyHint')}</p> : null}
+      <span className="mt-3 block h-px bg-white/[0.07]" aria-hidden="true">
+        <span className={`block h-px ${tone.bar}`} style={{ width: `${balance.limit ? Math.min(100, Math.round((balance.used / balance.limit) * 100)) : 0}%` }} />
+      </span>
       {sickDays > 0 && (
-        <p className="mt-1 text-[12px] font-light text-rose-100/45">{t('leaveSickDays').replace('{days}', String(sickDays))}</p>
+        <p className="mt-2 text-[12px] font-light text-rose-100/45">{t('leaveSickDays').replace('{days}', String(sickDays))}</p>
       )}
-
-      {mine.length === 0 ? (
-        <p className="mt-7 text-[13px] font-light text-white/28">{t('leaveMyEmpty')}</p>
-      ) : (
-        <div className="mt-7 space-y-6">
-          {upcoming.length > 0 && (
-            <LeaveList t={t} language={language} year={year} title={t('leaveUpcoming')} items={upcoming} />
-          )}
-          {past.length > 0 && (
-            <LeaveList t={t} language={language} year={year} title={t('leavePast')} items={past} muted />
-          )}
+      {upcoming.length > 0 && (
+        <div className="mt-4">
+          <LeaveList t={t} language={language} year={year} title={t('leaveUpcoming')} items={upcoming} />
+        </div>
+      )}
+      {past.length > 0 && (
+        <div className="mt-4">
+          <LeaveList t={t} language={language} year={year} title={t('leavePast')} items={past} muted />
         </div>
       )}
     </section>

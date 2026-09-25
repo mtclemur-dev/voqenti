@@ -246,14 +246,6 @@ export default function EmployeeHours({
         </div>
       </div>
 
-      <MyLeaveCard
-        t={t}
-        language={language}
-        year={DateTime.now().setZone('Europe/Berlin').year}
-        worker={currentWorker}
-        absences={absences}
-      />
-
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <div className="flex items-center justify-between gap-2">
           <button
@@ -324,6 +316,14 @@ export default function EmployeeHours({
           {t('planDayEmpty')}
         </p>
       )}
+
+      <MyLeaveCard
+        t={t}
+        language={language}
+        year={DateTime.now().setZone('Europe/Berlin').year}
+        worker={currentWorker}
+        absences={absences}
+      />
     </div>
   )
 }
