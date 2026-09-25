@@ -1,8 +1,32 @@
 import { parseTurnusSheet } from './turnusSheet'
 
+const PDFJS_BASE = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build'
+const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/+esm'
+
 function isPdf(file) {
   const name = String(file?.name || '').toLowerCase()
   return file?.type === 'application/pdf' || name.endsWith('.pdf')
+}
+
+function importUrl(url) {
+  return import(/* @vite-ignore */ url)
+}
+
+async function loadPdfjs() {
+  const module = await importUrl(`${PDFJS_BASE}/pdf.min.mjs`)
+  const pdfjs = module?.getDocument ? module : module?.default
+  if (!pdfjs?.getDocument) throw new Error('pdf.js konnte nicht geladen werden')
+  pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`
+  return pdfjs
+}
+
+async function loadTesseract() {
+  try {
+    return await import('tesseract.js')
+  } catch {
+    const module = await importUrl(TESSERACT_URL)
+    return module?.createWorker ? module : module?.default
+  }
 }
 
 function canvasToBlob(canvas) {
@@ -57,7 +81,7 @@ function wordsFrom(result, offsetY = 0) {
 
 async function recognizeSource(source) {
   const prepared = await prepareImage(source).catch(() => source)
-  const { createWorker } = await import('tesseract.js')
+  const { createWorker } = await loadTesseract()
   const worker = await createWorker('deu')
   try {
     await worker.setParameters({ tessedit_pageseg_mode: '6' })
@@ -83,10 +107,9 @@ async function pdfText(document) {
 }
 
 async function renderPdf(file) {
-  const pdfjs = await import('pdfjs-dist')
-  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
-  pdfjs.GlobalWorkerOptions.workerSrc = worker.default
-  const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
+  const pdfjs = await loadPdfjs()
+  const data = new Uint8Array(await file.arrayBuffer())
+  const document = await pdfjs.getDocument({ data }).promise
   const canvases = []
   const max = Math.min(document.numPages, 3)
   for (let index = 1; index <= max; index += 1) {
