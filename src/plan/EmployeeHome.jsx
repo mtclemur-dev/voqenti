@@ -6,7 +6,6 @@ import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
 import { HoursRow } from './EmployeeHours'
 import SelfWorkForm from './SelfWorkForm'
-import { MyLeaveCard } from './LeaveBalance'
 import OpenPostActions from './OpenPostActions'
 import { openPostAnswer } from './openPostRespond'
 import {
@@ -437,7 +436,6 @@ export default function EmployeeHome({
   myPlan = [],
   selfLogs = [],
   myPending = [],
-  absences = [],
   loading = false,
   errorMessage = '',
   onRetry,
@@ -657,14 +655,6 @@ export default function EmployeeHome({
           ))}
         </div>
       )}
-
-      <MyLeaveCard
-        t={t}
-        language={language}
-        year={now.year}
-        worker={currentWorker}
-        absences={absences}
-      />
 
       {notifyPerm && notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && sorted.some(row => isAssignmentActive(row) && !row.seen_at) && (
         <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3">

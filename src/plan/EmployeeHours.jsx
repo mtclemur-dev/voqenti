@@ -23,6 +23,7 @@ import {
   shortPlace,
 } from './planUtils'
 import { ComputedEnd } from './TimeField'
+import { MyLeaveCard } from './LeaveBalance'
 
 export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false, lockFixedTimes = true }) {
   const job = row.work_jobs
@@ -150,6 +151,7 @@ export default function EmployeeHours({
   boardDate,
   onBoardDateChange,
   lockFixedTimes = true,
+  absences = [],
 }) {
   const today = DateTime.now().setZone('Europe/Berlin').toISODate()
   const selectedDate = boardDate || today
@@ -243,6 +245,14 @@ export default function EmployeeHours({
           <p className="mt-1 text-2xl font-black text-white">{t('hoursPresenceCount').replace('{days}', String(presenceDays))}</p>
         </div>
       </div>
+
+      <MyLeaveCard
+        t={t}
+        language={language}
+        year={DateTime.now().setZone('Europe/Berlin').year}
+        worker={currentWorker}
+        absences={absences}
+      />
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <div className="flex items-center justify-between gap-2">

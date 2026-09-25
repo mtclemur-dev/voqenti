@@ -2773,7 +2773,6 @@ export default function WorkPlan({
             objects={objects}
             myPlan={myPlan}
             myPending={myPending}
-            absences={absences}
             loading={loading}
             errorMessage={errorMessage}
             onRetry={loadData}
@@ -2802,7 +2801,6 @@ export default function WorkPlan({
             myPlan={myPlan}
             selfLogs={selfLogs}
             myPending={myPending}
-            absences={absences}
             loading={loading}
             errorMessage={errorMessage}
             onRetry={loadData}
@@ -2839,6 +2837,7 @@ export default function WorkPlan({
           boardDate={hoursDate}
           onBoardDateChange={setHoursDate}
           lockFixedTimes={!isAdmin}
+          absences={absences}
         />
       </div>
 
