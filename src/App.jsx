@@ -643,10 +643,14 @@ function App() {
 
   const incarcaObjects = useCallback(async () => {
     setObjectsError('')
-    const { data, error } = await supabase
+    const query = (columns) => supabase
       .from('objects')
-      .select('id, name, address, manager, phone')
+      .select(columns)
       .order('name', { ascending: true })
+    let { data, error } = await query('id, name, address, manager, phone, fixed_hours')
+    if (error && /fixed_hours|schema cache|column/i.test(error.message || '')) {
+      ;({ data, error } = await query('id, name, address, manager, phone'))
+    }
     if (error) {
       console.error('Objects load error:', error)
       setObjects([])

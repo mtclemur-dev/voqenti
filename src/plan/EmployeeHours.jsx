@@ -6,24 +6,30 @@ import {
   assignmentRange,
   berlinWeekDays,
   berlinWeekStart,
+  clockPlusMinutes,
   clockRangeLabel,
   firstName,
   formatClock,
   formatDisplayDate,
+  formatFixedHoursLabel,
   formatSeenAt,
   isAssignmentActive,
   isoDate,
   isJobPast,
   minutesLabel,
+  objectFixedMinutes,
   rowWorkMinutes,
   selfLogMinutes,
   shortPlace,
 } from './planUtils'
+import { ComputedEnd } from './TimeField'
 
-export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false }) {
+export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false, lockFixedTimes = true }) {
   const job = row.work_jobs
   const date = isoDate(job?.work_date)
-  const canEdit = Boolean(onSave && date && date <= today)
+  const fixedMinutes = objectFixedMinutes(object)
+  const locked = Boolean(fixedMinutes && lockFixedTimes)
+  const canEdit = Boolean(onSave && date && date <= today && !locked)
   const planned = assignmentRange(row, job)
   const [start, setStart] = useState(formatClock(row.actual_start || planned.start))
   const [end, setEnd] = useState(formatClock(row.actual_end || planned.end))
@@ -31,6 +37,10 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
     setStart(formatClock(row.actual_start || planned.start))
     setEnd(formatClock(row.actual_end || planned.end))
   }, [planned.end, planned.start, row.actual_end, row.actual_start])
+  const setStartTime = (value) => {
+    setStart(value)
+    if (fixedMinutes) setEnd(clockPlusMinutes(value, fixedMinutes))
+  }
   const minutes = rowWorkMinutes({ ...row, actual_start: start, actual_end: end })
   const place = object?.name || job?.object_name || job?.location_text || t('planNoPlace')
   const dirty = start !== formatClock(row.actual_start || planned.start) || end !== formatClock(row.actual_end || planned.end) || !row.actual_start || !row.actual_end
@@ -90,8 +100,16 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
       {canEdit ? (
         <>
           <div className="mt-3 grid grid-cols-1 gap-3">
-            <TimeField label={t('planStart')} value={start} onChange={setStart} />
-            <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
+            <TimeField label={t('planStart')} value={start} onChange={setStartTime} />
+            {fixedMinutes ? (
+              <ComputedEnd
+                label={t('planEnd')}
+                time={end}
+                note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(object.fixed_hours))}
+              />
+            ) : (
+              <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
+            )}
           </div>
           <button
             type="button"
@@ -103,11 +121,14 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
           </button>
         </>
       ) : (
-        <p className="mt-2 text-sm text-slate-300">
-          {t('hoursPlanned')}
-          {': '}
-          {clockRangeLabel(planned) || [formatClock(job?.start_time), formatClock(job?.end_time)].filter(Boolean).join(' – ') || '—'}
-        </p>
+        <>
+          <p className="mt-2 text-sm text-slate-300">
+            {t('hoursPlanned')}
+            {': '}
+            {clockRangeLabel(planned) || [formatClock(job?.start_time), formatClock(job?.end_time)].filter(Boolean).join(' – ') || '—'}
+          </p>
+          {locked ? <p className="mt-1 text-[12px] text-slate-400">{t('objectFixedLocked')}</p> : null}
+        </>
       )}
     </article>
   )
@@ -128,6 +149,7 @@ export default function EmployeeHours({
   savingId = '',
   boardDate,
   onBoardDateChange,
+  lockFixedTimes = true,
 }) {
   const today = DateTime.now().setZone('Europe/Berlin').toISODate()
   const selectedDate = boardDate || today
@@ -283,6 +305,7 @@ export default function EmployeeHours({
               onSave={onSaveHours}
               onConfirm={onConfirm}
               saving={savingId === row.id}
+              lockFixedTimes={lockFixedTimes}
             />
           ))}
         </div>

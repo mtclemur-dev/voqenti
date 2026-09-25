@@ -4,14 +4,14 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatFixedHoursLabel, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, marksFromJobs, minutesLabel, nextWeekday, objectFixedMinutes, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
-import TimeField from './plan/TimeField'
+import TimeField, { ComputedEnd } from './plan/TimeField'
 
 const emptyForm = () => {
   const today = DateTime.now().setZone('Europe/Berlin').toISODate()
@@ -46,6 +46,7 @@ const emptyObjectForm = () => ({
   address: '',
   manager: '',
   phone: '',
+  fixed_hours: '',
 })
 
 const emptyNeedForm = () => ({
@@ -691,7 +692,11 @@ export default function WorkPlan({
     }
   }, [historyOpen, livePlanOpen, loadData])
 
-  const setField = (key, value) => setForm(current => ({ ...current, [key]: value }))
+  const setField = (key, value) => setForm(current => {
+    const next = { ...current, [key]: value }
+    if (key !== 'start_time') return next
+    return formWithFixedTimes(next, objects.find(item => item.id === next.object_id))
+  })
   const toggleWeekday = (day) => {
     setForm(current => {
       const selected = current.weekdays.includes(day)
@@ -701,7 +706,12 @@ export default function WorkPlan({
       return { ...current, weekdays: next.length ? next : [day] }
     })
   }
-  const setNeedField = (key, value) => setNeedForm(current => ({ ...current, [key]: value }))
+  const setNeedField = (key, value) => setNeedForm(current => {
+    const next = { ...current, [key]: value }
+    if (key !== 'start_time') return next
+    const timed = withFixedEnd({ start: next.start_time, end: next.end_time }, objects.find(item => item.id === next.object_id))
+    return { ...next, start_time: timed.start, end_time: timed.end }
+  })
 
   const selectedObject = objects.find(item => item.id === form.object_id)
   const selectedNeedObject = objects.find(item => item.id === needForm.object_id)
@@ -809,13 +819,17 @@ export default function WorkPlan({
 
   const handleNeedObjectChange = (objectId) => {
     const object = objects.find(item => item.id === objectId)
-    setNeedForm(current => ({
-      ...current,
-      object_id: objectId,
-      location_text: object
-        ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
-        : current.location_text,
-    }))
+    setNeedForm(current => {
+      const next = {
+        ...current,
+        object_id: objectId,
+        location_text: object
+          ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
+          : current.location_text,
+      }
+      const timed = withFixedEnd({ start: next.start_time, end: next.end_time }, object)
+      return { ...next, start_time: timed.start, end_time: timed.end }
+    })
   }
 
   const listedOpenJobs = isAdmin
@@ -831,13 +845,13 @@ export default function WorkPlan({
 
   const handleObjectChange = (objectId) => {
     const object = objects.find(item => item.id === objectId)
-    setForm(current => ({
+    setForm(current => formWithFixedTimes({
       ...current,
       object_id: objectId,
       location_text: object
         ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
         : current.location_text,
-    }))
+    }, object))
   }
 
   const plannedJobs = useMemo(() => {
@@ -987,7 +1001,7 @@ export default function WorkPlan({
     setNeedForm(emptyNeedForm())
   }
 
-  const formFromJob = (job, workDate) => ({
+  const formFromJob = (job, workDate) => formWithFixedTimes({
     work_date: workDate,
     start_time: String(job.start_time || '').slice(0, 5),
     end_time: String(job.end_time || '').slice(0, 5),
@@ -1005,7 +1019,7 @@ export default function WorkPlan({
     weekdays: [...WORK_WEEKDAYS],
     applyTimeToAll: false,
     worker_hours: workerHoursFromAssignees({ ...job, work_job_assignees: (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status) && !absenceOnDate(absences, row.worker_id, workDate)) }),
-  })
+  }, objects.find(item => item.id === job.object_id))
 
   const startEdit = (job) => {
     setDuplicating(false)
@@ -1032,32 +1046,40 @@ export default function WorkPlan({
   const startEditNeed = (job) => {
     setDuplicatingNeed(false)
     setEditingNeedId(job.id)
-    setNeedForm({
-      work_date: isoDate(job.work_date),
-      start_time: String(job.start_time || '').slice(0, 5),
-      end_time: String(job.end_time || '').slice(0, 5),
-      object_id: job.object_id ?? '',
-      location_text: job.location_text || job.object_name || '',
-      task_text: job.task_text ?? '',
-      needed_count: job.needed_count ?? 1,
-      early_hours: 3,
-    })
+    setNeedForm((() => {
+      const object = objects.find(item => item.id === job.object_id)
+      const timed = withFixedEnd({ start: job.start_time, end: job.end_time }, object)
+      return {
+        work_date: isoDate(job.work_date),
+        start_time: timed.start,
+        end_time: timed.end,
+        object_id: job.object_id ?? '',
+        location_text: job.location_text || job.object_name || '',
+        task_text: job.task_text ?? '',
+        needed_count: job.needed_count ?? 1,
+        early_hours: 3,
+      }
+    })())
     document.getElementById('plan-need-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const startDuplicateNeed = (job) => {
     setEditingNeedId(null)
     setDuplicatingNeed(true)
-    setNeedForm({
-      work_date: plusDays(job.work_date, 2),
-      start_time: String(job.start_time || '').slice(0, 5),
-      end_time: String(job.end_time || '').slice(0, 5),
-      object_id: job.object_id ?? '',
-      location_text: job.location_text || job.object_name || '',
-      task_text: job.task_text ?? '',
-      needed_count: job.needed_count ?? 1,
-      early_hours: 3,
-    })
+    setNeedForm((() => {
+      const object = objects.find(item => item.id === job.object_id)
+      const timed = withFixedEnd({ start: job.start_time, end: job.end_time }, object)
+      return {
+        work_date: plusDays(job.work_date, 2),
+        start_time: timed.start,
+        end_time: timed.end,
+        object_id: job.object_id ?? '',
+        location_text: job.location_text || job.object_name || '',
+        task_text: job.task_text ?? '',
+        needed_count: job.needed_count ?? 1,
+        early_hours: 3,
+      }
+    })())
     document.getElementById('plan-need-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
@@ -1076,8 +1098,9 @@ export default function WorkPlan({
     if (blocked.length) {
       return alert(`${t('absenceBlocked')}: ${blocked.map(workerName).join(', ')}`)
     }
-    const overlapping = form.worker_ids.map(id => {
-      const hit = overlapJobForWorker(id, firstDate, formRangeFor(id), editingId)
+    const timedForm = formWithFixedTimes(form, selectedObject)
+    const overlapping = timedForm.worker_ids.map(id => {
+      const hit = overlapJobForWorker(id, firstDate, formRangeFor(id, timedForm), editingId)
       return hit ? { id, hit } : null
     }).filter(Boolean)
     if (overlapping.length) {
@@ -1089,12 +1112,12 @@ export default function WorkPlan({
     }
 
     setSaving(true)
-    const hoursList = form.worker_ids.map(id => formRangeFor(id))
-    const spanned = spanClockRange(hoursList, { start: form.start_time, end: form.end_time })
+    const hoursList = timedForm.worker_ids.map(id => formRangeFor(id, timedForm))
+    const spanned = spanClockRange(hoursList, { start: timedForm.start_time, end: timedForm.end_time })
     const payload = {
       work_date: firstDate,
-      start_time: spanned.start || form.start_time || null,
-      end_time: spanned.end || form.end_time || null,
+      start_time: spanned.start || timedForm.start_time || null,
+      end_time: spanned.end || timedForm.end_time || null,
       object_id: form.object_id || null,
       object_name: selectedObject?.name || form.location_text.trim() || null,
       location_text: form.location_text.trim() || selectedObject?.name || null,
@@ -1154,7 +1177,7 @@ export default function WorkPlan({
     }
     if (toAdd.length) {
       const withTimes = toAdd.map(worker_id => {
-        const range = formRangeFor(worker_id)
+        const range = formRangeFor(worker_id, timedForm)
         return {
           job_id: jobId,
           worker_id,
@@ -1180,7 +1203,7 @@ export default function WorkPlan({
 
     let timesMissing = false
     for (const worker_id of form.worker_ids) {
-      const range = formRangeFor(worker_id)
+      const range = formRangeFor(worker_id, timedForm)
       const { error: timeError } = await supabase
         .from('work_job_assignees')
         .update({
@@ -1257,7 +1280,7 @@ export default function WorkPlan({
         {
           ...result.data,
           work_job_assignees: form.worker_ids.map(worker_id => {
-            const range = formRangeFor(worker_id)
+            const range = formRangeFor(worker_id, timedForm)
             return {
               worker_id,
               status: 'assigned',
@@ -1288,7 +1311,9 @@ export default function WorkPlan({
     const payload = {
       work_date: needForm.work_date,
       start_time: needForm.start_time || null,
-      end_time: needForm.end_time || null,
+      end_time: (objectFixedMinutes(selectedNeedObject)
+        ? clockPlusMinutes(needForm.start_time, objectFixedMinutes(selectedNeedObject))
+        : needForm.end_time) || null,
       object_id: needForm.object_id || null,
       object_name: selectedNeedObject?.name || needForm.location_text.trim() || null,
       location_text: needForm.location_text.trim() || selectedNeedObject?.name || null,
@@ -1558,10 +1583,17 @@ export default function WorkPlan({
     if (officeSelf) return
     if (hideOwnerPlan && ownerIds.has(row.worker_id)) return
     if (!isAdmin && currentWorker?.id && row.worker_id && row.worker_id !== currentWorker.id) return
+    const jobObject = objects.find(item => item.id === row.work_jobs?.object_id)
+    const fixedMinutes = objectFixedMinutes(jobObject)
+    if (fixedMinutes && !isAdmin) {
+      alert(t('objectFixedLocked'))
+      return
+    }
+    const nextEnd = fixedMinutes ? clockPlusMinutes(start, fixedMinutes) : end
     setConfirmingId(row.id)
     const payload = {
       actual_start: start || null,
-      actual_end: end || null,
+      actual_end: nextEnd || null,
       updated_at: new Date().toISOString(),
       hours_changed_by: currentWorker?.id || null,
       hours_changed_by_name: currentWorker?.name || null,
@@ -1576,7 +1608,7 @@ export default function WorkPlan({
         .from('work_job_assignees')
         .update({
           actual_start: start || null,
-          actual_end: end || null,
+          actual_end: nextEnd || null,
           updated_at: payload.updated_at,
         })
         .eq('id', row.id)
@@ -1673,16 +1705,21 @@ export default function WorkPlan({
   }
 
   const setWorkerHour = (workerId, key, value) => {
-    setForm(current => ({
-      ...current,
-      worker_hours: {
-        ...current.worker_hours,
-        [workerId]: {
-          ...(current.worker_hours[workerId] || clockRange(current.start_time, current.end_time)),
-          [key]: value,
+    setForm(current => {
+      const object = objects.find(item => item.id === current.object_id)
+      const base = current.worker_hours[workerId] || clockRange(current.start_time, current.end_time)
+      if (objectFixedMinutes(object) && key === 'end') return current
+      const range = objectFixedMinutes(object)
+        ? withFixedEnd({ ...base, [key]: value }, object)
+        : { ...base, [key]: value }
+      return {
+        ...current,
+        worker_hours: {
+          ...current.worker_hours,
+          [workerId]: range,
         },
-      },
-    }))
+      }
+    })
   }
 
   const applyFormTimeToWorkers = () => {
@@ -1807,6 +1844,7 @@ export default function WorkPlan({
       address: item.address ?? '',
       manager: item.manager ?? '',
       phone: item.phone ?? '',
+      fixed_hours: item.fixed_hours != null && Number(item.fixed_hours) > 0 ? String(item.fixed_hours) : '',
     })
   }
 
@@ -1814,15 +1852,21 @@ export default function WorkPlan({
     event.preventDefault()
     const name = objectForm.name.trim()
     if (!name) return alert(t('objectNameMissing'))
+    const hours = Number(String(objectForm.fixed_hours).replace(',', '.'))
     const payload = {
       name,
       address: objectForm.address.trim() || null,
       manager: objectForm.manager.trim() || null,
       phone: objectForm.phone.trim() || null,
+      fixed_hours: Number.isFinite(hours) && hours > 0 ? Math.round(hours * 2) / 2 : null,
     }
     const result = editingObjectId
       ? await supabase.from('objects').update(payload).eq('id', editingObjectId)
       : await supabase.from('objects').insert([payload])
+    if (result.error && /fixed_hours|schema cache|column/i.test(result.error.message || '')) {
+      alert(t('objectFixedSetup'))
+      return
+    }
     if (result.error) {
       alert(`${t('planSaveError')} ${result.error.message}`)
       return
@@ -2284,6 +2328,20 @@ export default function WorkPlan({
                 className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
               />
             </label>
+            <label className="text-xs text-slate-400 sm:col-span-2">
+              {t('objectFixedHours')}
+              <input
+                type="number"
+                min="0"
+                max="24"
+                step="0.5"
+                value={objectForm.fixed_hours}
+                onChange={e => setObjectForm(current => ({ ...current, fixed_hours: e.target.value }))}
+                placeholder="6"
+                className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              />
+              {t('objectFixedHint') ? <span className="mt-1.5 block text-[11px] leading-5 text-slate-500">{t('objectFixedHint')}</span> : null}
+            </label>
           </div>
           <button type="submit" className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
             {t('objectSave')}
@@ -2302,6 +2360,9 @@ export default function WorkPlan({
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-white">{item.name}</p>
                     {item.address ? <p className="text-xs text-slate-400">{item.address}</p> : null}
+                    {objectFixedMinutes(item) ? (
+                      <p className="mt-0.5 text-xs text-cyan-200/80">{t('objectFixedBadge').replace('{hours}', formatFixedHoursLabel(item.fixed_hours))}</p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button type="button" onClick={() => startEditObject(item)} className="text-xs font-semibold text-cyan-200">{t('edit')}</button>
@@ -2490,11 +2551,19 @@ export default function WorkPlan({
               value={form.start_time}
               onChange={value => setField('start_time', value)}
             />
-            <TimeField
-              label={t('planEnd')}
-              value={form.end_time}
-              onChange={value => setField('end_time', value)}
-            />
+            {objectFixedMinutes(selectedObject) ? (
+              <ComputedEnd
+                label={t('planEnd')}
+                time={form.end_time}
+                note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(selectedObject.fixed_hours))}
+              />
+            ) : (
+              <TimeField
+                label={t('planEnd')}
+                value={form.end_time}
+                onChange={value => setField('end_time', value)}
+              />
+            )}
           </div>
           {form.worker_ids.length > 0 && (
             <button
@@ -2646,11 +2715,19 @@ export default function WorkPlan({
                         value={hours.start}
                         onChange={value => setWorkerHour(workerId, 'start', value)}
                       />
-                      <TimeField
-                        label={t('planEnd')}
-                        value={hours.end}
-                        onChange={value => setWorkerHour(workerId, 'end', value)}
-                      />
+                      {objectFixedMinutes(selectedObject) ? (
+                        <ComputedEnd
+                          label={t('planEnd')}
+                          time={hours.end}
+                          note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(selectedObject.fixed_hours))}
+                        />
+                      ) : (
+                        <TimeField
+                          label={t('planEnd')}
+                          value={hours.end}
+                          onChange={value => setWorkerHour(workerId, 'end', value)}
+                        />
+                      )}
                     </div>
                     {hit && (
                       <p className="mt-2 text-xs text-amber-200">
@@ -2701,6 +2778,7 @@ export default function WorkPlan({
             onBoardDateChange={setHomeDate}
             helpAsks={helpAsks}
             onHelpRespond={handleHelpRespond}
+            lockFixedTimes
           />
         </div>
       )}
@@ -2731,6 +2809,7 @@ export default function WorkPlan({
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
             allowPastHours
+            lockFixedTimes={false}
           />
         </div>
       )}
@@ -2751,6 +2830,7 @@ export default function WorkPlan({
           savingId={confirmingId}
           boardDate={hoursDate}
           onBoardDateChange={setHoursDate}
+          lockFixedTimes={!isAdmin}
         />
       </div>
 
@@ -2785,12 +2865,21 @@ export default function WorkPlan({
                   value={needForm.start_time}
                   onChange={value => setNeedField('start_time', value)}
                 />
-                <TimeField
-                  label={t('planEnd')}
-                  className="block text-xs text-amber-100/80"
-                  value={needForm.end_time}
-                  onChange={value => setNeedField('end_time', value)}
-                />
+                {objectFixedMinutes(selectedNeedObject) ? (
+                  <ComputedEnd
+                    label={t('planEnd')}
+                    className="block text-xs text-amber-100/80"
+                    time={needForm.end_time}
+                    note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(selectedNeedObject.fixed_hours))}
+                  />
+                ) : (
+                  <TimeField
+                    label={t('planEnd')}
+                    className="block text-xs text-amber-100/80"
+                    value={needForm.end_time}
+                    onChange={value => setNeedField('end_time', value)}
+                  />
+                )}
               </div>
               <label className="mt-3 block text-xs text-amber-100/80">
                 {t('object')}

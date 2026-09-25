@@ -83,6 +83,48 @@ export function clockRange(start, end) {
   return { start: formatClock(start), end: formatClock(end) }
 }
 
+export function objectFixedMinutes(object) {
+  const hours = Number(object?.fixed_hours)
+  if (!Number.isFinite(hours) || hours <= 0) return 0
+  return Math.round(hours * 60)
+}
+
+export function formatFixedHoursLabel(hours) {
+  const value = Number(hours)
+  if (!Number.isFinite(value) || value <= 0) return ''
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded)
+}
+
+export function clockPlusMinutes(start, minutes) {
+  const from = clockMinutes(start)
+  const add = Number(minutes)
+  if (from == null || !Number.isFinite(add) || add <= 0) return ''
+  return minutesToClock(from + add)
+}
+
+export function withFixedEnd(range, object) {
+  const minutes = objectFixedMinutes(object)
+  const start = formatClock(range?.start)
+  if (!minutes) return clockRange(range?.start, range?.end)
+  return { start, end: start ? clockPlusMinutes(start, minutes) : '' }
+}
+
+export function formWithFixedTimes(current, object) {
+  if (!objectFixedMinutes(object)) return current
+  const job = withFixedEnd({ start: current.start_time, end: current.end_time }, object)
+  const hours = {}
+  for (const [id, range] of Object.entries(current.worker_hours || {})) {
+    hours[id] = withFixedEnd(range, object)
+  }
+  return {
+    ...current,
+    start_time: job.start,
+    end_time: job.end,
+    worker_hours: hours,
+  }
+}
+
 export function assignmentRange(row, job = row?.work_jobs) {
   return clockRange(row?.planned_start || job?.start_time, row?.planned_end || job?.end_time)
 }

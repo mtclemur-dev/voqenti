@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { formatClock, formatDisplayDate, isoDate, minutesLabel, selfLogMinutes } from './planUtils'
-import TimeField from './TimeField'
+import { clockPlusMinutes, formatClock, formatDisplayDate, formatFixedHoursLabel, isoDate, minutesLabel, objectFixedMinutes, selfLogMinutes } from './planUtils'
+import TimeField, { ComputedEnd } from './TimeField'
 
 const fieldClass = 'mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white'
 
@@ -23,6 +23,12 @@ export default function SelfWorkForm({
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const dayLogs = logs.filter(item => isoDate(item.work_date) === day)
+  const selected = objects.find(item => item.id === objectId)
+  const fixedMinutes = objectFixedMinutes(selected)
+  const setStartTime = (value) => {
+    setStart(value)
+    if (fixedMinutes) setEnd(clockPlusMinutes(value, fixedMinutes))
+  }
   const submit = async (event) => {
     event.preventDefault()
     if (!canEdit || saving) return
@@ -92,6 +98,8 @@ export default function SelfWorkForm({
                 setObjectId(id)
                 const object = objects.find(item => item.id === id)
                 if (object?.name && !place.trim()) setPlace(object.name)
+                const minutes = objectFixedMinutes(object)
+                if (minutes && start) setEnd(clockPlusMinutes(start, minutes))
               }}
               className={fieldClass}
             >
@@ -121,8 +129,16 @@ export default function SelfWorkForm({
             />
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <TimeField label={t('planStart')} value={start} onChange={setStart} />
-            <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
+            <TimeField label={t('planStart')} value={start} onChange={setStartTime} />
+            {fixedMinutes ? (
+              <ComputedEnd
+                label={t('planEnd')}
+                time={end}
+                note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(selected.fixed_hours))}
+              />
+            ) : (
+              <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
+            )}
           </div>
           <button
             type="submit"

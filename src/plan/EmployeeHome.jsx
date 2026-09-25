@@ -242,6 +242,7 @@ function NextAssignmentCard({
   confirmingId = '',
   confirming = false,
   embedded = false,
+  lockFixedTimes = true,
 }) {
   const job = row.work_jobs
   const range = assignmentRange(row, job)
@@ -315,6 +316,7 @@ function NextAssignmentCard({
             onConfirm={onConfirm}
             saving={confirmingId === row.id}
             compact
+            lockFixedTimes={lockFixedTimes}
           />
         </div>
       )}
@@ -358,6 +360,7 @@ function ExpandableAssignment({
   confirmingId = '',
   confirming = false,
   alert = false,
+  lockFixedTimes = true,
 }) {
   const [open, setOpen] = useState(false)
   const job = row.work_jobs
@@ -416,6 +419,7 @@ function ExpandableAssignment({
               confirmingId={confirmingId}
               confirming={confirming}
               embedded
+              lockFixedTimes={lockFixedTimes}
             />
           )}
         </div>
@@ -450,6 +454,7 @@ export default function EmployeeHome({
   allowPastHours = false,
   helpAsks = [],
   onHelpRespond,
+  lockFixedTimes = true,
 }) {
   const [now] = useState(() => DateTime.now().setZone('Europe/Berlin'))
   const today = now.toISODate()
@@ -601,6 +606,7 @@ export default function EmployeeHome({
                 onConfirm={onConfirm}
                 onSaveHours={onSaveHours}
                 confirmingId={confirmingId}
+                lockFixedTimes={lockFixedTimes}
               />
             ) : (
               <ExpandableAssignment
@@ -617,6 +623,7 @@ export default function EmployeeHome({
                 onSaveHours={onSaveHours}
                 confirmingId={confirmingId}
                 alert={isAssignmentInactive(row)}
+                lockFixedTimes={lockFixedTimes}
               />
             )
           ))
@@ -728,6 +735,7 @@ export default function EmployeeHome({
                 onSaveHours={onSaveHours}
                 confirmingId={confirmingId}
                 alert={isAssignmentInactive(row)}
+                lockFixedTimes={lockFixedTimes}
               />
             ))}
           </div>

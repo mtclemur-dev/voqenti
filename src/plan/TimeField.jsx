@@ -8,7 +8,7 @@ function ClockSelect({ label, value, options, onChange, disabled = false, blank 
         value={value}
         disabled={disabled}
         onChange={e => onChange(e.target.value)}
-        className="min-h-11 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 pr-8 text-center text-lg font-semibold tabular-nums text-slate-900 disabled:opacity-50"
+        className="min-h-11 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 pr-8 text-center text-lg font-semibold tabular-nums text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-80"
         style={pickerStyle}
       >
         {blank ? <option value="">--</option> : null}
@@ -21,7 +21,19 @@ function ClockSelect({ label, value, options, onChange, disabled = false, blank 
   )
 }
 
-export default function TimeField({ label, value, onChange, className = 'block text-xs text-slate-400' }) {
+export function ComputedEnd({ label, time, note, className = 'block text-xs text-slate-400' }) {
+  return (
+    <div className={className}>
+      {label}
+      <p className="mt-1 flex min-h-11 items-center rounded-md border border-slate-700/80 bg-slate-950/70 px-3 text-lg font-semibold tabular-nums text-slate-100">
+        {time || '—'}
+      </p>
+      {note ? <p className="mt-1 text-[11px] font-normal leading-5 text-slate-400">{note}</p> : null}
+    </div>
+  )
+}
+
+export default function TimeField({ label, value, onChange, className = 'block text-xs text-slate-400', disabled = false }) {
   const text = String(value || '').slice(0, 5)
   const valid = /^\d{2}:\d{2}$/.test(text)
   const hour = valid ? text.slice(0, 2) : ''
@@ -43,12 +55,12 @@ export default function TimeField({ label, value, onChange, className = 'block t
     <label className={className}>
       {label}
       <div className="mt-1 flex gap-2">
-        <ClockSelect label={label} value={hour} options={hours} blank onChange={next => commit(next, minute)} />
+        <ClockSelect label={label} value={hour} options={hours} blank disabled={disabled} onChange={next => commit(next, minute)} />
         <ClockSelect
           label={label}
           value={minute}
           options={minutes}
-          disabled={!hour && !minute}
+          disabled={disabled || (!hour && !minute)}
           onChange={next => commit(hour || '00', next)}
         />
       </div>
