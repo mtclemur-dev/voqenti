@@ -1,6 +1,6 @@
 const KEY = 'voqenti-ui'
 export const APP_VIEWS = ['plan', 'mine', 'hours', 'openPosts', 'notices', 'guides', 'history', 'pontaj', 'reports', 'times', 'materials']
-export const ADMIN_TABS = ['board', 'people', 'places', 'invite']
+export const ADMIN_TABS = ['board', 'people', 'places', 'fleet', 'invite']
 export const HISTORY_TABS = ['worked', 'absent', 'extras']
 export const ROSTER_FILTERS = ['', 'free', 'working', 'off']
 

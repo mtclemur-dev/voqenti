@@ -11,6 +11,7 @@ import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { readTurnusFile } from './plan/readTurnusFile'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
+import FleetPanel from './plan/FleetPanel'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -2668,6 +2669,7 @@ export default function WorkPlan({
             { id: 'board', label: t('adminNavPlan') },
             { id: 'people', label: t('adminTabPeople') },
             { id: 'places', label: t('adminTabPlaces') },
+            { id: 'fleet', label: t('adminTabFleet') },
             { id: 'invite', label: t('adminTabInvites') },
           ].map(item => (
             <button
@@ -2712,6 +2714,15 @@ export default function WorkPlan({
           onSaveLimit={handleSaveVacationLimit}
           DateField={DateField}
           jobs={plannedJobs}
+        />
+      )}
+
+      {view === 'plan' && isAdmin && adminTab === 'fleet' && (
+        <FleetPanel
+          t={t}
+          workers={activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id))}
+          jobs={plannedJobs}
+          today={today}
         />
       )}
 
