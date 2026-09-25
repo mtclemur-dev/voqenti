@@ -84,15 +84,17 @@ export function clockRange(start, end) {
 }
 
 export function parseFixedHoursValue(value) {
-  const hours = Number(String(value ?? '').replace(',', '.'))
+  const hours = Number(String(value ?? '').trim().replace(',', '.'))
   if (!Number.isFinite(hours) || hours <= 0) return 0
-  return Math.round(hours * 100) / 100
+  return hours
 }
 
 export function formatHundredths(hours) {
-  const value = parseFixedHoursValue(hours)
+  if (hours === '' || hours == null) return ''
+  const raw = String(hours).trim()
+  const value = parseFixedHoursValue(raw)
   if (!value) return ''
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+  return raw.replace(',', '.')
 }
 
 export function hundredthsToMinutes(hours) {

@@ -1,26 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { formatHundredths, isoDate, objectFixedHoursLabel, objectHasGuide, parseFixedHoursValue, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import { isoDate, objectFixedHoursLabel, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 
 function HundredthsField({ value, onChange, placeholder, className }) {
-  const [text, setText] = useState(() => (value === '' || value == null ? '' : formatHundredths(value)))
-  useEffect(() => {
-    setText(value === '' || value == null ? '' : formatHundredths(value))
-  }, [value])
   return (
     <input
       type="text"
       inputMode="decimal"
-      value={text}
-      onChange={e => {
-        setText(e.target.value)
-        onChange(e.target.value)
-      }}
-      onBlur={() => {
-        const next = parseFixedHoursValue(text) ? formatHundredths(text) : ''
-        setText(next)
-        onChange(next)
-      }}
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       className={className}
     />

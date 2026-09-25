@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, ownerWorkerIdSet, parseFixedHoursByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -1892,13 +1892,12 @@ export default function WorkPlan({
     event.preventDefault()
     const name = objectForm.name.trim()
     if (!name) return alert(t('objectNameMissing'))
-    const hours = Number(String(objectForm.fixed_hours).replace(',', '.'))
     const payload = {
       name,
       address: objectForm.address.trim() || null,
       manager: objectForm.manager.trim() || null,
       phone: objectForm.phone.trim() || null,
-      fixed_hours: Number.isFinite(hours) && hours > 0 ? Math.round(hours * 2) / 2 : null,
+      fixed_hours: parseFixedHoursValue(objectForm.fixed_hours) || null,
       fixed_hours_json: serializeFixedHoursByDay(objectForm.fixed_hours_by_day),
       leistung_text: objectForm.leistung_text.trim() || null,
       leistung_image_url: objectForm.leistung_image_url.trim() || null,
