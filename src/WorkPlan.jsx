@@ -9,7 +9,7 @@ import { ensureDayTravels } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
-import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceLabel, serviceOf } from './plan/objectServices'
+import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceFilterKey, serviceLabel, serviceOf } from './plan/objectServices'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, restoreMinutesForObject, stripSpreadBlatt } from './plan/clearBlattSpread'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -2940,7 +2940,7 @@ export default function WorkPlan({
                             type="button"
                             onClick={() => {
                               setHistoryObjectId(item.id)
-                              setHistoryServiceKey(row.id)
+                              setHistoryServiceKey(serviceFilterKey(row))
                               setHistoryTab('worked')
                               onOpenView?.('history')
                             }}
