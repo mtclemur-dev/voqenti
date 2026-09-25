@@ -1,6 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
-import { isoDate, objectFixedHoursLabel, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
+import { formatHundredths, isoDate, objectFixedHoursLabel, objectHasGuide, parseFixedHoursValue, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
+
+function HundredthsField({ value, onChange, placeholder, className }) {
+  const [text, setText] = useState(() => (value === '' || value == null ? '' : formatHundredths(value)))
+  useEffect(() => {
+    setText(value === '' || value == null ? '' : formatHundredths(value))
+  }, [value])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onChange={e => {
+        setText(e.target.value)
+        onChange(e.target.value)
+      }}
+      onBlur={() => {
+        const next = parseFixedHoursValue(text) ? formatHundredths(text) : ''
+        setText(next)
+        onChange(next)
+      }}
+      placeholder={placeholder}
+      className={className}
+    />
+  )
+}
 
 export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy = false, message = '' }) {
   const turnus = parseTurnus(form.turnus)
@@ -57,13 +82,9 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
       {form.fixed_hours ? (
         <label className="block text-xs text-slate-300">
           {t('objectFixedHours')}
-          <input
-            type="number"
-            min="0"
-            max="24"
-            step="0.01"
+          <HundredthsField
             value={form.fixed_hours}
-            onChange={e => setForm(current => ({ ...current, fixed_hours: e.target.value }))}
+            onChange={value => setForm(current => ({ ...current, fixed_hours: value }))}
             className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
           />
         </label>
@@ -74,15 +95,11 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
             <li key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
               <p className="text-[12px] font-medium text-slate-300">{weekdayLabel(day, language, 'cccc')}</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-[7rem_1fr]">
-                <input
-                  type="number"
-                  min="0"
-                  max="24"
-                  step="0.01"
+                <HundredthsField
                   value={form.fixed_hours_by_day?.[day] ?? ''}
-                  onChange={e => setForm(current => ({
+                  onChange={value => setForm(current => ({
                     ...current,
-                    fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: e.target.value },
+                    fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: value },
                   }))}
                   placeholder={t('objectFixedHours')}
                   className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"

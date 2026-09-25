@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { parseFixedHoursValue, weekdayFromDate } from './planUtils.js'
+import { formatHundredths, parseFixedHoursValue, weekdayFromDate } from './planUtils.js'
 
 const SKIP_NAME = /^(objekt|objekte|objektname|seite|woche|wochen|gesamt|gesamtmoptour|mop|moptour|materialtour|anderungen|anderung|vorbehalten)(\s+\w+)?$/i
 
@@ -8,13 +8,7 @@ export function parseGermanHours(raw, { allowBare = true } = {}) {
   if (!text) return 0
   const dotted = text.match(/^(\d{1,2})[,.](\d{1,3})$/)
   if (dotted) {
-    const whole = Number(dotted[1])
-    const frac = dotted[2]
-    const hours = frac.length === 1
-      ? parseFixedHoursValue(`${whole}.${frac}`)
-      : frac.length === 2
-        ? parseFixedHoursValue(whole + Number(frac) / 60)
-        : parseFixedHoursValue(`${whole}.${frac}`)
+    const hours = parseFixedHoursValue(`${dotted[1]}.${dotted[2]}`)
     return hours > 16 ? 0 : hours
   }
   if (allowBare && /^\d{1,2}$/.test(text)) {
@@ -311,7 +305,7 @@ export function applyTurnusSheet(form, sheet) {
   const turnus = { ...(current.turnus || {}) }
   const hours = { ...(current.fixed_hours_by_day || {}) }
   for (const [day, cell] of Object.entries(row.days || {})) {
-    if (cell.hours) hours[day] = String(cell.hours)
+    if (cell.hours) hours[day] = formatHundredths(cell.hours)
     if (cell.mark || cell.hours || cell.note) turnus[day] = prettyTurnusBody(title, cell)
   }
   return {

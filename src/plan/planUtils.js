@@ -89,6 +89,17 @@ export function parseFixedHoursValue(value) {
   return Math.round(hours * 100) / 100
 }
 
+export function formatHundredths(hours) {
+  const value = parseFixedHoursValue(hours)
+  if (!value) return ''
+  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+}
+
+export function hundredthsToMinutes(hours) {
+  const value = parseFixedHoursValue(hours)
+  return value ? Math.round(value * 60) : 0
+}
+
 export function parseFixedHoursByDay(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) {
@@ -137,8 +148,7 @@ export function objectFixedHours(object, date) {
 }
 
 export function objectFixedMinutes(object, date) {
-  const hours = objectFixedHours(object, date)
-  return hours ? Math.round(hours * 60) : 0
+  return hundredthsToMinutes(objectFixedHours(object, date))
 }
 
 export function objectHasFixedHours(object) {
@@ -146,10 +156,7 @@ export function objectHasFixedHours(object) {
 }
 
 export function formatFixedHoursLabel(hours) {
-  const value = Number(hours)
-  if (!Number.isFinite(value) || value <= 0) return ''
-  const rounded = Math.round(value * 10) / 10
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded)
+  return formatHundredths(hours)
 }
 
 export function objectFixedHoursLabel(object, date) {
