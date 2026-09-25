@@ -11,6 +11,7 @@ import { ObjectGuidePanel } from './ObjectGuide'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
+  withChainedAssignmentRows,
   berlinWeekDays,
   berlinWeekStart,
   crewAssignees,
@@ -474,10 +475,11 @@ export default function EmployeeHome({
     return () => { cancelled = true }
   }, [])
   const sorted = useMemo(
-    () => [...myPlan]
-      .filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today))
-      .sort(sortPlanRows),
-    [allowPastHours, myPlan, today],
+    () => withChainedAssignmentRows(
+      [...myPlan].filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today)),
+      objects,
+    ).sort(sortPlanRows),
+    [allowPastHours, myPlan, objects, today],
   )
   useEffect(() => {
     if (notifyPerm !== 'granted') return undefined

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import { IconBell, IconClock, IconClose, IconHome, IconTips, IconUser } from './icons'
-import { assignmentRange, firstName, isAssignmentActive, nextShiftText, sortPlanRows, useGreetingKey } from './planUtils'
+import { assignmentRange, firstName, isAssignmentActive, nextShiftText, sortPlanRows, useGreetingKey, withChainedAssignmentRows } from './planUtils'
 
 function IconButton({ label, active = false, onClick, children, badge = 0 }) {
   return (
@@ -57,9 +57,9 @@ export function EmployeeHeader({
         .in('status', ['assigned', 'approved'])
         .gte('work_jobs.work_date', today)
       if (cancelled) return
-      const rows = (data ?? [])
-        .filter(row => isAssignmentActive(row) && row.work_jobs.work_date >= today)
-        .sort(sortPlanRows)
+      const rows = withChainedAssignmentRows(
+        (data ?? []).filter(row => isAssignmentActive(row) && row.work_jobs.work_date >= today),
+      ).sort(sortPlanRows)
       setNextJob(rows[0]?.work_jobs ?? null)
       setNextStart(assignmentRange(rows[0]).start)
     }

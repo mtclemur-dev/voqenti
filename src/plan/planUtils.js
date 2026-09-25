@@ -207,8 +207,20 @@ export function formWithFixedTimes(current, object) {
   }
 }
 
-export function assignmentRange(row, job = row?.work_jobs) {
-  return clockRange(row?.planned_start || job?.start_time, row?.planned_end || job?.end_time)
+export function objectByIdMap(objects) {
+  if (objects instanceof Map) return objects
+  const map = new Map()
+  for (const item of objects || []) {
+    if (item?.id) map.set(item.id, item)
+  }
+  return map
+}
+
+export function assignmentRange(row, job = row?.work_jobs, object) {
+  const start = formatClock(row?.planned_start || job?.start_time)
+  let end = formatClock(row?.planned_end || job?.end_time)
+  if (start && !end) end = withFixedEnd({ start, end: '' }, object, job?.work_date).end
+  return { start, end }
 }
 
 export function clockRangeLabel(range) {
@@ -244,21 +256,27 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
   const day = isoDate(date)
   const slots = []
   if (!workerId || !day) return slots
+  const objects = objectByIdMap(options.objects)
   for (const job of jobs || []) {
     if (options.exceptJobId && job.id === options.exceptJobId) continue
     if (isoDate(job.work_date) !== day) continue
     if (job.status === 'cancelled' || job.status === 'canceled') continue
+    const object = objects.get(job.object_id)
     for (const row of job.work_job_assignees ?? []) {
       if (row.worker_id !== workerId) continue
       if (row.status && !['assigned', 'approved'].includes(row.status)) continue
-      const range = assignmentRange(row, job)
-      if (!formatClock(range.start) || !formatClock(range.end)) continue
+      const range = assignmentRange(row, job, object)
+      if (!formatClock(range.start)) continue
+      let duration = rangeDurationMinutes(range)
+      if (!duration) duration = objectFixedMinutes(object, day)
+      if (!duration) continue
       slots.push({
         jobId: job.id,
         rowId: row.id,
         workerId,
-        range,
-        duration: rangeDurationMinutes(range),
+        createdAt: row.created_at || job.created_at || '',
+        range: { start: range.start, end: range.end || clockPlusMinutes(range.start, duration) },
+        duration,
       })
     }
   }
@@ -266,30 +284,170 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
     const leftStart = clockMinutes(left.range.start)
     const rightStart = clockMinutes(right.range.start)
     if (leftStart !== rightStart) return leftStart - rightStart
+    // Keep the already-planned job first. A newly saved job with the same
+    // start (7:00) is pushed after the existing 7–10 block.
     if (options.preferJobId) {
-      if (left.jobId === options.preferJobId) return -1
-      if (right.jobId === options.preferJobId) return 1
+      if (left.jobId === options.preferJobId) return 1
+      if (right.jobId === options.preferJobId) return -1
+    }
+    if (left.createdAt && right.createdAt && left.createdAt !== right.createdAt) {
+      return String(left.createdAt).localeCompare(String(right.createdAt))
     }
     return String(left.jobId).localeCompare(String(right.jobId))
   })
 }
 
-export function packWorkerSlots(slots) {
+export function packWorkerDay(slots) {
   let nextFree = null
+  const packed = []
   const moved = []
   for (const slot of slots || []) {
     const start = clockMinutes(slot.range.start)
     const duration = slot.duration || rangeDurationMinutes(slot.range)
-    if (start == null || !duration) continue
+    if (start == null || !duration) {
+      packed.push(slot)
+      continue
+    }
     const newStart = nextFree != null && start < nextFree ? nextFree : start
     const newEnd = newStart + duration
     nextFree = newEnd
     const range = { start: minutesToClock(newStart), end: minutesToClock(newEnd) }
+    const next = { ...slot, range }
+    packed.push(next)
     if (range.start !== slot.range.start || range.end !== slot.range.end) {
-      moved.push({ ...slot, range, previous: slot.range })
+      moved.push({ ...next, previous: slot.range })
     }
   }
-  return moved
+  return { packed, moved }
+}
+
+export function packWorkerSlots(slots) {
+  return packWorkerDay(slots).moved
+}
+
+export function overlappingWorkerDays(jobs, objects, options = {}) {
+  const from = isoDate(options.from)
+  const seen = new Set()
+  const pairs = []
+  for (const job of jobs || []) {
+    const day = isoDate(job.work_date)
+    if (!day || (from && day < from)) continue
+    if (job.status === 'cancelled' || job.status === 'canceled') continue
+    for (const row of job.work_job_assignees ?? []) {
+      if (!row.worker_id) continue
+      if (row.status && !['assigned', 'approved'].includes(row.status)) continue
+      const key = `${row.worker_id}|${day}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (packWorkerSlots(workerDaySlots(jobs, row.worker_id, day, { objects })).length) {
+        pairs.push({ workerId: row.worker_id, date: day })
+      }
+    }
+  }
+  return pairs
+}
+
+function applyPackedJob(job, rangeByWorker) {
+  const assignees = job.work_job_assignees ?? []
+  let changed = false
+  const nextAssignees = assignees.map((row) => {
+    const range = rangeByWorker.get(row.worker_id)
+    if (!range) return row
+    if (formatClock(row.planned_start) === range.start && formatClock(row.planned_end) === range.end) return row
+    changed = true
+    return { ...row, planned_start: range.start, planned_end: range.end }
+  })
+  const active = nextAssignees.filter(row => !row.status || ['assigned', 'approved'].includes(row.status))
+  const ranges = active
+    .map(row => rangeByWorker.get(row.worker_id) || assignmentRange(row, job))
+    .filter(range => range.start)
+  const spanned = spanClockRange(ranges, { start: job.start_time, end: job.end_time })
+  const nextStart = spanned.start || job.start_time
+  const nextEnd = spanned.end || job.end_time
+  if (!changed && formatClock(job.start_time) === formatClock(nextStart) && formatClock(job.end_time) === formatClock(nextEnd)) {
+    return job
+  }
+  return {
+    ...job,
+    start_time: nextStart,
+    end_time: nextEnd,
+    work_job_assignees: nextAssignees,
+  }
+}
+
+export function withChainedJobTimes(jobs, workerId, date, objects) {
+  const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
+  if (!packed.length) return jobs || []
+  const rangeByJob = new Map(packed.map(slot => [slot.jobId, slot.range]))
+  return (jobs || []).map((job) => {
+    const range = rangeByJob.get(job.id)
+    if (!range) return job
+    return {
+      ...job,
+      start_time: range.start,
+      end_time: range.end,
+      work_job_assignees: (job.work_job_assignees ?? []).map(row => (
+        row.worker_id === workerId
+          ? { ...row, planned_start: range.start, planned_end: range.end }
+          : row
+      )),
+    }
+  })
+}
+
+export function withChainedBoardJobs(jobs, date, objects) {
+  const day = isoDate(date)
+  if (!day) return jobs || []
+  const workerIds = new Set()
+  for (const job of jobs || []) {
+    if (isoDate(job.work_date) !== day) continue
+    for (const row of job.work_job_assignees ?? []) {
+      if (row.worker_id && (!row.status || ['assigned', 'approved'].includes(row.status))) {
+        workerIds.add(row.worker_id)
+      }
+    }
+  }
+  const rangesByJob = new Map()
+  for (const workerId of workerIds) {
+    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
+    for (const slot of packed) {
+      if (!rangesByJob.has(slot.jobId)) rangesByJob.set(slot.jobId, new Map())
+      rangesByJob.get(slot.jobId).set(workerId, slot.range)
+    }
+  }
+  return (jobs || []).map((job) => {
+    const rangeByWorker = rangesByJob.get(job.id)
+    return rangeByWorker ? applyPackedJob(job, rangeByWorker) : job
+  })
+}
+
+export function withChainedAssignmentRows(rows, objects) {
+  const groups = new Map()
+  for (const row of rows || []) {
+    if (!isAssignmentActive(row)) continue
+    const day = isoDate(row.work_jobs?.work_date)
+    if (!row.worker_id || !day) continue
+    const key = `${row.worker_id}|${day}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(row)
+  }
+  const packedByRow = new Map()
+  for (const group of groups.values()) {
+    const jobs = group.map(row => (
+      row.work_jobs
+        ? { ...row.work_jobs, work_job_assignees: [row] }
+        : null
+    )).filter(Boolean)
+    const workerId = group[0].worker_id
+    const day = isoDate(group[0].work_jobs?.work_date)
+    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
+    for (const slot of packed) packedByRow.set(slot.rowId, slot.range)
+  }
+  return (rows || []).map((row) => {
+    const range = packedByRow.get(row.id)
+    if (!range) return row
+    return { ...row, planned_start: range.start, planned_end: range.end }
+  })
 }
 
 export function withSavedJob(jobs, saved) {
