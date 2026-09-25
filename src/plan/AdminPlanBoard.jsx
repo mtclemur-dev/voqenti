@@ -7,6 +7,7 @@ import {
   clockRange,
   durationMinutes,
   fillText,
+  firstName,
   formatClock,
   jobTone,
   longWeekdayDate,
@@ -18,7 +19,7 @@ import {
   turnusForDate,
   workerInitials,
 } from './planUtils'
-import { formatKm } from './travel'
+import { dayTravelOf, formatKm } from './travel'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -82,6 +83,24 @@ function plannedMinutesForDay(jobs, skipIds) {
 
 function jobHasWorker(job, workerId) {
   return (job.work_job_assignees ?? []).some(row => row.worker_id === workerId && ['assigned', 'approved', 'declined'].includes(row.status))
+}
+
+function arrivingLegs(job, dayTravel, workerName, focusWorkerId) {
+  const legs = []
+  for (const row of job.work_job_assignees ?? []) {
+    if (!row.worker_id) continue
+    if (focusWorkerId && row.worker_id !== focusWorkerId) continue
+    if (row.status && !['assigned', 'approved'].includes(row.status)) continue
+    const trip = dayTravelOf(dayTravel, row.worker_id)
+    const leg = (trip?.legs || []).find(item => item.toJobId === job.id)
+    if (!leg?.minutes && !leg?.meters) continue
+    legs.push({
+      ...leg,
+      workerId: row.worker_id,
+      name: firstName(workerName?.(row.worker_id) || '') || workerName?.(row.worker_id) || '',
+    })
+  }
+  return legs
 }
 
 function jobStatusLabel(job, t) {
@@ -167,7 +186,7 @@ export default function AdminPlanBoard({
             ? dayMinutesForWorker(item.id, sortedJobs, extra)
             : (item.id === currentWorkerId ? (extra || 0) : null)
         const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
-        const travel = dayTravel instanceof Map ? dayTravel.get(item.id) : dayTravel?.[item.id]
+        const travel = dayTravelOf(dayTravel, item.id)
         return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES, travel }
       })
   }, [currentWorkerId, dayRoster, dayTravel, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
@@ -412,7 +431,7 @@ export default function AdminPlanBoard({
                             <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
                             <span className="mt-0.5 block truncate text-xs text-slate-300">
                               {person.status === 'working'
-                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.travel?.minutes ? ` · ${fillText(t('travelShort'), { time: minutesLabel(person.travel.minutes, t) })}` : ''} · ${statusLabel}`
+                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.travel?.minutes || person.travel?.meters ? ` · ${fillText(t('travelDay'), { km: formatKm(person.travel.meters) || '0', time: minutesLabel(person.travel.minutes, t) })}` : ''} · ${statusLabel}`
                                 : person.status === 'off'
                                   ? `${person.label} · ${statusLabel}`
                                   : statusLabel}
@@ -435,12 +454,12 @@ export default function AdminPlanBoard({
               : t('adminJobsPanel')}
           </h3>
           {(() => {
-            const focusTrip = focusWorkerId && (dayTravel instanceof Map ? dayTravel.get(focusWorkerId) : dayTravel?.[focusWorkerId])
+            const focusTrip = dayTravelOf(dayTravel, focusWorkerId)
             const roadPeople = [...(dayTravel instanceof Map ? dayTravel.entries() : Object.entries(dayTravel || {}))]
               .map(([id, trip]) => ({ id, ...trip, name: workerName?.(id) || '' }))
               .filter(item => (item.minutes || item.meters) && !hiddenHourIds.has(item.id))
-              .sort((a, b) => b.minutes - a.minutes)
-            if (focusTrip?.minutes || focusTrip?.meters) {
+              .sort((a, b) => (b.minutes - a.minutes) || (a.name || '').localeCompare(b.name || ''))
+            if (focusWorkerId && (focusTrip?.minutes || focusTrip?.meters)) {
               return (
                 <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
@@ -455,8 +474,8 @@ export default function AdminPlanBoard({
                 <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
                   {t('travelHint') ? <p className="mt-1 text-xs text-slate-400">{t('travelHint')}</p> : null}
-                  <ul className="mt-2 space-y-1">
-                    {roadPeople.slice(0, 6).map(item => (
+                  <ul className="mt-2 max-h-64 space-y-1 overflow-auto">
+                    {roadPeople.map(item => (
                       <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
                         <span className="truncate text-slate-200">{item.name}</span>
                         <span className="shrink-0 tabular-nums text-cyan-100">
@@ -490,7 +509,7 @@ export default function AdminPlanBoard({
                   {t('adminJobsForWorkerEmpty')}
                 </li>
               )}
-              {(focusWorkerId ? visibleJobs : sortedJobs).map((job, index, list) => {
+              {(focusWorkerId ? visibleJobs : sortedJobs).map((job) => {
                 const open = boardOpenId === job.id
                 const object = objects.find(item => item.id === job.object_id)
                 const place = job.object_name || job.location_text || t('planNoPlace')
@@ -512,21 +531,22 @@ export default function AdminPlanBoard({
                 const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const detailsId = `admin-job-${job.id}`
-                const prev = list[index - 1]
-                const focusTrip = focusWorkerId && (dayTravel instanceof Map ? dayTravel.get(focusWorkerId) : dayTravel?.[focusWorkerId])
-                const leg = focusTrip?.legs?.find(item => item.toJobId === job.id && (!prev || item.fromJobId === prev.id))
+                const legs = arrivingLegs(job, dayTravel, workerName, focusWorkerId)
                 return (
                   <Fragment key={job.id}>
-                  {leg?.minutes ? (
-                    <li className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
+                  {legs.map(leg => (
+                    <li key={`${job.id}-${leg.workerId}`} className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
                       <span className="h-px flex-1 bg-white/10" />
                       <span className="tabular-nums text-cyan-100/90">
-                        {fillText(t('travelMinutes'), { minutes: String(leg.minutes) })}
+                        {fillText(focusWorkerId || !leg.name ? t('travelMinutes') : t('travelMinutesNamed'), {
+                          name: leg.name,
+                          minutes: String(leg.minutes),
+                        })}
                         {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
                       </span>
                       <span className="h-px flex-1 bg-white/10" />
                     </li>
-                  ) : null}
+                  ))}
                   <li
                     className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
                       open ? 'relative z-20' : ''

@@ -51,22 +51,62 @@ function estimateDrive(meters) {
   return { minutes: Math.max(1, Math.round(meters / city)), meters }
 }
 
+function uniquePlaces(places) {
+  return [...new Set((places || []).map(normalizePlace).filter(Boolean))]
+}
+
+function lookupPoint(data) {
+  const coords = data?.features?.[0]?.geometry?.coordinates
+  if (!Array.isArray(coords) || coords.length < 2) return null
+  const point = { lon: Number(coords[0]), lat: Number(coords[1]) }
+  return Number.isFinite(point.lat) && Number.isFinite(point.lon) ? point : null
+}
+
 async function geocode(address) {
   const place = normalizePlace(address)
   if (!place) return null
   const cached = cacheGet(memory, GEO_KEY, place)
   if (cached) return cached
-  const query = /deutschland|germany|thüringen|thueringen|\bde\b/i.test(place) ? place : `${place}, Deutschland`
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=de`
-  const response = await fetch(url)
-  if (!response.ok) return null
-  const data = await response.json()
-  const coords = data?.features?.[0]?.geometry?.coordinates
-  if (!Array.isArray(coords) || coords.length < 2) return null
-  const point = { lon: Number(coords[0]), lat: Number(coords[1]) }
-  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null
-  cacheSet(memory, GEO_KEY, place, point)
-  return point
+  const queries = []
+  const hasCountry = /deutschland|germany|thüringen|thueringen|\bde\b/i.test(place)
+  if (!hasCountry) queries.push(`${place}, Deutschland`)
+  queries.push(place)
+  for (const query of queries) {
+    try {
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=de`
+      const response = await fetch(url)
+      if (!response.ok) continue
+      const point = lookupPoint(await response.json())
+      if (!point) continue
+      cacheSet(memory, GEO_KEY, place, point)
+      return point
+    } catch {
+      /* try the next query */
+    }
+  }
+  return null
+}
+
+async function geocodeAll(places) {
+  const list = uniquePlaces(places)
+  for (let index = 0; index < list.length; index += 1) {
+    if (!cacheGet(memory, GEO_KEY, list[index])) {
+      await geocode(list[index])
+      if (index < list.length - 1) await new Promise(resolve => setTimeout(resolve, 180))
+    }
+  }
+}
+
+async function routeAllPairs(places) {
+  const list = uniquePlaces(places)
+  const trips = []
+  for (let left = 0; left < list.length; left += 1) {
+    for (let right = 0; right < list.length; right += 1) {
+      if (left === right) continue
+      trips.push(ensureTravel(list[left], list[right]))
+    }
+  }
+  await Promise.all(trips)
 }
 
 async function routeDrive(from, to) {
@@ -128,33 +168,52 @@ export async function ensureTravel(from, to) {
 }
 
 export async function ensureTravels(places) {
-  const list = [...new Set((places || []).map(normalizePlace).filter(Boolean))]
-  for (let index = 0; index < list.length; index += 1) {
-    if (!cacheGet(memory, GEO_KEY, list[index])) {
-      await geocode(list[index])
-      if (index < list.length - 1) await new Promise(resolve => setTimeout(resolve, 220))
+  const list = uniquePlaces(places)
+  await geocodeAll(list)
+  if (list.length > 16) {
+    await Promise.all(list.slice(1).map((place, index) => ensureTravel(list[index], place)))
+    return
+  }
+  await routeAllPairs(list)
+}
+
+function workerPlacesFromJobs(jobs, objects = []) {
+  const byId = new Map((objects || []).filter(item => item?.id).map(item => [item.id, item]))
+  const byWorker = new Map()
+  const all = []
+  for (const job of jobs || []) {
+    const address = jobPlaceAddress(job, byId.get(job.object_id))
+    if (address) all.push(address)
+    for (const row of job.work_job_assignees ?? []) {
+      if (!row.worker_id) continue
+      if (row.status && !['assigned', 'approved'].includes(row.status)) continue
+      if (!byWorker.has(row.worker_id)) byWorker.set(row.worker_id, [])
+      if (address) byWorker.get(row.worker_id).push(address)
     }
   }
-  const trips = []
-  const allPairs = list.length <= 16
-  for (let left = 0; left < list.length; left += 1) {
-    for (let right = 0; right < list.length; right += 1) {
-      if (left === right) continue
-      if (!allPairs && Math.abs(left - right) !== 1) continue
-      trips.push(ensureTravel(list[left], list[right]))
-    }
-  }
-  await Promise.all(trips)
+  return { all, byWorker }
 }
 
 export async function ensureDayTravels(jobs, objects = []) {
-  const byId = new Map((objects || []).filter(item => item?.id).map(item => [item.id, item]))
-  const places = []
-  for (const job of jobs || []) {
-    const address = jobPlaceAddress(job, byId.get(job.object_id))
-    if (address) places.push(address)
+  const { all, byWorker } = workerPlacesFromJobs(jobs, objects)
+  await geocodeAll(all)
+  const tasks = []
+  for (const places of byWorker.values()) {
+    const list = uniquePlaces(places)
+    if (list.length < 2) continue
+    for (let left = 0; left < list.length; left += 1) {
+      for (let right = 0; right < list.length; right += 1) {
+        if (left === right) continue
+        tasks.push(ensureTravel(list[left], list[right]))
+      }
+    }
   }
-  await ensureTravels(places)
+  await Promise.all(tasks)
+}
+
+export function dayTravelOf(dayTravel, workerId) {
+  if (!workerId || !dayTravel) return null
+  return dayTravel instanceof Map ? dayTravel.get(workerId) : dayTravel[workerId]
 }
 
 export function formatKm(meters) {

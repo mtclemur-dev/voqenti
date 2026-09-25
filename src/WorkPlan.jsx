@@ -1019,8 +1019,7 @@ export default function WorkPlan({
       for (const row of job.work_job_assignees ?? []) {
         if (!row.worker_id || (row.status && !['assigned', 'approved'].includes(row.status))) continue
         if (map.has(row.worker_id)) continue
-        const trip = workerDayTravel(boardJobs, row.worker_id, liveBoardDate, objects)
-        if (trip.minutes || trip.meters) map.set(row.worker_id, trip)
+        map.set(row.worker_id, workerDayTravel(boardJobs, row.worker_id, liveBoardDate, objects))
       }
     }
     return map

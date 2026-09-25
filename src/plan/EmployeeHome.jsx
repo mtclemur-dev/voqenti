@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import { IconAlert, IconBag, IconCheck, IconChevron, IconMap, IconNote, IconWork } from './icons'
@@ -16,7 +16,7 @@ import {
   berlinWeekStart,
   crewAssignees,
   dayStampKey,
-  firstName,
+  fillText,
   formatDisplayDate,
   formatSeenAt,
   formatUpdatedAt,
@@ -33,12 +33,51 @@ import {
   selfLogMinutes,
   shortPlace,
   sortPlanRows,
+  workerDayTravel,
 } from './planUtils'
+import { ensureDayTravels, formatKm } from './travel'
 
 const NOTICES_SEEN_KEY = 'voqenti-notices-seen-at'
 
 function hasText(value) {
   return Boolean(String(value || '').trim())
+}
+
+function jobsFromPlan(rows) {
+  const map = new Map()
+  for (const row of rows || []) {
+    const job = row.work_jobs
+    if (!job?.id) continue
+    if (!map.has(job.id)) map.set(job.id, { ...job, work_job_assignees: [] })
+    map.get(job.id).work_job_assignees.push(row)
+  }
+  return [...map.values()]
+}
+
+function TravelLeg({ t, leg }) {
+  if (!leg?.minutes && !leg?.meters) return null
+  return (
+    <div className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
+      <span className="h-px flex-1 bg-white/10" />
+      <span className="tabular-nums text-cyan-100/90">
+        {fillText(t('travelMinutes'), { minutes: String(leg.minutes || 0) })}
+        {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
+      </span>
+      <span className="h-px flex-1 bg-white/10" />
+    </div>
+  )
+}
+
+function TravelDayCard({ t, trip }) {
+  if (!trip?.minutes && !trip?.meters) return null
+  return (
+    <div className="rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-white">
+        {fillText(t('travelDay'), { km: formatKm(trip.meters) || '0', time: minutesLabel(trip.minutes, t) })}
+      </p>
+    </div>
+  )
 }
 
 function useMarkSeenWhenVisible(row, onConfirm, enabled) {
@@ -465,6 +504,7 @@ export default function EmployeeHome({
   const selectedDate = boardDate || today
   const setBoardDate = (date) => onBoardDateChange?.(date)
   const [notifyPerm, setNotifyPerm] = useState(null)
+  const [travelTick, setTravelTick] = useState(0)
   const scheduledRef = useRef(new Set())
   const objectById = (id) => objects.find(item => item.id === id)
   useEffect(() => {
@@ -521,6 +561,24 @@ export default function EmployeeHome({
   const hoursDate = allowPastHours ? liveDate : today
   const todayRows = sorted.filter(row => isoDate(row.work_jobs?.work_date) === today)
   const otherDayRows = liveDate === today ? [] : sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)
+  const travelJobs = useMemo(
+    () => jobsFromPlan(sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)),
+    [liveDate, sorted],
+  )
+  useEffect(() => {
+    if (!travelJobs.length) return undefined
+    let cancelled = false
+    ensureDayTravels(travelJobs, objects).then(() => {
+      if (!cancelled) setTravelTick(current => current + 1)
+    })
+    return () => { cancelled = true }
+  }, [objects, travelJobs])
+  const dayTrip = useMemo(
+    () => (currentWorker?.id
+      ? workerDayTravel(travelJobs, currentWorker.id, liveDate, objects)
+      : null),
+    [currentWorker?.id, liveDate, objects, travelJobs, travelTick],
+  )
   const weekDays = berlinWeekDays(berlinWeekStart(today))
   const weekMinutes = myPlan
     .filter(row => isAssignmentActive(row) && weekDays.includes(isoDate(row.work_jobs?.work_date)))
@@ -596,42 +654,46 @@ export default function EmployeeHome({
             {t('planDayEmpty')}
           </div>
         ) : (
-          todayRows.map(row => (
-            isAssignmentActive(row) ? (
-              <NextAssignmentCard
-                key={row.id}
-                t={t}
-                language={language}
-                today={today}
-                now={now}
-                row={row}
-                object={objectById(row.work_jobs?.object_id)}
-                workers={workers}
-                currentWorkerId={currentWorker?.id}
-                onConfirm={onConfirm}
-                onSaveHours={onSaveHours}
-                confirmingId={confirmingId}
-                lockFixedTimes={lockFixedTimes}
-              />
-            ) : (
-              <ExpandableAssignment
-                key={row.id}
-                t={t}
-                language={language}
-                today={today}
-                now={now}
-                row={row}
-                object={objectById(row.work_jobs?.object_id)}
-                workers={workers}
-                currentWorkerId={currentWorker?.id}
-                onConfirm={onConfirm}
-                onSaveHours={onSaveHours}
-                confirmingId={confirmingId}
-                alert={isAssignmentInactive(row)}
-                lockFixedTimes={lockFixedTimes}
-              />
-            )
-          ))
+          <>
+            {liveDate === today ? <TravelDayCard t={t} trip={dayTrip} /> : null}
+            {todayRows.map(row => (
+              <Fragment key={row.id}>
+                {liveDate === today ? <TravelLeg t={t} leg={(dayTrip?.legs || []).find(item => item.toJobId === row.work_jobs?.id)} /> : null}
+                {isAssignmentActive(row) ? (
+                  <NextAssignmentCard
+                    t={t}
+                    language={language}
+                    today={today}
+                    now={now}
+                    row={row}
+                    object={objectById(row.work_jobs?.object_id)}
+                    workers={workers}
+                    currentWorkerId={currentWorker?.id}
+                    onConfirm={onConfirm}
+                    onSaveHours={onSaveHours}
+                    confirmingId={confirmingId}
+                    lockFixedTimes={lockFixedTimes}
+                  />
+                ) : (
+                  <ExpandableAssignment
+                    t={t}
+                    language={language}
+                    today={today}
+                    now={now}
+                    row={row}
+                    object={objectById(row.work_jobs?.object_id)}
+                    workers={workers}
+                    currentWorkerId={currentWorker?.id}
+                    onConfirm={onConfirm}
+                    onSaveHours={onSaveHours}
+                    confirmingId={confirmingId}
+                    alert={isAssignmentInactive(row)}
+                    lockFixedTimes={lockFixedTimes}
+                  />
+                )}
+              </Fragment>
+            ))}
+          </>
         )}
       </section>
 
@@ -717,23 +779,26 @@ export default function EmployeeHome({
           </div>
         ) : (
           <div className="space-y-3">
+            <TravelDayCard t={t} trip={dayTrip} />
             {otherDayRows.map(row => (
-              <ExpandableAssignment
-                key={row.id}
-                t={t}
-                language={language}
-                today={today}
-                now={now}
-                row={row}
-                object={objectById(row.work_jobs?.object_id)}
-                workers={workers}
-                currentWorkerId={currentWorker?.id}
-                onConfirm={onConfirm}
-                onSaveHours={onSaveHours}
-                confirmingId={confirmingId}
-                alert={isAssignmentInactive(row)}
-                lockFixedTimes={lockFixedTimes}
-              />
+              <Fragment key={row.id}>
+                <TravelLeg t={t} leg={(dayTrip?.legs || []).find(item => item.toJobId === row.work_jobs?.id)} />
+                <ExpandableAssignment
+                  t={t}
+                  language={language}
+                  today={today}
+                  now={now}
+                  row={row}
+                  object={objectById(row.work_jobs?.object_id)}
+                  workers={workers}
+                  currentWorkerId={currentWorker?.id}
+                  onConfirm={onConfirm}
+                  onSaveHours={onSaveHours}
+                  confirmingId={confirmingId}
+                  alert={isAssignmentInactive(row)}
+                  lockFixedTimes={lockFixedTimes}
+                />
+              </Fragment>
             ))}
           </div>
         )
