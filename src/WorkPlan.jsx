@@ -3325,12 +3325,9 @@ export default function WorkPlan({
             onRetry={loadData}
             onConfirm={handleSeen}
             onSaveHours={handleSaveHours}
-            onSaveSelfLog={handleSaveSelfLog}
-            onDeleteSelfLog={handleDeleteSelfLog}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
-            savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
             allowPastHours

@@ -96,7 +96,7 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
         <p className="mt-2 text-sm font-semibold text-cyan-100">{t('hoursFor').replace('{name}', workerLabel)}</p>
       )}
       <p className="mt-2 text-sm text-cyan-100">{minutesLabel(minutes, t)}</p>
-      {changedLabel && <p className="mt-1 text-xs text-slate-400">{changedLabel}</p>}
+      {changedLabel && <p className="mt-1 text-sm font-semibold text-amber-100">{changedLabel}</p>}
       {canEdit ? (
         <>
           <div className="mt-3 grid grid-cols-1 gap-3">

@@ -5,7 +5,6 @@ import { IconAlert, IconBag, IconCheck, IconChevron, IconMap, IconNote, IconWork
 import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
 import { HoursRow } from './EmployeeHours'
-import SelfWorkForm from './SelfWorkForm'
 import OpenPostActions from './OpenPostActions'
 import { ObjectGuidePanel } from './ObjectGuide'
 import { serviceLabel } from './objectServices'
@@ -450,12 +449,9 @@ export default function EmployeeHome({
   onRetry,
   onConfirm,
   onSaveHours,
-  onSaveSelfLog,
-  onDeleteSelfLog,
   onOpenNotices,
   onOpenHours,
   confirmingId = '',
-  savingSelf = false,
   boardDate,
   onBoardDateChange,
   allowPastHours = false,
@@ -521,7 +517,6 @@ export default function EmployeeHome({
     boardCounts[date] = (boardCounts[date] || 0) + 1
   }
   const liveDate = allowPastHours ? selectedDate : (selectedDate < today ? today : selectedDate)
-  const hoursDate = allowPastHours ? liveDate : today
   const todayRows = sorted.filter(row => isoDate(row.work_jobs?.work_date) === today)
   const otherDayRows = liveDate === today ? [] : sorted.filter(row => isoDate(row.work_jobs?.work_date) === liveDate)
   const weekDays = berlinWeekDays(berlinWeekStart(today))
@@ -638,20 +633,6 @@ export default function EmployeeHome({
           ))
         )}
       </section>
-
-      {onSaveSelfLog && (
-        <SelfWorkForm
-          t={t}
-          language={language}
-          today={today}
-          date={hoursDate}
-          objects={objects}
-          logs={selfLogs}
-          onSave={onSaveSelfLog}
-          onDelete={onDeleteSelfLog}
-          saving={savingSelf}
-        />
-      )}
 
       {myPending.length > 0 && (
         <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
