@@ -4,6 +4,7 @@ import { IconAlert, IconChevron, IconUser, IconWork } from './icons'
 import WorkerShortcutRow from './WorkerShortcuts'
 import {
   assignmentRange,
+  clockRange,
   durationMinutes,
   fillText,
   formatClock,
@@ -14,6 +15,7 @@ import {
   rowWorkMinutes,
   selfLogMinutes,
   shortPlace,
+  turnusForDate,
   workerInitials,
 } from './planUtils'
 import { formatKm } from './travel'
@@ -232,7 +234,7 @@ export default function AdminPlanBoard({
             {longWeekdayDate(liveBoardDate, language)}
           </h2>
           <p className="mt-1 text-sm text-slate-300">
-            {fillText(t('adminDayJobs'), { count: String(sortedJobs.length) })}
+            {fillText(t('adminDayJobs'), { count: String(focusWorkerId ? visibleJobs.length : sortedJobs.length) })}
             {dayMinutes != null ? ` · ${fillText(t('adminDayHours'), { hours: minutesLabel(dayMinutes, t) })}` : ''}
             {' · '}
             {fillText(t('adminDayPlanned'), { count: String(dayRoster.working.length) })}
@@ -490,16 +492,24 @@ export default function AdminPlanBoard({
               )}
               {(focusWorkerId ? visibleJobs : sortedJobs).map((job, index, list) => {
                 const open = boardOpenId === job.id
-                const matched = !focusWorkerId || jobHasWorker(job, focusWorkerId)
                 const object = objects.find(item => item.id === job.object_id)
                 const place = job.object_name || job.location_text || t('planNoPlace')
                 const area = shortPlace(job, object)
-                const peopleNames = (job.work_job_assignees ?? [])
-                  .filter(row => ['assigned', 'approved'].includes(row.status))
-                  .map(row => workerName?.(row.worker_id))
-                  .filter(Boolean)
-                const start = formatClock(job.start_time)
-                const end = formatClock(job.end_time)
+                const focusRow = focusWorkerId
+                  ? (job.work_job_assignees ?? []).find(row => row.worker_id === focusWorkerId)
+                  : null
+                const peopleNames = focusWorkerId
+                  ? []
+                  : (job.work_job_assignees ?? [])
+                    .filter(row => ['assigned', 'approved'].includes(row.status))
+                    .map(row => workerName?.(row.worker_id))
+                    .filter(Boolean)
+                const range = focusRow
+                  ? assignmentRange(focusRow, job, object)
+                  : clockRange(job.start_time, job.end_time)
+                const start = range.start || formatClock(job.start_time)
+                const end = range.end || formatClock(job.end_time)
+                const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const detailsId = `admin-job-${job.id}`
                 const prev = list[index - 1]
@@ -520,7 +530,7 @@ export default function AdminPlanBoard({
                   <li
                     className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
                       open ? 'relative z-20' : ''
-                    } ${matched ? '' : 'opacity-40'}`}
+                    }`}
                   >
                     <button
                       type="button"
@@ -539,7 +549,10 @@ export default function AdminPlanBoard({
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>
                           <span className="mt-0.5 block truncate text-xs text-slate-300">
-                            {[area && area !== place ? area : '', peopleNames.join(', ') || t('adminJobUnassigned')].filter(Boolean).join(' · ')}
+                            {[
+                              area && area !== place ? area : '',
+                              focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
+                            ].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                         <span className="flex items-center gap-2">

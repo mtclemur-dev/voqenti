@@ -537,7 +537,7 @@ export default function WorkPlan({
   const [jobFormOpen, setJobFormOpen] = useState(() => Boolean(readUiMemory().jobFormOpen))
   const [rosterFilter, setRosterFilter] = useState(() => oneOf(readUiMemory().rosterFilter, ROSTER_FILTERS, ''))
   const [rosterSearch, setRosterSearch] = useState('')
-  const [focusWorkerId, setFocusWorkerId] = useState('')
+  const [focusWorkerId, setFocusWorkerId] = useState(() => stringOr(readUiMemory().focusWorkerId))
   const [travelTick, setTravelTick] = useState(0)
   const [jobMenuId, setJobMenuId] = useState('')
   const [shortcutBusy, setShortcutBusy] = useState(false)
@@ -566,8 +566,9 @@ export default function WorkPlan({
       historyTab,
       extraYear,
       rosterFilter,
+      focusWorkerId,
     })
-  }, [adminTab, boardDate, boardOpenId, duplicating, editingId, extraYear, form, historyFrom, historyObjectId, historySearch, historyTab, historyTo, historyWorkerId, homeDate, hoursDate, jobFormOpen, rosterFilter])
+  }, [adminTab, boardDate, boardOpenId, duplicating, editingId, extraYear, focusWorkerId, form, historyFrom, historyObjectId, historySearch, historyTab, historyTo, historyWorkerId, homeDate, hoursDate, jobFormOpen, rosterFilter])
 
   const workerId = currentWorker?.id
   const loadData = useCallback(async (mode = 'live') => {
