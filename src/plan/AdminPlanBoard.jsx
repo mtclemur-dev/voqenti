@@ -491,10 +491,10 @@ export default function AdminPlanBoard({
                       className="flex min-h-12 w-full items-stretch gap-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                     >
                       <span className={`w-1 shrink-0 rounded-l-2xl ${TONE[tone]}`} aria-hidden="true" />
-                      <span className="grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[5.5rem_minmax(0,1fr)_auto]">
-                        <span className="text-sm font-bold tabular-nums text-white">
+                      <span className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]">
+                        <span className="text-base font-black tabular-nums leading-none text-white">
                           {start || '—'}
-                          {end && start ? <span className="mt-0.5 block text-[11px] font-semibold tabular-nums text-slate-400">– {end}</span> : null}
+                          {end && start ? <span className="mt-1 block text-[12px] font-semibold tabular-nums text-slate-300">– {end}</span> : null}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>

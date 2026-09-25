@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { isoDate, objectFixedHours, objectHasGuide, parseTurnus, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import TimeField from './TimeField'
 import { emptyGroup, emptyRoom, formatHoursWithUnit, groupsForDay, groupsFromObject, roomLine } from './objectRooms'
 
 function HundredthsField({ value, onChange, placeholder, className }) {
@@ -175,9 +176,19 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
             onChange={e => setForm(current => ({ ...current, time_locked: e.target.checked }))}
             className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-500"
           />
-          <span>
+          <span className="min-w-0 flex-1">
             <span className="block font-semibold text-white">{t('objectTimeRigid')}</span>
             {t('objectTimeRigidHint') ? <span className="mt-1 block text-[13px] leading-6 text-slate-300">{t('objectTimeRigidHint')}</span> : null}
+            {form.time_locked ? (
+              <span className="mt-3 block max-w-[11rem]">
+                <TimeField
+                  label={t('objectTimeFrom')}
+                  value={form.fixed_start || ''}
+                  onChange={value => setForm(current => ({ ...current, fixed_start: value }))}
+                  className="block text-[11px] text-slate-400"
+                />
+              </span>
+            ) : null}
           </span>
         </label>
       </div>

@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, workerDayTravel, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, workerDayTravel, WORK_WEEKDAYS } from './plan/planUtils'
 import { ensureTravels, jobPlaceAddress } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
@@ -54,6 +54,7 @@ const emptyObjectForm = () => ({
   fixed_hours: '',
   fixed_hours_by_day: {},
   time_locked: false,
+  fixed_start: '',
   leistung_text: '',
   leistung_image_url: '',
   turnus: {},
@@ -2075,6 +2076,7 @@ export default function WorkPlan({
         Object.entries(parseFixedHoursByDay(item.fixed_hours_json)).map(([day, hours]) => [Number(day), String(hours)]),
       ),
       time_locked: objectTimeLocked(item),
+      fixed_start: objectFixedStart(item),
       leistung_text: item.leistung_text ?? '',
       leistung_image_url: item.leistung_image_url ?? '',
       turnus: parseTurnus(item.turnus_json),
@@ -2110,8 +2112,18 @@ export default function WorkPlan({
     for (const job of jobs) {
       if (!objectFixedMinutes(object, job.work_date)) continue
       const jobTimed = withFixedEnd({ start: job.start_time, end: job.end_time }, object, job.work_date)
-      if (jobTimed.start && jobTimed.end && formatClock(job.end_time) !== jobTimed.end) {
-        await supabase.from('work_jobs').update({ end_time: jobTimed.end, updated_at: now }).eq('id', job.id)
+      if (
+        jobTimed.start
+        && (
+          formatClock(job.start_time) !== formatClock(jobTimed.start)
+          || (jobTimed.end && formatClock(job.end_time) !== jobTimed.end)
+        )
+      ) {
+        await supabase.from('work_jobs').update({
+          start_time: jobTimed.start || job.start_time,
+          end_time: jobTimed.end || job.end_time,
+          updated_at: now,
+        }).eq('id', job.id)
         touched += 1
       }
       for (const row of byJob.get(job.id) || []) {
@@ -2162,7 +2174,7 @@ export default function WorkPlan({
       manager: objectForm.manager.trim() || null,
       phone: objectForm.phone.trim() || null,
       fixed_hours: parseFixedHoursValue(objectForm.fixed_hours) || null,
-      fixed_hours_json: serializeFixedHoursJson(objectForm.fixed_hours_by_day, objectForm.time_locked),
+      fixed_hours_json: serializeFixedHoursJson(objectForm.fixed_hours_by_day, { locked: objectForm.time_locked, start: objectForm.fixed_start }),
       leistung_text: objectForm.leistung_text.trim() || null,
       leistung_image_url: objectForm.leistung_image_url.trim() || null,
       turnus_json: serializeTurnus(objectForm.turnus),
@@ -2259,7 +2271,7 @@ export default function WorkPlan({
       const hours = Number(String(next.form.fixed_hours).replace(',', '.'))
       const extraPayload = {
         fixed_hours: Number.isFinite(hours) && hours > 0 ? hours : item.fixed_hours ?? null,
-        fixed_hours_json: serializeFixedHoursJson(next.form.fixed_hours_by_day, objectTimeLocked(item)),
+        fixed_hours_json: serializeFixedHoursJson(next.form.fixed_hours_by_day, { locked: objectTimeLocked(item), start: objectFixedStart(item) }),
         leistung_text: next.form.leistung_text.trim() || null,
         leistung_image_url: next.form.leistung_image_url.trim() || null,
         turnus_json: serializeTurnus(next.form.turnus),

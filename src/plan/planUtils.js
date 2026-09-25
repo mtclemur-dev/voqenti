@@ -148,16 +148,28 @@ export function objectTimeLocked(object) {
   return Boolean(parsed && !Array.isArray(parsed) && (parsed.locked || parsed.time_locked))
 }
 
+export function objectFixedStart(object) {
+  const parsed = parseFixedHoursRaw(object?.fixed_hours_json)
+  if (!parsed || Array.isArray(parsed)) return ''
+  return formatClock(parsed.start || parsed.from)
+}
+
 export function serializeFixedHoursByDay(map) {
   return TURNUS_DAYS
     .map(weekday => ({ weekday, hours: parseFixedHoursValue(map?.[weekday]) }))
     .filter(item => item.hours)
 }
 
-export function serializeFixedHoursJson(map, locked = false) {
+export function serializeFixedHoursJson(map, options = {}) {
+  const locked = typeof options === 'boolean' ? options : Boolean(options?.locked)
+  const start = formatClock(typeof options === 'boolean' ? '' : options?.start)
   const days = serializeFixedHoursByDay(map)
-  if (locked) return { days, locked: true }
-  return days
+  if (!locked && !start) return days
+  return {
+    days,
+    ...(locked ? { locked: true } : {}),
+    ...(start ? { start } : {}),
+  }
 }
 
 export function weekdayFromDate(date) {
@@ -193,12 +205,20 @@ export function formatObjectFixedSummary(object, language = 'de') {
   const map = parseFixedHoursByDay(object?.fixed_hours_json)
   const days = TURNUS_DAYS.filter(day => map[day])
   const fallback = parseFixedHoursValue(object?.fixed_hours)
-  if (!days.length) return formatFixedHoursLabel(fallback)
-  const same = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]]) && days.length === 7
-  if (same) return formatFixedHoursLabel(map[days[0]])
-  const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
-  if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
-  return parts.join(' · ')
+  const start = objectFixedStart(object)
+  let hours = ''
+  if (!days.length) hours = formatFixedHoursLabel(fallback)
+  else {
+    const same = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]]) && days.length === 7
+    if (same) hours = formatFixedHoursLabel(map[days[0]])
+    else {
+      const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
+      if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
+      hours = parts.join(' · ')
+    }
+  }
+  if (start && objectTimeLocked(object)) return hours ? `${start} · ${hours}` : start
+  return hours
 }
 
 export function clockPlusMinutes(start, minutes) {
@@ -210,18 +230,20 @@ export function clockPlusMinutes(start, minutes) {
 
 export function withFixedEnd(range, object, date) {
   const minutes = objectFixedMinutes(object, date)
-  const start = formatClock(range?.start)
-  if (!minutes) return clockRange(range?.start, range?.end)
+  const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
+  const start = lockedStart || formatClock(range?.start)
+  if (!minutes) return clockRange(start || range?.start, range?.end)
   return { start, end: start ? clockPlusMinutes(start, minutes) : '' }
 }
 
 export function formWithFixedTimes(current, object) {
   const date = current?.work_date
-  if (!objectFixedMinutes(object, date)) return current
-  const job = withFixedEnd({ start: current.start_time, end: current.end_time }, object, date)
+  const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
+  if (!objectFixedMinutes(object, date) && !lockedStart) return current
+  const job = withFixedEnd({ start: lockedStart || current.start_time, end: current.end_time }, object, date)
   const hours = {}
   for (const [id, range] of Object.entries(current.worker_hours || {})) {
-    hours[id] = withFixedEnd(range, object, date)
+    hours[id] = withFixedEnd({ ...range, start: lockedStart || range.start }, object, date)
   }
   return {
     ...current,
@@ -293,15 +315,16 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
       let duration = rangeDurationMinutes(range)
       if (!duration) duration = objectFixedMinutes(object, day)
       if (!duration) continue
-      const start = formatClock(range.start) || '06:00'
+      const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
+      const start = lockedStart || formatClock(range.start) || '06:00'
       slots.push({
         jobId: job.id,
         rowId: row.id,
         workerId,
         createdAt: row.created_at || job.created_at || '',
-        locked: Boolean(objectTimeLocked(object) && formatClock(range.start)),
+        locked: Boolean(objectTimeLocked(object) && start),
         address: object?.address || job.location_text || job.object_name || '',
-        range: { start, end: range.end || clockPlusMinutes(start, duration) },
+        range: { start, end: (lockedStart && duration ? clockPlusMinutes(start, duration) : range.end) || clockPlusMinutes(start, duration) },
         duration,
       })
     }
@@ -358,11 +381,11 @@ export function packWorkerDay(slots) {
       packed.push(slot)
       continue
     }
-    let newStart = nextFree != null && start < nextFree ? nextFree : start
+    let newStart = nextFree != null ? nextFree : start
     if (lastFlexible) {
       const prevEnd = clockMinutes(lastFlexible.range.end)
       const drive = travelMinutesSync(lastFlexible.address, slot.address)
-      if (prevEnd != null && drive) newStart = Math.max(newStart, prevEnd + drive)
+      if (prevEnd != null) newStart = Math.max(newStart, prevEnd + (drive || 0))
     }
     newStart = nextUnlockedStart(newStart, duration, lockedWindows)
     const newEnd = newStart + duration
