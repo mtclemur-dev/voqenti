@@ -226,13 +226,16 @@ export function objectFixedHoursLabel(object, date) {
 export function formatObjectFixedSummary(object, language = 'de') {
   const map = parseFixedHoursByDay(object?.fixed_hours_json)
   const days = TURNUS_DAYS.filter(day => map[day])
+  const workDays = WORK_WEEKDAYS.filter(day => map[day])
   const fallback = parseFixedHoursValue(object?.fixed_hours)
   const start = objectFixedStart(object)
   let hours = ''
   if (!days.length) hours = formatFixedHoursLabel(fallback)
   else {
-    const same = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]]) && days.length === 7
-    if (same) hours = formatFixedHoursLabel(map[days[0]])
+    const sameValue = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]])
+    const wholeWeek = sameValue && days.length === 7
+    const workWeek = sameValue && workDays.length === 5 && days.length === 5
+    if (wholeWeek || workWeek) hours = formatFixedHoursLabel(map[days[0]])
     else {
       const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
       if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
@@ -995,7 +998,7 @@ export function weekFriday(date) {
 
 export function withObjectPlanRange(form, object, { force = false } = {}) {
   const days = objectPlanWeekdays(object)
-  if (days.length < 2 || !form?.work_date) return form
+  if (!days.length || !form?.work_date) return form
   const sameDay = !form.until_date || isoDate(form.until_date) === isoDate(form.work_date)
   if (!force && !sameDay) return { ...form, weekdays: days }
   const anchor = planWeekAnchor(form.work_date)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { parseServices, serviceHasHours, suggestedServiceNames } from './objectServices'
-import { weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import { formatObjectFixedSummary, objectForService, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 
 function HoursField({ value, onChange, placeholder, className }) {
   return (
@@ -135,9 +135,13 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
   )
 }
 
-export function JobServiceField({ t, object, value, onChange, className = 'mt-3 block text-xs text-slate-400' }) {
+export function JobServiceField({ t, language = 'de', object, value, onChange, className = 'mt-3 block text-xs text-slate-400' }) {
   const services = parseServices(object?.services_json ?? object?.services)
   if (!services.length) return null
+  const selected = services.find(item => item.id === value)
+  const hours = selected
+    ? formatObjectFixedSummary(objectForService(object, selected.id), language)
+    : ''
   return (
     <label className={className}>
       {t('serviceLabel')}
@@ -147,10 +151,22 @@ export function JobServiceField({ t, object, value, onChange, className = 'mt-3 
         className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
       >
         <option value="">{t('serviceSelect')}</option>
-        {services.map(item => (
-          <option key={item.id} value={item.id}>{item.name}</option>
-        ))}
+        {services.map(item => {
+          const summary = formatObjectFixedSummary(objectForService(object, item.id), language)
+          return (
+            <option key={item.id} value={item.id}>
+              {summary ? `${item.name} · ${summary}` : item.name}
+            </option>
+          )
+        })}
       </select>
+      {hours ? (
+        <span className="mt-1 block text-[12px] text-cyan-100">
+          {t('serviceJobHours').replace('{hours}', hours)}
+        </span>
+      ) : selected ? (
+        <span className="mt-1 block text-[12px] text-slate-500">{t('serviceJobHoursEmpty')}</span>
+      ) : null}
     </label>
   )
 }

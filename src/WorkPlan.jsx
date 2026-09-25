@@ -2934,7 +2934,9 @@ export default function WorkPlan({
                     ) : null}
                     {parseServices(item.services_json).length ? (
                       <div className="mt-1 flex flex-wrap gap-1.5">
-                        {parseServices(item.services_json).map(row => (
+                        {parseServices(item.services_json).map(row => {
+                          const hours = formatObjectFixedSummary(objectForService(item, row.id), language)
+                          return (
                           <button
                             key={row.id}
                             type="button"
@@ -2946,9 +2948,10 @@ export default function WorkPlan({
                             }}
                             className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-100"
                           >
-                            {row.name}
+                            {hours ? `${row.name} · ${hours}` : row.name}
                           </button>
-                        ))}
+                          )
+                        })}
                       </div>
                     ) : null}
                     {objectHasGuide(item) ? <p className="mt-0.5 text-xs text-slate-300">{t('objectGuideTitle')}</p> : null}
@@ -3151,9 +3154,9 @@ export default function WorkPlan({
               })}
             </div>
           </div>
-          {formWorkdays.length > 1 && (
+          {formWorkdays.length > 0 && (
             <p className="mt-2 text-xs text-cyan-100">
-              {t(objectPlanWeekdays(formObject).length > 1 && !editingId && !duplicating ? 'planObjectWeekHint' : 'planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
+              {t(objectPlanWeekdays(formObject).length > 0 && !editingId && !duplicating ? 'planObjectWeekHint' : 'planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
             </p>
           )}
           <label className="mt-3 block text-xs text-slate-400">
@@ -3173,6 +3176,7 @@ export default function WorkPlan({
           </label>
           <JobServiceField
             t={t}
+            language={language}
             object={selectedObject}
             value={form.service_id}
             onChange={value => setField('service_id', value)}
@@ -3495,6 +3499,7 @@ export default function WorkPlan({
               </label>
               <JobServiceField
                 t={t}
+                language={language}
                 object={selectedNeedObject}
                 value={needForm.service_id}
                 onChange={value => setNeedField('service_id', value)}
