@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import WeekBoard from './WeekBoard'
 import { IconAlert, IconChevron, IconUser, IconWork } from './icons'
 import WorkerShortcutRow from './WorkerShortcuts'
@@ -16,6 +16,7 @@ import {
   shortPlace,
   workerInitials,
 } from './planUtils'
+import { formatKm } from './travel'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -114,6 +115,7 @@ export default function AdminPlanBoard({
   onSelectDate,
   onNewJob,
   objects = [],
+  dayTravel,
   workerName,
   renderJob,
   jobFormOpen = false,
@@ -163,9 +165,10 @@ export default function AdminPlanBoard({
             ? dayMinutesForWorker(item.id, sortedJobs, extra)
             : (item.id === currentWorkerId ? (extra || 0) : null)
         const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
-        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES }
+        const travel = dayTravel instanceof Map ? dayTravel.get(item.id) : dayTravel?.[item.id]
+        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES, travel }
       })
-  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
+  }, [currentWorkerId, dayRoster, dayTravel, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
 
   const dayMinutes = useMemo(
     () => plannedMinutesForDay(sortedJobs, hiddenHourIds.size ? hiddenHourIds : null),
@@ -408,7 +411,7 @@ export default function AdminPlanBoard({
                             <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
                             <span className="mt-0.5 block truncate text-xs text-slate-300">
                               {person.status === 'working'
-                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
+                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.travel?.minutes ? ` · ${fillText(t('travelDay'), { km: formatKm(person.travel.meters) || '0', time: minutesLabel(person.travel.minutes, t) })}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
                                 : person.status === 'off'
                                   ? `${person.label} · ${statusLabel}`
                                   : statusLabel}
@@ -446,7 +449,7 @@ export default function AdminPlanBoard({
                   {t('adminJobsForWorkerEmpty')}
                 </li>
               )}
-              {sortedJobs.map(job => {
+              {(focusWorkerId ? visibleJobs : sortedJobs).map((job, index, list) => {
                 const open = boardOpenId === job.id
                 const matched = !focusWorkerId || jobHasWorker(job, focusWorkerId)
                 const object = objects.find(item => item.id === job.object_id)
@@ -460,9 +463,18 @@ export default function AdminPlanBoard({
                 const end = formatClock(job.end_time)
                 const tone = jobTone(job)
                 const detailsId = `admin-job-${job.id}`
+                const prev = list[index - 1]
+                const focusTrip = focusWorkerId && (dayTravel instanceof Map ? dayTravel.get(focusWorkerId) : dayTravel?.[focusWorkerId])
+                const leg = focusTrip?.legs?.find(item => item.toJobId === job.id && (!prev || item.fromJobId === prev.id))
                 return (
+                  <Fragment key={job.id}>
+                  {leg?.minutes ? (
+                    <li className="px-3 py-1 text-center text-[11px] font-semibold tracking-wide text-slate-400">
+                      {fillText(t('travelMinutes'), { minutes: String(leg.minutes) })}
+                      {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
+                    </li>
+                  ) : null}
                   <li
-                    key={job.id}
                     className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
                       open ? 'relative z-20' : ''
                     } ${matched ? '' : 'opacity-40'}`}
@@ -507,6 +519,7 @@ export default function AdminPlanBoard({
                       )}
                     </div>
                   </li>
+                  </Fragment>
                 )
               })}
             </ol>

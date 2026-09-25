@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
+import { travelBetweenSync, travelMinutesSync } from './travel.js'
 
 export function firstName(fullName) {
   const text = String(fullName || '').trim()
@@ -299,6 +300,7 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
         workerId,
         createdAt: row.created_at || job.created_at || '',
         locked: Boolean(objectTimeLocked(object) && formatClock(range.start)),
+        address: object?.address || job.location_text || job.object_name || '',
         range: { start, end: range.end || clockPlusMinutes(start, duration) },
         duration,
       })
@@ -348,6 +350,7 @@ export function packWorkerDay(slots) {
   const packed = locked.map(slot => ({ ...slot, range: { ...slot.range } }))
   const moved = []
   let nextFree = null
+  let lastFlexible = null
   for (const slot of flexible) {
     const start = clockMinutes(slot.range.start)
     const duration = slot.duration || rangeDurationMinutes(slot.range)
@@ -356,12 +359,18 @@ export function packWorkerDay(slots) {
       continue
     }
     let newStart = nextFree != null && start < nextFree ? nextFree : start
+    if (lastFlexible) {
+      const prevEnd = clockMinutes(lastFlexible.range.end)
+      const drive = travelMinutesSync(lastFlexible.address, slot.address)
+      if (prevEnd != null && drive) newStart = Math.max(newStart, prevEnd + drive)
+    }
     newStart = nextUnlockedStart(newStart, duration, lockedWindows)
     const newEnd = newStart + duration
     nextFree = newEnd
     const range = { start: minutesToClock(newStart), end: minutesToClock(newEnd) }
     const next = { ...slot, range }
     packed.push(next)
+    lastFlexible = next
     if (range.start !== slot.range.start || range.end !== slot.range.end) {
       moved.push({ ...next, previous: slot.range })
     }
@@ -377,6 +386,26 @@ export function packWorkerDay(slots) {
 
 export function packWorkerSlots(slots) {
   return packWorkerDay(slots).moved
+}
+
+export function workerDayTravel(jobs, workerId, date, objects) {
+  const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
+  let minutes = 0
+  let meters = 0
+  const legs = []
+  for (let index = 1; index < packed.length; index += 1) {
+    const trip = travelBetweenSync(packed[index - 1].address, packed[index].address)
+    if (!trip.minutes && !trip.meters) continue
+    minutes += trip.minutes
+    meters += trip.meters
+    legs.push({
+      fromJobId: packed[index - 1].jobId,
+      toJobId: packed[index].jobId,
+      minutes: trip.minutes,
+      meters: trip.meters,
+    })
+  }
+  return { minutes, meters, legs, packed }
 }
 
 export function overlappingWorkerDays(jobs, objects, options = {}) {

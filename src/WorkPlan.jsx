@@ -4,7 +4,8 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, workerDayTravel, WORK_WEEKDAYS } from './plan/planUtils'
+import { ensureTravels, jobPlaceAddress } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
@@ -536,6 +537,7 @@ export default function WorkPlan({
   const [rosterFilter, setRosterFilter] = useState(() => oneOf(readUiMemory().rosterFilter, ROSTER_FILTERS, ''))
   const [rosterSearch, setRosterSearch] = useState('')
   const [focusWorkerId, setFocusWorkerId] = useState('')
+  const [travelTick, setTravelTick] = useState(0)
   const [jobMenuId, setJobMenuId] = useState('')
   const [shortcutBusy, setShortcutBusy] = useState(false)
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
@@ -832,6 +834,10 @@ export default function WorkPlan({
     const pending = [...new Set((workerIds || []).filter(Boolean))]
     if (!day || !pending.length) return list
     let snapshot = list
+    const places = snapshot
+      .filter(job => isoDate(job.work_date) === day)
+      .map(job => jobPlaceAddress(job, objects.find(item => item.id === job.object_id)))
+    await ensureTravels(places)
     const now = new Date().toISOString()
     const notices = []
     const packed = new Set()
@@ -998,8 +1004,29 @@ export default function WorkPlan({
         ? withChainedJobTimes(boardJobs, focusWorkerId, liveBoardDate, objects)
         : withChainedBoardJobs(boardJobs, liveBoardDate, objects)
     ),
-    [boardJobs, focusWorkerId, liveBoardDate, objects],
+    [boardJobs, focusWorkerId, liveBoardDate, objects, travelTick],
   )
+  useEffect(() => {
+    const places = boardJobs.map(job => jobPlaceAddress(job, objects.find(item => item.id === job.object_id)))
+    if (!places.filter(Boolean).length) return undefined
+    let cancelled = false
+    ensureTravels(places).then(() => {
+      if (!cancelled) setTravelTick(current => current + 1)
+    })
+    return () => { cancelled = true }
+  }, [boardJobs, objects])
+  const dayTravel = useMemo(() => {
+    const map = new Map()
+    for (const job of boardJobs) {
+      for (const row of job.work_job_assignees ?? []) {
+        if (!row.worker_id || (row.status && !['assigned', 'approved'].includes(row.status))) continue
+        if (map.has(row.worker_id)) continue
+        const trip = workerDayTravel(boardJobs, row.worker_id, liveBoardDate, objects)
+        if (trip.minutes || trip.meters) map.set(row.worker_id, trip)
+      }
+    }
+    return map
+  }, [boardJobs, liveBoardDate, objects, travelTick])
   const seriesJobs = useMemo(
     () => relatedSeriesJobs(jobs, jobs.find(job => job.id === editingId), today),
     [editingId, jobs, today],
@@ -2872,6 +2899,7 @@ export default function WorkPlan({
             setJobFormOpen(true)
           }}
           objects={objects}
+          dayTravel={dayTravel}
           workerName={workerName}
           renderJob={renderAdminJob}
           jobFormOpen={Boolean(jobFormOpen || editingId || duplicating)}
