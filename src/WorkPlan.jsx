@@ -5,7 +5,7 @@ import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
 import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, workerDayTravel, WORK_WEEKDAYS } from './plan/planUtils'
-import { ensureTravels, jobPlaceAddress } from './plan/travel'
+import { ensureDayTravels } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
@@ -835,10 +835,7 @@ export default function WorkPlan({
     const pending = [...new Set((workerIds || []).filter(Boolean))]
     if (!day || !pending.length) return list
     let snapshot = list
-    const places = snapshot
-      .filter(job => isoDate(job.work_date) === day)
-      .map(job => jobPlaceAddress(job, objects.find(item => item.id === job.object_id)))
-    await ensureTravels(places)
+    await ensureDayTravels(snapshot.filter(job => isoDate(job.work_date) === day), objects)
     const now = new Date().toISOString()
     const notices = []
     const packed = new Set()
@@ -1008,10 +1005,9 @@ export default function WorkPlan({
     [boardJobs, focusWorkerId, liveBoardDate, objects, travelTick],
   )
   useEffect(() => {
-    const places = boardJobs.map(job => jobPlaceAddress(job, objects.find(item => item.id === job.object_id)))
-    if (!places.filter(Boolean).length) return undefined
+    if (!boardJobs.length) return undefined
     let cancelled = false
-    ensureTravels(places).then(() => {
+    ensureDayTravels(boardJobs, objects).then(() => {
       if (!cancelled) setTravelTick(current => current + 1)
     })
     return () => { cancelled = true }

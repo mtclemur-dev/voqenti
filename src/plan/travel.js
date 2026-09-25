@@ -56,7 +56,8 @@ async function geocode(address) {
   if (!place) return null
   const cached = cacheGet(memory, GEO_KEY, place)
   if (cached) return cached
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=1&lang=de`
+  const query = /deutschland|germany|thüringen|thueringen|\bde\b/i.test(place) ? place : `${place}, Deutschland`
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=de`
   const response = await fetch(url)
   if (!response.ok) return null
   const data = await response.json()
@@ -135,10 +136,25 @@ export async function ensureTravels(places) {
     }
   }
   const trips = []
-  for (let index = 1; index < list.length; index += 1) {
-    trips.push(ensureTravel(list[index - 1], list[index]))
+  const allPairs = list.length <= 16
+  for (let left = 0; left < list.length; left += 1) {
+    for (let right = 0; right < list.length; right += 1) {
+      if (left === right) continue
+      if (!allPairs && Math.abs(left - right) !== 1) continue
+      trips.push(ensureTravel(list[left], list[right]))
+    }
   }
   await Promise.all(trips)
+}
+
+export async function ensureDayTravels(jobs, objects = []) {
+  const byId = new Map((objects || []).filter(item => item?.id).map(item => [item.id, item]))
+  const places = []
+  for (const job of jobs || []) {
+    const address = jobPlaceAddress(job, byId.get(job.object_id))
+    if (address) places.push(address)
+  }
+  await ensureTravels(places)
 }
 
 export function formatKm(meters) {

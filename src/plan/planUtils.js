@@ -398,12 +398,31 @@ export function packWorkerDay(slots) {
       moved.push({ ...next, previous: slot.range })
     }
   }
-  packed.sort((left, right) => {
+    packed.sort((left, right) => {
     const leftStart = clockMinutes(left.range.start)
     const rightStart = clockMinutes(right.range.start)
     if (leftStart !== rightStart) return leftStart - rightStart
     return String(left.jobId).localeCompare(String(right.jobId))
   })
+  for (let index = 1; index < packed.length; index += 1) {
+    const prev = packed[index - 1]
+    const slot = packed[index]
+    if (slot.locked) continue
+    const prevEnd = clockMinutes(prev.range.end)
+    const start = clockMinutes(slot.range.start)
+    const duration = slot.duration || rangeDurationMinutes(slot.range)
+    if (prevEnd == null || start == null || !duration) continue
+    const drive = travelMinutesSync(prev.address, slot.address)
+    if (!drive) continue
+    const needed = nextUnlockedStart(prevEnd + drive, duration, lockedWindows)
+    if (start >= needed) continue
+    const range = { start: minutesToClock(needed), end: minutesToClock(needed + duration) }
+    if (!slot.previous) slot.previous = { ...slot.range }
+    slot.range = range
+    if (!moved.some(item => item.jobId === slot.jobId && item.rowId === slot.rowId)) {
+      moved.push({ ...slot, previous: slot.previous })
+    }
+  }
   return { packed, moved }
 }
 

@@ -410,7 +410,7 @@ export default function AdminPlanBoard({
                             <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
                             <span className="mt-0.5 block truncate text-xs text-slate-300">
                               {person.status === 'working'
-                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.travel?.minutes ? ` · ${fillText(t('travelDay'), { km: formatKm(person.travel.meters) || '0', time: minutesLabel(person.travel.minutes, t) })}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
+                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.travel?.minutes ? ` · ${fillText(t('travelShort'), { time: minutesLabel(person.travel.minutes, t) })}` : ''} · ${statusLabel}`
                                 : person.status === 'off'
                                   ? `${person.label} · ${statusLabel}`
                                   : statusLabel}
@@ -432,6 +432,42 @@ export default function AdminPlanBoard({
               ? fillText(t('adminJobsForWorker'), { name: focusName, count: String(visibleJobs.length) })
               : t('adminJobsPanel')}
           </h3>
+          {(() => {
+            const focusTrip = focusWorkerId && (dayTravel instanceof Map ? dayTravel.get(focusWorkerId) : dayTravel?.[focusWorkerId])
+            const roadPeople = [...(dayTravel instanceof Map ? dayTravel.entries() : Object.entries(dayTravel || {}))]
+              .map(([id, trip]) => ({ id, ...trip, name: workerName?.(id) || '' }))
+              .filter(item => (item.minutes || item.meters) && !hiddenHourIds.has(item.id))
+              .sort((a, b) => b.minutes - a.minutes)
+            if (focusTrip?.minutes || focusTrip?.meters) {
+              return (
+                <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-white">
+                    {fillText(t('travelDay'), { km: formatKm(focusTrip.meters) || '0', time: minutesLabel(focusTrip.minutes, t) })}
+                  </p>
+                </div>
+              )
+            }
+            if (!focusWorkerId && roadPeople.length) {
+              return (
+                <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
+                  {t('travelHint') ? <p className="mt-1 text-xs text-slate-400">{t('travelHint')}</p> : null}
+                  <ul className="mt-2 space-y-1">
+                    {roadPeople.slice(0, 6).map(item => (
+                      <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate text-slate-200">{item.name}</span>
+                        <span className="shrink-0 tabular-nums text-cyan-100">
+                          {fillText(t('travelDay'), { km: formatKm(item.meters) || '0', time: minutesLabel(item.minutes, t) })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            }
+            return null
+          })()}
           {sortedJobs.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 px-5 py-8 text-center">
               <p className="text-sm text-slate-300">{emptyJobs}</p>
@@ -472,9 +508,13 @@ export default function AdminPlanBoard({
                 return (
                   <Fragment key={job.id}>
                   {leg?.minutes ? (
-                    <li className="px-3 py-1 text-center text-[11px] font-semibold tracking-wide text-slate-400">
-                      {fillText(t('travelMinutes'), { minutes: String(leg.minutes) })}
-                      {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
+                    <li className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
+                      <span className="h-px flex-1 bg-white/10" />
+                      <span className="tabular-nums text-cyan-100/90">
+                        {fillText(t('travelMinutes'), { minutes: String(leg.minutes) })}
+                        {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
+                      </span>
+                      <span className="h-px flex-1 bg-white/10" />
                     </li>
                   ) : null}
                   <li
