@@ -103,7 +103,11 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
   }, [])
 
   useEffect(() => {
-    const homes = [...new Set(vehicles.map(item => String(item.home_address || '').trim()).filter(Boolean))]
+    const homes = [...new Set(
+      vehicles
+        .filter(item => item.driver_id && String(item.home_address || '').trim())
+        .map(item => String(item.home_address).trim()),
+    )]
     if (!homes.length) return undefined
     let cancelled = false
     Promise.all(homes.flatMap(home => [ensureTravel(home, DEPOT_ADDRESS), ensureTravel(DEPOT_ADDRESS, home)]))
@@ -405,32 +409,38 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
                 </div>
               </div>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-950/70 px-3 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetToday')}</p>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-white">
-                    {item.todayTrip.meters
-                      ? fillText(t('fleetKm'), { km: formatKm(item.todayTrip.meters) || '0' })
-                      : '—'}
-                  </p>
-                  {item.todayTrip.minutes ? (
-                    <p className="text-xs text-slate-400">{minutesLabel(item.todayTrip.minutes, t)}</p>
-                  ) : null}
-                </div>
-                <div className="rounded-xl bg-slate-950/70 px-3 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetMonth')}</p>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-white">
-                    {item.monthTrip.meters
-                      ? fillText(t('fleetKm'), { km: formatKm(item.monthTrip.meters) || '0' })
-                      : '—'}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {fillText(t('fleetDays'), { count: String(item.dayCount) })}
-                    {item.monthTrip.minutes ? ` · ${minutesLabel(item.monthTrip.minutes, t)}` : ''}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">{t('fleetRound')}</p>
+              {item.driver_id && item.home_address ? (
+                <>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl bg-slate-950/70 px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetToday')}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-white">
+                        {item.todayTrip.meters
+                          ? fillText(t('fleetKm'), { km: formatKm(item.todayTrip.meters) || '0' })
+                          : '—'}
+                      </p>
+                      {item.todayTrip.minutes ? (
+                        <p className="text-xs text-slate-400">{minutesLabel(item.todayTrip.minutes, t)}</p>
+                      ) : null}
+                    </div>
+                    <div className="rounded-xl bg-slate-950/70 px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetMonth')}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-white">
+                        {item.monthTrip.meters
+                          ? fillText(t('fleetKm'), { km: formatKm(item.monthTrip.meters) || '0' })
+                          : '—'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {fillText(t('fleetDays'), { count: String(item.dayCount) })}
+                        {item.monthTrip.minutes ? ` · ${minutesLabel(item.monthTrip.minutes, t)}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{t('fleetRound')}</p>
+                </>
+              ) : item.driver_id ? (
+                <p className="mt-3 text-sm text-slate-400">{t('fleetNeedHome')}</p>
+              ) : null}
               {item.needs?.length ? (
                 <ul className="mt-3 space-y-1 text-sm text-slate-200">
                   {item.needs.map(need => (
