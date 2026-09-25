@@ -2000,23 +2000,21 @@ export default function WorkPlan({
       const range = objectFixedMinutes(object, current.work_date)
         ? withFixedEnd({ ...base, [key]: value }, object, current.work_date)
         : { ...base, [key]: value }
+      const nextHours = {
+        ...current.worker_hours,
+        [workerId]: range,
+      }
+      const spanned = spanClockRange(
+        current.worker_ids.map(id => (id === workerId ? range : nextHours[id] || clockRange(current.start_time, current.end_time))),
+        range,
+      )
       return {
         ...current,
-        worker_hours: {
-          ...current.worker_hours,
-          [workerId]: range,
-        },
+        start_time: spanned.start || current.start_time,
+        end_time: spanned.end || current.end_time,
+        worker_hours: nextHours,
       }
     })
-  }
-
-  const applyFormTimeToWorkers = () => {
-    setForm(current => ({
-      ...current,
-      worker_hours: Object.fromEntries(
-        current.worker_ids.map(id => [id, clockRange(current.start_time, current.end_time)]),
-      ),
-    }))
   }
 
   const declineJobsForAbsence = async (workerId, start, end, reasonLabel) => {
@@ -3028,49 +3026,6 @@ export default function WorkPlan({
               {t(objectPlanWeekdays(selectedObject).length > 1 && !editingId && !duplicating ? 'planObjectWeekHint' : 'planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
             </p>
           )}
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <TimeField
-              label={t('planStart')}
-              value={form.start_time}
-              onChange={value => setField('start_time', value)}
-            />
-            {objectFixedMinutes(selectedObject, form.work_date) ? (
-              <ComputedEnd
-                label={t('planEnd')}
-                time={form.end_time}
-                note={t('objectFixedEnd').replace('{hours}', objectFixedHoursLabel(selectedObject, form.work_date))}
-              />
-            ) : (
-              <TimeField
-                label={t('planEnd')}
-                value={form.end_time}
-                onChange={value => setField('end_time', value)}
-              />
-            )}
-          </div>
-          {form.worker_ids.length > 0 && (
-            <button
-              type="button"
-              onClick={applyFormTimeToWorkers}
-              className="mt-3 min-h-11 w-full rounded-xl bg-slate-800 px-4 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-            >
-              {t('planSameTimeAll')}
-            </button>
-          )}
-          {editingId && seriesJobs.length > 0 && (
-            <label className="mt-3 flex items-start gap-2 rounded-xl bg-slate-950/70 px-3 py-3 text-sm text-slate-100">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={form.applyTimeToAll}
-                onChange={e => setField('applyTimeToAll', e.target.checked)}
-              />
-              <span>
-                {t('planApplyTimeAll').replace('{dates}', seriesJobs.map(job => formatDisplayDate(job.work_date).slice(0, 5)).join(', '))}
-              </span>
-            </label>
-          )}
-
           <label className="mt-3 block text-xs text-slate-400">
             {t('object')}
             <select
@@ -3183,7 +3138,7 @@ export default function WorkPlan({
               {t('planPrivacyHint') && <p className="mt-2 text-[11px] text-slate-500">{t('planPrivacyHint')}</p>}
             </div>
 
-          {form.worker_ids.length > 0 && (
+          {form.worker_ids.length > 0 ? (
             <div className="mt-3 space-y-3 rounded-xl bg-slate-950/70 p-3">
               <p className="text-xs text-slate-400">{t('planWorkerHours')}</p>
               {form.worker_ids.map(workerId => {
@@ -3223,6 +3178,40 @@ export default function WorkPlan({
                 )
               })}
             </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <TimeField
+                label={t('planStart')}
+                value={form.start_time}
+                onChange={value => setField('start_time', value)}
+              />
+              {objectFixedMinutes(selectedObject, form.work_date) ? (
+                <ComputedEnd
+                  label={t('planEnd')}
+                  time={form.end_time}
+                  note={t('objectFixedEnd').replace('{hours}', objectFixedHoursLabel(selectedObject, form.work_date))}
+                />
+              ) : (
+                <TimeField
+                  label={t('planEnd')}
+                  value={form.end_time}
+                  onChange={value => setField('end_time', value)}
+                />
+              )}
+            </div>
+          )}
+          {editingId && seriesJobs.length > 0 && (
+            <label className="mt-3 flex items-start gap-2 rounded-xl bg-slate-950/70 px-3 py-3 text-sm text-slate-100">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={form.applyTimeToAll}
+                onChange={e => setField('applyTimeToAll', e.target.checked)}
+              />
+              <span>
+                {t('planApplyTimeAll').replace('{dates}', seriesJobs.map(job => formatDisplayDate(job.work_date).slice(0, 5)).join(', '))}
+              </span>
+            </label>
           )}
 
           <button
