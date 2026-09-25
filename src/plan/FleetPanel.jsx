@@ -120,9 +120,9 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
   const nameOf = (id) => people.find(item => item.id === id)?.name || ''
 
   const rows = useMemo(() => vehicles.map((item) => {
-    const days = workDaysFor(jobs, item.driver_id, monthStart, monthEnd)
-    const trip = item.home_address ? roundTrip(item.home_address) : { minutes: 0, meters: 0 }
-    const todayOn = days.has(today)
+    const days = item.driver_id ? workDaysFor(jobs, item.driver_id, monthStart, monthEnd) : new Set()
+    const trip = item.driver_id && item.home_address ? roundTrip(item.home_address) : { minutes: 0, meters: 0 }
+    const todayOn = Boolean(item.driver_id && days.has(today))
     return {
       ...item,
       driverName: firstName(nameOf(item.driver_id)) || nameOf(item.driver_id),

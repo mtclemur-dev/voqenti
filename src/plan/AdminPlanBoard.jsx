@@ -7,7 +7,6 @@ import {
   clockRange,
   durationMinutes,
   fillText,
-  firstName,
   formatClock,
   jobTone,
   longWeekdayDate,
@@ -19,7 +18,6 @@ import {
   turnusForDate,
   workerInitials,
 } from './planUtils'
-import { dayTravelOf, formatKm, travelLegLabelKey } from './travel'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -85,49 +83,6 @@ function jobHasWorker(job, workerId) {
   return (job.work_job_assignees ?? []).some(row => row.worker_id === workerId && ['assigned', 'approved', 'declined'].includes(row.status))
 }
 
-function workerTripLegs(job, dayTravel, workerName, focusWorkerId, match) {
-  const legs = []
-  for (const row of job.work_job_assignees ?? []) {
-    if (!row.worker_id) continue
-    if (focusWorkerId && row.worker_id !== focusWorkerId) continue
-    if (row.status && !['assigned', 'approved'].includes(row.status)) continue
-    const trip = dayTravelOf(dayTravel, row.worker_id)
-    const leg = (trip?.legs || []).find(item => match(item, job, row))
-    if (!leg?.minutes && !leg?.meters) continue
-    legs.push({
-      ...leg,
-      workerId: row.worker_id,
-      name: firstName(workerName?.(row.worker_id) || '') || workerName?.(row.worker_id) || '',
-    })
-  }
-  return legs
-}
-
-function arrivingLegs(job, dayTravel, workerName, focusWorkerId) {
-  return workerTripLegs(job, dayTravel, workerName, focusWorkerId, item => item.toJobId === job.id)
-}
-
-function leavingLegs(job, dayTravel, workerName, focusWorkerId) {
-  return workerTripLegs(job, dayTravel, workerName, focusWorkerId, item => item.kind === 'back' && item.fromJobId === job.id)
-}
-
-function TravelMark({ t, leg, named = false }) {
-  if (!leg?.minutes && !leg?.meters) return null
-  return (
-    <li className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
-      <span className="h-px flex-1 bg-white/10" />
-      <span className="tabular-nums text-cyan-100/90">
-        {fillText(t(travelLegLabelKey(leg, named && leg.name)), {
-          name: leg.name,
-          minutes: String(leg.minutes || 0),
-        })}
-        {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
-      </span>
-      <span className="h-px flex-1 bg-white/10" />
-    </li>
-  )
-}
-
 function jobStatusLabel(job, t) {
   const tone = jobTone(job)
   if (tone === 'idle') return t('planCancelled')
@@ -161,7 +116,6 @@ export default function AdminPlanBoard({
   onSelectDate,
   onNewJob,
   objects = [],
-  dayTravel,
   workerName,
   renderJob,
   jobFormOpen = false,
@@ -211,10 +165,9 @@ export default function AdminPlanBoard({
             ? dayMinutesForWorker(item.id, sortedJobs, extra)
             : (item.id === currentWorkerId ? (extra || 0) : null)
         const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
-        const travel = dayTravelOf(dayTravel, item.id)
-        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES, travel }
+        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES }
       })
-  }, [currentWorkerId, dayRoster, dayTravel, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
+  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
 
   const dayMinutes = useMemo(
     () => plannedMinutesForDay(sortedJobs, hiddenHourIds.size ? hiddenHourIds : null),
@@ -480,30 +433,17 @@ export default function AdminPlanBoard({
           </h3>
           {(() => {
             if (!focusWorkerId) return null
-            const focusTrip = dayTravelOf(dayTravel, focusWorkerId)
             const focusPerson = people.find(item => item.id === focusWorkerId)
             const workMinutes = focusPerson?.minutes
             const missing = workMinutes != null && workMinutes < DAY_TARGET_MINUTES
               ? DAY_TARGET_MINUTES - workMinutes
               : 0
-            const hasRoad = focusTrip?.minutes || focusTrip?.meters
-            if (!hasRoad && !missing) return null
+            if (!missing) return null
             return (
               <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
-                {hasRoad ? (
-                  <>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('travelTitle')}</p>
-                    <p className="mt-1 text-lg font-semibold tabular-nums text-white">
-                      {fillText(t('travelDay'), { km: formatKm(focusTrip.meters) || '0', time: minutesLabel(focusTrip.minutes, t) })}
-                    </p>
-                    {t('travelHint') ? <p className="mt-1 text-xs text-slate-400">{t('travelHint')}</p> : null}
-                  </>
-                ) : null}
-                {missing ? (
-                  <p className={`${hasRoad ? 'mt-2' : ''} text-sm font-semibold tabular-nums text-amber-100`}>
-                    {fillText(t('travelMissing'), { time: minutesLabel(missing, t) })}
-                  </p>
-                ) : null}
+                <p className="text-sm font-semibold tabular-nums text-amber-100">
+                  {fillText(t('travelMissing'), { time: minutesLabel(missing, t) })}
+                </p>
               </div>
             )
           })()}
@@ -549,13 +489,8 @@ export default function AdminPlanBoard({
                 const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const detailsId = `admin-job-${job.id}`
-                const inbound = focusWorkerId ? arrivingLegs(job, dayTravel, workerName, focusWorkerId) : []
-                const outbound = focusWorkerId ? leavingLegs(job, dayTravel, workerName, focusWorkerId) : []
                 return (
                   <Fragment key={job.id}>
-                  {inbound.map(leg => (
-                    <TravelMark key={`${job.id}-in-${leg.workerId}`} t={t} leg={leg} />
-                  ))}
                   <li
                     className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
                       open ? 'relative z-20' : ''
@@ -604,9 +539,6 @@ export default function AdminPlanBoard({
                       )}
                     </div>
                   </li>
-                  {outbound.map(leg => (
-                    <TravelMark key={`${job.id}-out-${leg.workerId}`} t={t} leg={leg} />
-                  ))}
                   </Fragment>
                 )
               })}
