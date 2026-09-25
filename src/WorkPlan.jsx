@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatFixedHoursLabel, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, marksFromJobs, minutesLabel, nextWeekday, objectFixedMinutes, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatFixedHoursLabel, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedMinutes, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
@@ -1774,6 +1774,13 @@ export default function WorkPlan({
       if (days > balance.left) {
         return alert(t('leaveOverLimit').replace('{days}', String(balance.left)).replace('{year}', String(year)))
       }
+      const clash = leaveBookingClash(absences, startDate, endDate, workerId, editingAbsenceId || '')
+      if (clash.others.length) {
+        const names = clash.others
+          .map(id => firstName(workers.find(item => item.id === id)?.name) || t('planUnknownWorker'))
+          .join(', ')
+        if (!window.confirm(t('leaveOverlapConfirm').replace('{names}', names))) return
+      }
     }
     const payload = {
       worker_id: workerId,
@@ -2289,6 +2296,7 @@ export default function WorkPlan({
           onCancelEdit={() => { setEditingAbsenceId(null); setAbsenceForm(emptyAbsence()) }}
           onSaveLimit={handleSaveVacationLimit}
           DateField={DateField}
+          jobs={plannedJobs}
         />
       )}
 

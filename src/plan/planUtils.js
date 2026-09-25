@@ -481,6 +481,137 @@ export function leaveBalance(worker, absences, year, exceptId = '') {
   return { limit, used, left, over: used > limit }
 }
 
+export function leaveRangesOverlap(leftStart, leftEnd, rightStart, rightEnd) {
+  const a0 = isoDate(leftStart)
+  const a1 = isoDate(leftEnd)
+  const b0 = isoDate(rightStart)
+  const b1 = isoDate(rightEnd)
+  return Boolean(a0 && a1 && b0 && b1 && a0 <= b1 && b0 <= a1)
+}
+
+export function vacationOffByDay(absences, options = {}) {
+  const from = isoDate(options.from)
+  const to = isoDate(options.to)
+  const exceptId = options.exceptId || ''
+  const exceptWorkerId = options.exceptWorkerId || ''
+  const byDay = new Map()
+  for (const item of absences || []) {
+    if (item.reason !== 'vacation' || !item.worker_id) continue
+    if (exceptId && item.id === exceptId) continue
+    if (exceptWorkerId && item.worker_id === exceptWorkerId) continue
+    const start = isoDate(item.start_date)
+    const end = isoDate(item.end_date)
+    if (!start || !end || end < start) continue
+    const clipStart = from && start < from ? from : start
+    const clipEnd = to && end > to ? to : end
+    if (clipEnd < clipStart) continue
+    for (const day of workdaysInRange(clipStart, clipEnd, { keepSingleWeekend: false })) {
+      if (!byDay.has(day)) byDay.set(day, new Set())
+      byDay.get(day).add(item.worker_id)
+    }
+  }
+  return byDay
+}
+
+export function leaveOverlapPeriods(absences, options = {}) {
+  const minPeople = options.minPeople || 2
+  const from = isoDate(options.from) || DateTime.now().setZone('Europe/Berlin').toISODate()
+  const to = isoDate(options.to) || DateTime.fromISO(from, { zone: 'Europe/Berlin' }).plus({ months: 14 }).toISODate()
+  const byDay = vacationOffByDay(absences, { ...options, from, to })
+  const days = [...byDay.keys()].filter(day => byDay.get(day).size >= minPeople).sort()
+  const periods = []
+  for (const day of days) {
+    const people = byDay.get(day)
+    const last = periods.at(-1)
+    if (last && day === nextWeekday(last.end)) {
+      last.end = day
+      last.days.push(day)
+      last.peak = Math.max(last.peak, people.size)
+      for (const id of people) last.workerIds.add(id)
+      continue
+    }
+    periods.push({
+      start: day,
+      end: day,
+      days: [day],
+      workerIds: new Set(people),
+      peak: people.size,
+    })
+  }
+  return periods.map(period => ({
+    start: period.start,
+    end: period.end,
+    days: period.days,
+    workerIds: [...period.workerIds],
+    peak: period.peak,
+    people: period.workerIds.size,
+  }))
+}
+
+export function leaveBookingClash(absences, start, end, workerId = '', exceptId = '') {
+  const days = workdaysInRange(start, end, { keepSingleWeekend: false })
+  const byDay = vacationOffByDay(absences, {
+    from: isoDate(start),
+    to: isoDate(end),
+    exceptId,
+    exceptWorkerId: workerId,
+  })
+  const others = new Set()
+  const clashDays = []
+  let peakOthers = 0
+  for (const day of days) {
+    const set = byDay.get(day)
+    if (!set?.size) continue
+    clashDays.push(day)
+    peakOthers = Math.max(peakOthers, set.size)
+    for (const id of set) others.add(id)
+  }
+  return {
+    others: [...others],
+    clashDays,
+    peak: others.size ? peakOthers + (workerId ? 1 : 0) : 0,
+    peakOthers,
+    days: days.length,
+  }
+}
+
+export function leaveJobsHit(jobs, workerIds, days) {
+  const daySet = new Set(days || [])
+  const idSet = new Set(workerIds || [])
+  if (!daySet.size || !idSet.size) return []
+  const rows = []
+  for (const job of jobs || []) {
+    const date = isoDate(job.work_date)
+    if (!date || !daySet.has(date)) continue
+    const status = String(job.status || '').toLowerCase()
+    if (status === 'cancelled' || status === 'canceled') continue
+    const lost = (job.work_job_assignees || []).filter(row => (
+      ['assigned', 'approved'].includes(row.status) && idSet.has(row.worker_id)
+    ))
+    if (!lost.length) continue
+    rows.push({
+      id: job.id,
+      date,
+      place: job.location_text || job.object_name || '',
+      lostIds: lost.map(row => row.worker_id),
+    })
+  }
+  return rows.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export function leaveOverlapCount(item, absences = []) {
+  if (!item || item.reason !== 'vacation') return 0
+  const others = new Set()
+  for (const other of absences) {
+    if (!other || other.id === item.id || other.reason !== 'vacation') continue
+    if (!other.worker_id || other.worker_id === item.worker_id) continue
+    if (leaveRangesOverlap(item.start_date, item.end_date, other.start_date, other.end_date)) {
+      others.add(other.worker_id)
+    }
+  }
+  return others.size
+}
+
 export function nextWeekday(value) {
   const start = isoDate(value)
   let day = (start

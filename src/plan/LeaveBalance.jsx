@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { firstName, formatDisplayDate, isoDate, leaveBalance, vacationDaysInRange, workerInitials } from './planUtils'
+import { firstName, formatDisplayDate, isoDate, leaveBalance, leaveBookingClash, leaveJobsHit, leaveOverlapCount, leaveOverlapPeriods, vacationDaysInRange, workerInitials } from './planUtils'
 
 const softDateClass = 'min-h-11 w-full rounded-xl border-0 bg-white/[0.04] px-3 text-sm font-light text-white/85 ring-1 ring-white/10 [color-scheme:dark] focus:outline-none focus-visible:ring-white/25'
 const softDateStyle = { colorScheme: 'dark' }
@@ -93,6 +93,61 @@ export function MyLeaveCard({ t, language, year, worker, absences = [] }) {
   )
 }
 
+function personName(workers, id, t) {
+  return firstName(workers.find(item => item.id === id)?.name) || t('planUnknownWorker')
+}
+
+function LeaveOverlapCard({ t, language, workers = [], absences = [], jobs = [] }) {
+  const today = DateTime.now().setZone('Europe/Berlin').toISODate()
+  const lookTo = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).plus({ months: 14 }).toISODate()
+  const periods = leaveOverlapPeriods(absences, { from: today, to: lookTo })
+
+  return (
+    <section className="rounded-[1.75rem] border border-white/[0.05] bg-slate-950/20 px-5 py-7">
+      <p className="text-[10px] font-medium uppercase tracking-[0.34em] text-white/32">{t('leaveOverlapTitle')}</p>
+      {t('leaveOverlapHint') ? <p className="mt-3 max-w-lg text-[13px] font-light leading-6 text-white/38">{t('leaveOverlapHint')}</p> : null}
+
+      {periods.length === 0 ? (
+        <p className="mt-6 text-[13px] font-light text-white/30">{t('leaveOverlapEmpty')}</p>
+      ) : (
+        <ul className="mt-6">
+          {periods.map(period => {
+            const names = period.workerIds.map(id => personName(workers, id, t)).filter(Boolean)
+            const jobsHit = leaveJobsHit(jobs, period.workerIds, period.days)
+            const hot = period.peak >= 3
+            return (
+              <li key={`${period.start}-${period.end}`} className="border-t border-white/[0.035] py-4 first:border-t-0 first:pt-0">
+                <p className="text-[13px] font-medium text-white/78">
+                  {formatDisplayDate(period.start, language)}
+                  {period.end !== period.start ? ` – ${formatDisplayDate(period.end, language)}` : ''}
+                  <span className="font-light text-white/32">
+                    {' · '}
+                    {daysLabel(period.days.length, t)}
+                  </span>
+                </p>
+                <p className={`mt-1 text-[12px] font-light ${hot ? 'text-rose-100/60' : 'text-white/42'}`}>
+                  {t('leaveOverlapPeople').replace('{count}', String(period.people))}
+                  {period.peak > 2 ? ` · ${t('leaveOverlapPeak').replace('{count}', String(period.peak))}` : ''}
+                </p>
+                <p className="mt-1 text-[13px] font-light text-white/55">{names.join(', ')}</p>
+                {jobsHit.length > 0 && (
+                  <p className="mt-1 text-[12px] font-light text-white/34">
+                    {jobsHit.length === 1
+                      ? t('leaveOverlapJobsOne')
+                      : t('leaveOverlapJobs').replace('{count}', String(jobsHit.length))}
+                    {jobsHit[0]?.place ? ` · ${jobsHit[0].place}` : ''}
+                    {jobsHit.length > 1 && jobsHit[1]?.place ? `, ${jobsHit[1].place}` : ''}
+                  </p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function LeaveList({ t, language, year, title, items, muted = false }) {
   return (
     <div>
@@ -136,6 +191,7 @@ export function LeavePeoplePanel({
   onCancelEdit,
   onSaveLimit,
   DateField,
+  jobs = [],
 }) {
   const selected = workers.find(item => item.id === form.worker_id)
   const exceptId = editingId || ''
@@ -146,6 +202,10 @@ export function LeavePeoplePanel({
   const after = selectedBalance ? selectedBalance.left - previewDays : null
   const over = selected && form.reason === 'vacation' && after != null && after < 0
   const people = [...workers].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), language || 'de', { sensitivity: 'base' }))
+  const formClash = form.reason === 'vacation' && form.start_date && form.end_date
+    ? leaveBookingClash(absences, form.start_date, form.end_date, form.worker_id, exceptId)
+    : null
+  const formClashNames = formClash?.others.map(id => personName(people, id, t)).filter(Boolean) || []
 
   return (
     <div className="space-y-10">
@@ -203,6 +263,14 @@ export function LeavePeoplePanel({
           })}
         </ul>
       </section>
+
+      <LeaveOverlapCard
+        t={t}
+        language={language}
+        workers={people}
+        absences={absences}
+        jobs={jobs}
+      />
 
       <form onSubmit={onSubmit} className="rounded-[1.75rem] border border-white/[0.05] bg-slate-950/15 px-5 py-7">
         <p className="text-[10px] font-medium uppercase tracking-[0.34em] text-white/32">{t('absenceTitle')}</p>
@@ -266,6 +334,12 @@ export function LeavePeoplePanel({
               : t('leaveAfterBooking').replace('{days}', String(Math.max(0, after)))}
           </p>
         )}
+        {formClashNames.length > 0 && (
+          <p className={`mt-2 text-[13px] font-light ${formClash.peak >= 3 ? 'text-rose-100/70' : 'text-amber-50/70'}`}>
+            {t('leaveOverlapClash').replace('{names}', formClashNames.join(', '))}
+            {formClash.peak >= 2 ? ` ${t('leaveOverlapClashPeak').replace('{count}', String(formClash.peak))}` : ''}
+          </p>
+        )}
         <input
           value={form.note}
           onChange={e => setForm(current => ({ ...current, note: e.target.value }))}
@@ -288,6 +362,7 @@ export function LeavePeoplePanel({
             {absences.map((item) => {
               const vacation = item.reason === 'vacation'
               const days = vacationDaysInRange(item.start_date, item.end_date, year)
+              const overlaps = leaveOverlapCount(item, absences)
               return (
                 <li key={item.id} className="flex items-start justify-between gap-3 border-t border-white/[0.035] py-3.5 first:border-t-0 first:pt-0">
                   <div className="flex min-w-0 items-start gap-3">
@@ -299,6 +374,12 @@ export function LeavePeoplePanel({
                           {' · '}
                           {vacation ? t('absenceVacation') : t('absenceSick')}
                         </span>
+                        {overlaps > 0 && (
+                          <span className="font-light text-amber-50/55">
+                            {' · '}
+                            {t('leaveOverlapBadge')}
+                          </span>
+                        )}
                       </p>
                       <p className="mt-0.5 text-[12px] font-light text-white/34">
                         {formatDisplayDate(item.start_date, language)} – {formatDisplayDate(item.end_date, language)}
