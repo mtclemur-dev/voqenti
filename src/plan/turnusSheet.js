@@ -72,7 +72,7 @@ export function matchSheetRow(rows, name) {
       best = row
     }
   }
-  return score >= 45 ? best : null
+  return score >= 80 ? best : null
 }
 
 export function prettySheetTitle(text) {
@@ -217,7 +217,7 @@ function parseFromWords(words) {
     const days = {}
     for (const word of row.words) {
       const column = nearestColumn(word, columns)
-      const cell = cellFromToken(word.text)
+      const cell = cellFromToken(word.text, { allowBare: false })
       if (!column || !cell) continue
       days[column.weekday] = { ...days[column.weekday], ...cell }
     }
@@ -305,8 +305,8 @@ export function applyTurnusSheet(form, sheet) {
   const turnus = { ...(current.turnus || {}) }
   const hours = { ...(current.fixed_hours_by_day || {}) }
   for (const [day, cell] of Object.entries(row.days || {})) {
-    if (cell.hours) hours[day] = formatHundredths(cell.hours)
-    if (cell.mark || cell.hours || cell.note) turnus[day] = prettyTurnusBody(title, cell)
+    if (cell.hours && !hours[day]) hours[day] = formatHundredths(cell.hours)
+    if ((cell.mark || cell.hours || cell.note) && !turnus[day]) turnus[day] = prettyTurnusBody(title, cell)
   }
   return {
     form: {
@@ -319,4 +319,12 @@ export function applyTurnusSheet(form, sheet) {
     matched: true,
     row,
   }
+}
+
+export function isBlattBody(text) {
+  return /mop[\s./-]*materialtour|leistung(?:s)?verzeichnis|\bturnus\b/i.test(String(text || ''))
+}
+
+export function isBlattImage(url) {
+  return /object-guides\//i.test(String(url || ''))
 }

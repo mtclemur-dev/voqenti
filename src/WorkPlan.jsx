@@ -9,6 +9,7 @@ import { ensureDayTravels } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
+import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, restoreMinutesForObject, stripSpreadBlatt } from './plan/clearBlattSpread'
 import { readTurnusFile } from './plan/readTurnusFile'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import FleetPanel from './plan/FleetPanel'
@@ -946,6 +947,89 @@ export default function WorkPlan({
       packingRef.current = false
     }
   }, [isAdmin, jobs, objects, today])
+  const blattCleanRef = useRef(false)
+  useEffect(() => {
+    if (!isAdmin || blattCleanRef.current || packingRef.current || !objects.length) return undefined
+    const targets = objects.filter(item => isSpreadBlattObject(item, objects))
+    if (!targets.length) return undefined
+    blattCleanRef.current = true
+    let cancelled = false
+    ;(async () => {
+      const now = new Date().toISOString()
+      const daysByObject = new Map()
+      const restoreByObject = new Map()
+      const nextById = new Map()
+      for (const item of targets) {
+        const { object: next, changed, clearedDays } = stripSpreadBlatt(item)
+        if (!changed) continue
+        const result = await supabase.from('objects').update(objectPayloadFromStrip(next)).eq('id', item.id)
+        if (cancelled) return
+        if (result.error) {
+          blattCleanRef.current = false
+          return
+        }
+        nextById.set(item.id, next)
+        if (clearedDays?.length) {
+          daysByObject.set(item.id, clearedDays)
+          const minutes = restoreMinutesForObject(next, jobs)
+          if (minutes) restoreByObject.set(item.id, minutes)
+        }
+      }
+      if (!nextById.size || cancelled) return
+      const stretched = jobsStretchedBySheet(jobs, daysByObject, restoreByObject)
+      let snapshot = jobs
+      for (const job of stretched) {
+        await supabase.from('work_jobs').update({
+          start_time: job.start_time || null,
+          end_time: job.end_time || null,
+          updated_at: now,
+        }).eq('id', job.id)
+        await supabase.from('work_job_assignees').update({
+          planned_start: job.start_time || null,
+          planned_end: job.end_time || null,
+          updated_at: now,
+        }).eq('job_id', job.id)
+        snapshot = withSavedJob(snapshot, {
+          ...job,
+          work_job_assignees: (job.work_job_assignees ?? []).map(row => ({
+            ...row,
+            planned_start: job.start_time,
+            planned_end: job.end_time,
+          })),
+        })
+      }
+      const packDays = [...new Set(stretched.map(job => isoDate(job.work_date)).filter(day => day && day >= today))]
+      for (const day of packDays) {
+        if (cancelled) return
+        const workerIds = [...new Set(
+          snapshot
+            .filter(job => isoDate(job.work_date) === day)
+            .flatMap(job => (job.work_job_assignees ?? []).map(row => row.worker_id).filter(Boolean)),
+        )]
+        if (workerIds.length) {
+          snapshot = await queueRef.current(workerIds, day, null, snapshot, { silent: true }) || snapshot
+        }
+      }
+      if (cancelled) return
+      if (editingObjectId && nextById.has(editingObjectId)) {
+        const next = nextById.get(editingObjectId)
+        setObjectForm(current => ({
+          ...current,
+          leistung_text: next.leistung_text || '',
+          leistung_image_url: next.leistung_image_url || '',
+          turnus: parseTurnus(next.turnus_json),
+          fixed_hours_by_day: Object.fromEntries(
+            Object.entries(parseFixedHoursByDay(next.fixed_hours_json)).map(([day, hours]) => [Number(day), String(hours)]),
+          ),
+        }))
+      }
+      if (snapshot !== jobs) setJobs(snapshot)
+      onReloadObjects?.()
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [editingObjectId, isAdmin, jobs, objects, onReloadObjects, today])
   const mapsHref = (job) => jobMapsHref(job, objects)
 
   const handleNeedObjectChange = (objectId) => {
@@ -2236,45 +2320,9 @@ export default function WorkPlan({
       matchedDays = Object.keys(next.row?.days || {}).length
       return next.form
     })
-    let extra = 0
-    for (const item of objects) {
-      if (item.id === editingObjectId) continue
-      const next = applyTurnusSheet({
-        name: item.name ?? '',
-        address: item.address ?? '',
-        manager: item.manager ?? '',
-        phone: item.phone ?? '',
-        fixed_hours: item.fixed_hours != null && Number(item.fixed_hours) > 0 ? String(item.fixed_hours) : '',
-        fixed_hours_by_day: Object.fromEntries(
-          Object.entries(parseFixedHoursByDay(item.fixed_hours_json)).map(([day, hours]) => [Number(day), String(hours)]),
-        ),
-        leistung_text: item.leistung_text ?? '',
-        leistung_image_url: imageUrl || item.leistung_image_url || '',
-        turnus: parseTurnus(item.turnus_json),
-        groups: groupsFromObject(item),
-      }, sheet)
-      if (!next.matched) continue
-      const hours = Number(String(next.form.fixed_hours).replace(',', '.'))
-      const extraPayload = {
-        fixed_hours: Number.isFinite(hours) && hours > 0 ? hours : item.fixed_hours ?? null,
-        fixed_hours_json: serializeFixedHoursJson(next.form.fixed_hours_by_day, { locked: objectTimeLocked(item), start: objectFixedStart(item) }),
-        leistung_text: next.form.leistung_text.trim() || null,
-        leistung_image_url: next.form.leistung_image_url.trim() || null,
-        turnus_json: serializeTurnus(next.form.turnus),
-      }
-      const result = await supabase.from('objects').update(extraPayload).eq('id', item.id)
-      if (!result.error) {
-        extra += 1
-        await applyObjectFixedHours({ id: item.id, ...extraPayload })
-      }
-    }
     if (!sheet.rows?.length) setObjectSheetMessage(t('objectSheetEmpty'))
     else if (!matchedDays) setObjectSheetMessage(t('objectSheetNoRow'))
-    else {
-      const text = t('objectSheetApplied').replace('{name}', matchedName || t('objectName')).replace('{days}', String(matchedDays))
-      setObjectSheetMessage(extra ? `${text} ${t('objectSheetAppliedMore').replace('{count}', String(extra))}` : text)
-    }
-    if (extra) onReloadObjects?.()
+    else setObjectSheetMessage(t('objectSheetApplied').replace('{name}', matchedName || t('objectName')).replace('{days}', String(matchedDays)))
     setObjectPhotoBusy(false)
   }
 
