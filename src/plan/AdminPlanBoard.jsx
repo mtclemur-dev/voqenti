@@ -192,7 +192,6 @@ export default function AdminPlanBoard({
   const visibleJobs = focusWorkerId
     ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
     : sortedJobs
-  const dimmedCount = sortedJobs.length - visibleJobs.length
   const focusName = people.find(item => item.id === focusWorkerId)?.name
     || [...dayRoster.free, ...dayRoster.working, ...dayRoster.off].find(item => item.id === focusWorkerId)?.name
     || ''
@@ -428,7 +427,11 @@ export default function AdminPlanBoard({
         </section>
 
         <section>
-          <h3 className="mb-3 text-sm font-semibold text-white">{t('adminJobsPanel')}</h3>
+          <h3 className="mb-3 text-sm font-semibold text-white">
+            {focusWorkerId && focusName
+              ? fillText(t('adminJobsForWorker'), { name: focusName, count: String(visibleJobs.length) })
+              : t('adminJobsPanel')}
+          </h3>
           {sortedJobs.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 px-5 py-8 text-center">
               <p className="text-sm text-slate-300">{emptyJobs}</p>
@@ -524,8 +527,14 @@ export default function AdminPlanBoard({
               })}
             </ol>
           )}
-          {focusWorkerId && dimmedCount > 0 && (
-            <p className="mt-2 text-xs text-slate-400">{fillText(t('adminOtherJobsDimmed'), { count: String(dimmedCount) })}</p>
+          {focusWorkerId && (
+            <button
+              type="button"
+              onClick={() => onFocusWorker('')}
+              className="mt-2 text-xs font-semibold text-cyan-200 underline"
+            >
+              {t('adminShowAllJobs')}
+            </button>
           )}
         </section>
       </div>
