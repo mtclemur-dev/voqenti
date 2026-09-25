@@ -1110,7 +1110,7 @@ export const uiTranslations = {
     objectGuideTitle: 'Leistungsverzeichnis',
     objectGuideHint: 'Ce se face la obiect. Pentru Vertretung, fără foi.',
     objectGuideText: 'Mereu',
-    objectGuideTextPlaceholder: 'Scris frumos: camere, ordine, ce e special.',
+    objectGuideTextPlaceholder: 'Scris frumos: încăperi, ordine, ce e special.',
     objectGuidePhoto: 'Poza de pe foaie',
     objectGuidePhotoPick: 'Alege o poză',
     objectGuidePhotoHint: 'Încarci poza. Textul de jos îl scrii frumos, nu copia neclară.',
