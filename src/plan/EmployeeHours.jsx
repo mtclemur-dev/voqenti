@@ -10,7 +10,7 @@ import {
   firstName,
   formatClock,
   formatDisplayDate,
-  formatFixedHoursLabel,
+  objectFixedHoursLabel,
   formatSeenAt,
   isAssignmentActive,
   isoDate,
@@ -27,7 +27,7 @@ import { MyLeaveCard } from './LeaveBalance'
 export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false, lockFixedTimes = true }) {
   const job = row.work_jobs
   const date = isoDate(job?.work_date)
-  const fixedMinutes = objectFixedMinutes(object)
+  const fixedMinutes = objectFixedMinutes(object, date)
   const locked = Boolean(fixedMinutes && lockFixedTimes)
   const canEdit = Boolean(onSave && date && date <= today && !locked)
   const planned = assignmentRange(row, job)
@@ -105,7 +105,7 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
               <ComputedEnd
                 label={t('planEnd')}
                 time={end}
-                note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(object.fixed_hours))}
+                note={t('objectFixedEnd').replace('{hours}', objectFixedHoursLabel(object, date))}
               />
             ) : (
               <TimeField label={t('planEnd')} value={end} onChange={setEnd} />

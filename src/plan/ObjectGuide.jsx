@@ -2,6 +2,51 @@ import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { isoDate, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
 
+export function ObjectFixedHoursFields({ t, language, form, setForm }) {
+  return (
+    <div className="sm:col-span-2 space-y-3 rounded-2xl bg-slate-950/40 px-4 py-4 ring-1 ring-white/10">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectFixedDays')}</p>
+        {t('objectFixedDaysHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectFixedDaysHint')}</p> : null}
+      </div>
+      <label className="block text-xs text-slate-300">
+        {t('objectFixedHours')}
+        <input
+          type="number"
+          min="0"
+          max="24"
+          step="0.5"
+          value={form.fixed_hours}
+          onChange={e => setForm(current => ({ ...current, fixed_hours: e.target.value }))}
+          placeholder="6"
+          className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+        />
+        {t('objectFixedHint') ? <span className="mt-1.5 block text-[12px] leading-5 text-slate-400">{t('objectFixedHint')}</span> : null}
+      </label>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {TURNUS_DAYS.map(day => (
+          <label key={day} className="block text-[11px] text-slate-400">
+            {weekdayLabel(day, language, 'cccc')}
+            <input
+              type="number"
+              min="0"
+              max="24"
+              step="0.5"
+              value={form.fixed_hours_by_day?.[day] ?? ''}
+              onChange={e => setForm(current => ({
+                ...current,
+                fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: e.target.value },
+              }))}
+              placeholder={form.fixed_hours || '—'}
+              className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function previewLine(text) {
   const line = String(text || '').trim().split('\n').map(item => item.trim()).find(Boolean) || ''
   return line.replace(/^[-•]\s*/, '').replace(/^\d+[.)]\s*/, '')

@@ -83,10 +83,66 @@ export function clockRange(start, end) {
   return { start: formatClock(start), end: formatClock(end) }
 }
 
-export function objectFixedMinutes(object) {
-  const hours = Number(object?.fixed_hours)
+export function parseFixedHoursValue(value) {
+  const hours = Number(String(value ?? '').replace(',', '.'))
   if (!Number.isFinite(hours) || hours <= 0) return 0
-  return Math.round(hours * 60)
+  return Math.round(hours * 2) / 2
+}
+
+export function parseFixedHoursByDay(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const map = {}
+    for (const [key, hours] of Object.entries(value)) {
+      const day = Number(key)
+      const amount = parseFixedHoursValue(hours)
+      if (day >= 1 && day <= 7 && amount) map[day] = amount
+    }
+    return map
+  }
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    if (Array.isArray(parsed)) {
+      const map = {}
+      for (const item of parsed) {
+        const day = Number(item?.weekday)
+        const amount = parseFixedHoursValue(item?.hours)
+        if (day >= 1 && day <= 7 && amount) map[day] = amount
+      }
+      return map
+    }
+    return parseFixedHoursByDay(parsed && typeof parsed === 'object' ? parsed : {})
+  } catch {
+    return {}
+  }
+}
+
+export function serializeFixedHoursByDay(map) {
+  return TURNUS_DAYS
+    .map(weekday => ({ weekday, hours: parseFixedHoursValue(map?.[weekday]) }))
+    .filter(item => item.hours)
+}
+
+export function weekdayFromDate(date) {
+  const iso = isoDate(date)
+  const dt = iso ? DateTime.fromISO(iso, { zone: 'Europe/Berlin' }) : null
+  return dt?.isValid ? dt.weekday : 0
+}
+
+export function objectFixedHours(object, date) {
+  const weekday = weekdayFromDate(date)
+  const byDay = parseFixedHoursByDay(object?.fixed_hours_json)
+  if (weekday && byDay[weekday]) return byDay[weekday]
+  return parseFixedHoursValue(object?.fixed_hours)
+}
+
+export function objectFixedMinutes(object, date) {
+  const hours = objectFixedHours(object, date)
+  return hours ? Math.round(hours * 60) : 0
+}
+
+export function objectHasFixedHours(object) {
+  return Boolean(parseFixedHoursValue(object?.fixed_hours) || serializeFixedHoursByDay(parseFixedHoursByDay(object?.fixed_hours_json)).length)
 }
 
 export function formatFixedHoursLabel(hours) {
@@ -96,6 +152,22 @@ export function formatFixedHoursLabel(hours) {
   return Number.isInteger(rounded) ? String(rounded) : String(rounded)
 }
 
+export function objectFixedHoursLabel(object, date) {
+  return formatFixedHoursLabel(objectFixedHours(object, date))
+}
+
+export function formatObjectFixedSummary(object, language = 'de') {
+  const map = parseFixedHoursByDay(object?.fixed_hours_json)
+  const days = TURNUS_DAYS.filter(day => map[day])
+  const fallback = parseFixedHoursValue(object?.fixed_hours)
+  if (!days.length) return formatFixedHoursLabel(fallback)
+  const same = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]]) && days.length === 7
+  if (same) return formatFixedHoursLabel(map[days[0]])
+  const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
+  if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
+  return parts.join(' · ')
+}
+
 export function clockPlusMinutes(start, minutes) {
   const from = clockMinutes(start)
   const add = Number(minutes)
@@ -103,19 +175,20 @@ export function clockPlusMinutes(start, minutes) {
   return minutesToClock(from + add)
 }
 
-export function withFixedEnd(range, object) {
-  const minutes = objectFixedMinutes(object)
+export function withFixedEnd(range, object, date) {
+  const minutes = objectFixedMinutes(object, date)
   const start = formatClock(range?.start)
   if (!minutes) return clockRange(range?.start, range?.end)
   return { start, end: start ? clockPlusMinutes(start, minutes) : '' }
 }
 
 export function formWithFixedTimes(current, object) {
-  if (!objectFixedMinutes(object)) return current
-  const job = withFixedEnd({ start: current.start_time, end: current.end_time }, object)
+  const date = current?.work_date
+  if (!objectFixedMinutes(object, date)) return current
+  const job = withFixedEnd({ start: current.start_time, end: current.end_time }, object, date)
   const hours = {}
   for (const [id, range] of Object.entries(current.worker_hours || {})) {
-    hours[id] = withFixedEnd(range, object)
+    hours[id] = withFixedEnd(range, object, date)
   }
   return {
     ...current,

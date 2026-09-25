@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { clockPlusMinutes, formatClock, formatDisplayDate, formatFixedHoursLabel, isoDate, minutesLabel, objectFixedMinutes, selfLogMinutes } from './planUtils'
+import { clockPlusMinutes, formatClock, formatDisplayDate, isoDate, minutesLabel, objectFixedHoursLabel, objectFixedMinutes, selfLogMinutes } from './planUtils'
 import TimeField, { ComputedEnd } from './TimeField'
 
 const fieldClass = 'mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white'
@@ -24,7 +24,7 @@ export default function SelfWorkForm({
   const [end, setEnd] = useState('')
   const dayLogs = logs.filter(item => isoDate(item.work_date) === day)
   const selected = objects.find(item => item.id === objectId)
-  const fixedMinutes = objectFixedMinutes(selected)
+  const fixedMinutes = objectFixedMinutes(selected, day)
   const setStartTime = (value) => {
     setStart(value)
     if (fixedMinutes) setEnd(clockPlusMinutes(value, fixedMinutes))
@@ -98,7 +98,7 @@ export default function SelfWorkForm({
                 setObjectId(id)
                 const object = objects.find(item => item.id === id)
                 if (object?.name && !place.trim()) setPlace(object.name)
-                const minutes = objectFixedMinutes(object)
+                const minutes = objectFixedMinutes(object, day)
                 if (minutes && start) setEnd(clockPlusMinutes(start, minutes))
               }}
               className={fieldClass}
@@ -134,7 +134,7 @@ export default function SelfWorkForm({
               <ComputedEnd
                 label={t('planEnd')}
                 time={end}
-                note={t('objectFixedEnd').replace('{hours}', formatFixedHoursLabel(selected.fixed_hours))}
+                note={t('objectFixedEnd').replace('{hours}', objectFixedHoursLabel(selected, day))}
               />
             ) : (
               <TimeField label={t('planEnd')} value={end} onChange={setEnd} />

@@ -647,12 +647,18 @@ function App() {
       .from('objects')
       .select(columns)
       .order('name', { ascending: true })
-    let { data, error } = await query('id, name, address, manager, phone, fixed_hours, leistung_text, leistung_image_url, turnus_json')
-    if (error && /leistung_text|leistung_image_url|turnus_json|schema cache|column/i.test(error.message || '')) {
-      ;({ data, error } = await query('id, name, address, manager, phone, fixed_hours'))
-    }
-    if (error && /fixed_hours|schema cache|column/i.test(error.message || '')) {
-      ;({ data, error } = await query('id, name, address, manager, phone'))
+    const columns = [
+      'id, name, address, manager, phone, fixed_hours, fixed_hours_json, leistung_text, leistung_image_url, turnus_json',
+      'id, name, address, manager, phone, fixed_hours, leistung_text, leistung_image_url, turnus_json',
+      'id, name, address, manager, phone, fixed_hours, fixed_hours_json',
+      'id, name, address, manager, phone, fixed_hours',
+      'id, name, address, manager, phone',
+    ]
+    let data
+    let error
+    for (const list of columns) {
+      ;({ data, error } = await query(list))
+      if (!error || !/schema cache|column|does not exist/i.test(error.message || '')) break
     }
     if (error) {
       console.error('Objects load error:', error)
