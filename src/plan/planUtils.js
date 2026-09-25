@@ -546,6 +546,46 @@ export function weekdayLabel(weekday, language = 'de', format = 'ccc') {
   return dt.isValid ? dt.toFormat(format) : ''
 }
 
+export function objectPlanWeekdays(object) {
+  const map = parseFixedHoursByDay(object?.fixed_hours_json)
+  return WORK_WEEKDAYS.filter(day => map[day])
+}
+
+export function planWeekAnchor(date) {
+  const dt = DateTime.fromISO(isoDate(date), { zone: 'Europe/Berlin' })
+  if (!dt.isValid) return null
+  return dt.weekday >= 6 ? dt.plus({ weeks: 1 }) : dt
+}
+
+export function weekFriday(date) {
+  const anchor = planWeekAnchor(date)
+  return anchor ? anchor.set({ weekday: 5 }).toISODate() : ''
+}
+
+export function withObjectPlanRange(form, object, { force = false } = {}) {
+  const days = objectPlanWeekdays(object)
+  if (days.length < 2 || !form?.work_date) return form
+  const sameDay = !form.until_date || isoDate(form.until_date) === isoDate(form.work_date)
+  if (!force && !sameDay) return { ...form, weekdays: days }
+  const anchor = planWeekAnchor(form.work_date)
+  if (!anchor) return form
+  return {
+    ...form,
+    work_date: anchor.set({ weekday: Math.min(...days) }).toISODate(),
+    until_date: anchor.set({ weekday: Math.max(...days) }).toISODate(),
+    weekdays: days,
+  }
+}
+
+export function expandPlanDays(form, object, { create = true } = {}) {
+  const ranged = create ? withObjectPlanRange(form, object) : form
+  return datesInRange(
+    ranged.work_date,
+    ranged.until_date || ranged.work_date,
+    ranged.weekdays?.length ? ranged.weekdays : WORK_WEEKDAYS,
+  )
+}
+
 export function datesInRange(from, until, weekdays = WORK_WEEKDAYS, { keepSingleIfEmpty = true } = {}) {
   const start = isoDate(from)
   if (!start) return []

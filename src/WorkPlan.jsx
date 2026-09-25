@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, WORK_WEEKDAYS } from './plan/planUtils'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -855,13 +855,16 @@ export default function WorkPlan({
 
   const handleObjectChange = (objectId) => {
     const object = objects.find(item => item.id === objectId)
-    setForm(current => formWithFixedTimes({
-      ...current,
-      object_id: objectId,
-      location_text: object
-        ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
-        : current.location_text,
-    }, object))
+    setForm(current => {
+      const next = {
+        ...current,
+        object_id: objectId,
+        location_text: object
+          ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
+          : current.location_text,
+      }
+      return formWithFixedTimes(editingId ? next : withObjectPlanRange(next, object, { force: true }), object)
+    })
   }
 
   const plannedJobs = useMemo(() => {
@@ -879,8 +882,8 @@ export default function WorkPlan({
     [editingId, jobs, today],
   )
   const formWorkdays = useMemo(
-    () => datesInRange(form.work_date, form.until_date || form.work_date, form.weekdays?.length ? form.weekdays : WORK_WEEKDAYS),
-    [form.until_date, form.weekdays, form.work_date],
+    () => expandPlanDays(form, selectedObject, { create: !editingId && !duplicating }),
+    [duplicating, editingId, form, selectedObject],
   )
 
   const historyEntries = useMemo(() => {
@@ -1097,7 +1100,7 @@ export default function WorkPlan({
     event.preventDefault()
     if (!isAdmin) return
     if (!form.work_date) return alert(t('planDateRequired'))
-    const planDays = datesInRange(form.work_date, form.until_date || form.work_date, form.weekdays?.length ? form.weekdays : WORK_WEEKDAYS)
+    const planDays = expandPlanDays(form, selectedObject, { create: !editingId && !duplicating })
     if (!planDays.length) return alert(t('planNoWorkdays'))
     if (planDays.length > 60) return alert(t('planRangeTooLong'))
     const firstDate = editingId ? form.work_date : planDays[0]
@@ -1108,7 +1111,7 @@ export default function WorkPlan({
     if (blocked.length) {
       return alert(`${t('absenceBlocked')}: ${blocked.map(workerName).join(', ')}`)
     }
-    const timedForm = formWithFixedTimes(form, selectedObject)
+    const timedForm = formWithFixedTimes({ ...form, work_date: firstDate }, selectedObject)
     const overlapping = timedForm.worker_ids.map(id => {
       const hit = overlapJobForWorker(id, firstDate, formRangeFor(id, timedForm), editingId)
       return hit ? { id, hit } : null
@@ -2648,11 +2651,16 @@ export default function WorkPlan({
           onSelectDate={(date) => {
             setBoardDate(date)
             setBoardOpenId('')
-            setForm(current => ({
-              ...current,
-              work_date: date,
-              until_date: !current.until_date || current.until_date < date ? date : current.until_date,
-            }))
+            setForm(current => {
+              const object = objects.find(item => item.id === current.object_id)
+              const next = {
+                ...current,
+                work_date: date,
+                until_date: !current.until_date || current.until_date < date ? date : current.until_date,
+              }
+              if (editingId || duplicating) return formWithFixedTimes(next, object)
+              return formWithFixedTimes(withObjectPlanRange({ ...current, work_date: date, until_date: date }, object), object)
+            })
           }}
           hideOwnerHours={hideOwnerPlan}
           ownerIds={ownerIds}
@@ -2696,11 +2704,16 @@ export default function WorkPlan({
               value={form.work_date}
               max={form.until_date}
               onChange={value => {
-                setForm(current => ({
-                  ...current,
-                  work_date: value,
-                  until_date: !current.until_date || current.until_date < value ? value : current.until_date,
-                }))
+                setForm(current => {
+                  const object = objects.find(item => item.id === current.object_id)
+                  const next = {
+                    ...current,
+                    work_date: value,
+                    until_date: !current.until_date || current.until_date < value ? value : current.until_date,
+                  }
+                  if (editingId || duplicating) return formWithFixedTimes(next, object)
+                  return formWithFixedTimes(withObjectPlanRange({ ...current, work_date: value, until_date: value }, object), object)
+                })
                 if (value) setBoardDate(value)
               }}
             />
@@ -2731,7 +2744,7 @@ export default function WorkPlan({
           </div>
           {formWorkdays.length > 1 && (
             <p className="mt-2 text-xs text-cyan-100">
-              {t('planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
+              {t(objectPlanWeekdays(selectedObject).length > 1 && !editingId && !duplicating ? 'planObjectWeekHint' : 'planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
             </p>
           )}
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
