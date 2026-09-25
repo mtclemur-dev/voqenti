@@ -10,6 +10,7 @@ import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
 import { cancelJobReminders, cancelUnseenReminder } from './plan/jobReminders'
 import { ADMIN_TABS, HISTORY_TABS, ROSTER_FILTERS, isoDateOr, oneOf, readUiMemory, stringOr, writeUiMemory } from './plan/uiMemory'
+import TimeField from './plan/TimeField'
 
 const emptyForm = () => {
   const today = DateTime.now().setZone('Europe/Berlin').toISODate()
@@ -351,44 +352,6 @@ function DateField({ label, value, onChange, min, max, className = 'block text-x
         className={`${pickerClass} mt-1`}
         style={pickerStyle}
       />
-    </label>
-  )
-}
-
-function TimeField({ label, value, onChange, className = 'block text-xs text-slate-400' }) {
-  const text = String(value || '').slice(0, 5)
-  const valid = /^\d{2}:\d{2}$/.test(text)
-  const hour = valid ? text.slice(0, 2) : ''
-  const minute = valid ? text.slice(3, 5) : ''
-  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'))
-  if (minute && !minutes.includes(minute)) minutes.push(minute)
-  minutes.sort()
-
-  const commit = (nextHour, nextMinute) => {
-    if (!nextHour) {
-      onChange('')
-      return
-    }
-    onChange(`${nextHour}:${nextMinute || '00'}`)
-  }
-
-  return (
-    <label className={className}>
-      {label}
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        <select aria-label={label} value={hour} onChange={e => commit(e.target.value, minute)} className={pickerClass} style={pickerStyle}>
-          <option value="">--</option>
-          {hours.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-        <select value={minute} onChange={e => commit(hour || '00', e.target.value)} className={pickerClass} style={pickerStyle} disabled={!hour && !minute}>
-          {minutes.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-      </div>
     </label>
   )
 }
@@ -2402,7 +2365,7 @@ export default function WorkPlan({
               {t('planWorkdaysHint').replace('{count}', String(formWorkdays.length))}
             </p>
           )}
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <TimeField
               label={t('planStart')}
               value={form.start_time}
@@ -2558,7 +2521,7 @@ export default function WorkPlan({
                 return (
                   <div key={workerId} className="rounded-lg bg-slate-900/80 p-3">
                     <p className="text-sm font-semibold text-white">{workerName(workerId)}</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <TimeField
                         label={t('planStart')}
                         value={hours.start}
@@ -2605,7 +2568,6 @@ export default function WorkPlan({
             workers={workers}
             objects={objects}
             myPlan={myPlan}
-            selfLogs={selfLogs}
             myPending={myPending}
             absences={absences}
             loading={loading}
@@ -2613,12 +2575,9 @@ export default function WorkPlan({
             onRetry={loadData}
             onConfirm={handleSeen}
             onSaveHours={handleSaveHours}
-            onSaveSelfLog={handleSaveSelfLog}
-            onDeleteSelfLog={handleDeleteSelfLog}
             onOpenNotices={() => onOpenNotices?.()}
             onOpenHours={() => onOpenHours?.()}
             confirmingId={confirmingId}
-            savingSelf={savingSelf}
             boardDate={homeDate}
             onBoardDateChange={setHomeDate}
             helpAsks={helpAsks}
@@ -2664,16 +2623,13 @@ export default function WorkPlan({
           objects={objects}
           currentWorker={currentWorker}
           myPlan={myPlan}
-          selfLogs={selfLogs}
+          selfLogs={isAdmin ? selfLogs : []}
           loading={loading}
           errorMessage={errorMessage}
           onRetry={loadData}
           onSaveHours={handleSaveHours}
           onConfirm={handleSeen}
-          onSaveSelfLog={handleSaveSelfLog}
-          onDeleteSelfLog={handleDeleteSelfLog}
           savingId={confirmingId}
-          savingSelf={savingSelf}
           boardDate={hoursDate}
           onBoardDateChange={setHoursDate}
         />

@@ -1,44 +1,8 @@
 import { useState } from 'react'
 import { formatClock, formatDisplayDate, isoDate, minutesLabel, selfLogMinutes } from './planUtils'
+import TimeField from './TimeField'
 
-const pickerStyle = { colorScheme: 'light', appearance: 'auto', WebkitAppearance: 'auto' }
-const pickerClass = 'min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900'
 const fieldClass = 'mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white'
-
-function TimeField({ label, value, onChange }) {
-  const text = String(value || '').slice(0, 5)
-  const valid = /^\d{2}:\d{2}$/.test(text)
-  const hour = valid ? text.slice(0, 2) : ''
-  const minute = valid ? text.slice(3, 5) : ''
-  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'))
-  if (minute && !minutes.includes(minute)) minutes.push(minute)
-  const commit = (nextHour, nextMinute) => {
-    if (!nextHour) {
-      onChange('')
-      return
-    }
-    onChange(`${nextHour}:${nextMinute || '00'}`)
-  }
-  return (
-    <label className="block text-xs text-slate-400">
-      {label}
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        <select aria-label={label} value={hour} onChange={e => commit(e.target.value, minute)} className={pickerClass} style={pickerStyle}>
-          <option value="">--</option>
-          {hours.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-        <select value={minute} onChange={e => commit(hour || '00', e.target.value)} className={pickerClass} style={pickerStyle} disabled={!hour && !minute}>
-          {minutes.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-      </div>
-    </label>
-  )
-}
 
 export default function SelfWorkForm({
   t,
@@ -156,7 +120,7 @@ export default function SelfWorkForm({
               className={`${fieldClass} py-2`}
             />
           </label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TimeField label={t('planStart')} value={start} onChange={setStart} />
             <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
           </div>

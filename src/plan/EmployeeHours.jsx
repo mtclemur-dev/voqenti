@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import WeekBoard from './WeekBoard'
-import SelfWorkForm from './SelfWorkForm'
+import TimeField from './TimeField'
 import {
   assignmentRange,
   berlinWeekDays,
@@ -19,44 +19,6 @@ import {
   selfLogMinutes,
   shortPlace,
 } from './planUtils'
-
-const pickerStyle = { colorScheme: 'light', appearance: 'auto', WebkitAppearance: 'auto' }
-const pickerClass = 'min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900'
-
-function TimeField({ label, value, onChange }) {
-  const text = String(value || '').slice(0, 5)
-  const valid = /^\d{2}:\d{2}$/.test(text)
-  const hour = valid ? text.slice(0, 2) : ''
-  const minute = valid ? text.slice(3, 5) : ''
-  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'))
-  if (minute && !minutes.includes(minute)) minutes.push(minute)
-  const commit = (nextHour, nextMinute) => {
-    if (!nextHour) {
-      onChange('')
-      return
-    }
-    onChange(`${nextHour}:${nextMinute || '00'}`)
-  }
-  return (
-    <label className="block text-xs text-slate-400">
-      {label}
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        <select aria-label={label} value={hour} onChange={e => commit(e.target.value, minute)} className={pickerClass} style={pickerStyle}>
-          <option value="">--</option>
-          {hours.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-        <select value={minute} onChange={e => commit(hour || '00', e.target.value)} className={pickerClass} style={pickerStyle} disabled={!hour && !minute}>
-          {minutes.map(item => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-      </div>
-    </label>
-  )
-}
 
 export function HoursRow({ t, language, today, row, object, workerLabel, currentWorkerId, onSave, onConfirm, saving, compact = false }) {
   const job = row.work_jobs
@@ -127,7 +89,7 @@ export function HoursRow({ t, language, today, row, object, workerLabel, current
       {changedLabel && <p className="mt-1 text-xs text-slate-400">{changedLabel}</p>}
       {canEdit ? (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-1 gap-3">
             <TimeField label={t('planStart')} value={start} onChange={setStart} />
             <TimeField label={t('planEnd')} value={end} onChange={setEnd} />
           </div>
@@ -163,10 +125,7 @@ export default function EmployeeHours({
   onRetry,
   onSaveHours,
   onConfirm,
-  onSaveSelfLog,
-  onDeleteSelfLog,
   savingId = '',
-  savingSelf = false,
   boardDate,
   onBoardDateChange,
 }) {
@@ -309,21 +268,7 @@ export default function EmployeeHours({
         counts={counts}
       />
 
-      {onSaveSelfLog && (
-        <SelfWorkForm
-          t={t}
-          language={language}
-          today={today}
-          date={selectedDate}
-          objects={objects}
-          logs={selfLogs}
-          onSave={onSaveSelfLog}
-          onDelete={onDeleteSelfLog}
-          saving={savingSelf}
-        />
-      )}
-
-      {dayRows.length > 0 && (
+      {dayRows.length > 0 ? (
         <div className="space-y-3">
           {dayRows.map(row => (
             <HoursRow
@@ -341,6 +286,10 @@ export default function EmployeeHours({
             />
           ))}
         </div>
+      ) : (
+        <p className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-6 text-center text-sm text-slate-400">
+          {t('planDayEmpty')}
+        </p>
       )}
     </div>
   )
