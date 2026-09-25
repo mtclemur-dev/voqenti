@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
-import { formatHundredths, isoDate, objectFixedHoursLabel, objectHasGuide, parseFixedHoursValue, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
+import { formatHundredths, isoDate, objectFixedHoursLabel, objectHasGuide, parseFixedHoursValue, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 
 function HundredthsField({ value, onChange, placeholder, className }) {
   const [text, setText] = useState(() => (value === '' || value == null ? '' : formatHundredths(value)))
@@ -29,12 +29,30 @@ function HundredthsField({ value, onChange, placeholder, className }) {
 
 export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy = false, message = '' }) {
   const turnus = parseTurnus(form.turnus)
-  const days = TURNUS_DAYS.filter(day => turnus[day] || form.fixed_hours_by_day?.[day] != null)
-  const unused = TURNUS_DAYS.filter(day => !days.includes(day))
+  const textDays = WORK_WEEKDAYS.filter(day => turnus[day])
   const preview = String(form.leistung_image_url || '')
   const imagePreview = preview && !/\.pdf(\?|$)/i.test(preview)
   return (
     <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectFixedDays')}</p>
+        {t('objectFixedDaysHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectFixedDaysHint')}</p> : null}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {WORK_WEEKDAYS.map(day => (
+            <label key={day} className="block text-[11px] text-slate-400">
+              {weekdayLabel(day, language, 'cccc')}
+              <HundredthsField
+                value={form.fixed_hours_by_day?.[day] ?? ''}
+                onChange={value => setForm(current => ({
+                  ...current,
+                  fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: value },
+                }))}
+                className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
       <div>
         <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectGuideTitle')}</p>
         {t('objectSheetHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectSheetHint')}</p> : null}
@@ -79,67 +97,23 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
           />
         </label>
       ) : null}
-      {form.fixed_hours ? (
-        <label className="block text-xs text-slate-300">
-          {t('objectFixedHours')}
-          <HundredthsField
-            value={form.fixed_hours}
-            onChange={value => setForm(current => ({ ...current, fixed_hours: value }))}
-            className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-          />
-        </label>
-      ) : null}
-      {days.length ? (
+      {textDays.length ? (
         <ul className="space-y-2">
-          {days.map(day => (
+          {textDays.map(day => (
             <li key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
               <p className="text-[12px] font-medium text-slate-300">{weekdayLabel(day, language, 'cccc')}</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-[7rem_1fr]">
-                <HundredthsField
-                  value={form.fixed_hours_by_day?.[day] ?? ''}
-                  onChange={value => setForm(current => ({
-                    ...current,
-                    fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: value },
-                  }))}
-                  placeholder={t('objectFixedHours')}
-                  className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
-                />
-                <textarea
-                  value={turnus[day] || ''}
-                  onChange={e => setForm(current => ({
-                    ...current,
-                    turnus: { ...parseTurnus(current.turnus), [day]: e.target.value },
-                  }))}
-                  rows={2}
-                  className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm leading-5 text-slate-100"
-                />
-              </div>
+              <textarea
+                value={turnus[day] || ''}
+                onChange={e => setForm(current => ({
+                  ...current,
+                  turnus: { ...parseTurnus(current.turnus), [day]: e.target.value },
+                }))}
+                rows={2}
+                className="mt-2 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm leading-5 text-slate-100"
+              />
             </li>
           ))}
         </ul>
-      ) : null}
-      {(days.length || preview) && unused.length ? (
-        <label className="block text-xs text-slate-400">
-          {t('objectSheetAddDay')}
-          <select
-            value=""
-            onChange={e => {
-              const day = Number(e.target.value)
-              if (!day) return
-              setForm(current => ({
-                ...current,
-                turnus: { ...parseTurnus(current.turnus), [day]: current.turnus?.[day] || '' },
-                fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: current.fixed_hours_by_day?.[day] || '' },
-              }))
-            }}
-            className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-          >
-            <option value="">{t('objectSheetAddDayPick')}</option>
-            {unused.map(day => (
-              <option key={day} value={day}>{weekdayLabel(day, language, 'cccc')}</option>
-            ))}
-          </select>
-        </label>
       ) : null}
     </div>
   )
