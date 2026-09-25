@@ -1,48 +1,129 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { isoDate, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
+import { isoDate, objectFixedHoursLabel, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel } from './planUtils'
 
-export function ObjectFixedHoursFields({ t, language, form, setForm }) {
+export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy = false, message = '' }) {
+  const turnus = parseTurnus(form.turnus)
+  const days = TURNUS_DAYS.filter(day => turnus[day] || form.fixed_hours_by_day?.[day] != null)
+  const unused = TURNUS_DAYS.filter(day => !days.includes(day))
+  const preview = String(form.leistung_image_url || '')
+  const imagePreview = preview && !/\.pdf(\?|$)/i.test(preview)
   return (
-    <div className="sm:col-span-2 space-y-3 rounded-2xl bg-slate-950/40 px-4 py-4 ring-1 ring-white/10">
+    <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectFixedDays')}</p>
-        {t('objectFixedDaysHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectFixedDaysHint')}</p> : null}
+        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectGuideTitle')}</p>
+        {t('objectSheetHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectSheetHint')}</p> : null}
       </div>
-      <label className="block text-xs text-slate-300">
-        {t('objectFixedHours')}
-        <input
-          type="number"
-          min="0"
-          max="24"
-          step="0.5"
-          value={form.fixed_hours}
-          onChange={e => setForm(current => ({ ...current, fixed_hours: e.target.value }))}
-          placeholder="6"
-          className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-        />
-        {t('objectFixedHint') ? <span className="mt-1.5 block text-[12px] leading-5 text-slate-400">{t('objectFixedHint')}</span> : null}
-      </label>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {TURNUS_DAYS.map(day => (
-          <label key={day} className="block text-[11px] text-slate-400">
-            {weekdayLabel(day, language, 'cccc')}
-            <input
-              type="number"
-              min="0"
-              max="24"
-              step="0.5"
-              value={form.fixed_hours_by_day?.[day] ?? ''}
-              onChange={e => setForm(current => ({
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-xl bg-slate-800 px-3 text-sm text-slate-100">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+            className="sr-only"
+            disabled={busy}
+            onChange={event => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) onPickFile?.(file)
+            }}
+          />
+          {busy ? t('objectSheetReading') : t('objectSheetPick')}
+        </label>
+        {preview ? (
+          <button
+            type="button"
+            onClick={() => setForm(current => ({ ...current, leistung_image_url: '' }))}
+            className="min-h-11 text-sm text-slate-300 underline"
+          >
+            {t('delete')}
+          </button>
+        ) : null}
+      </div>
+      {imagePreview ? (
+        <img src={preview} alt="" className="max-h-40 rounded-xl object-cover" />
+      ) : null}
+      {message ? <p className="text-[13px] leading-6 text-cyan-100">{message}</p> : null}
+      {String(form.leistung_text || '').trim() ? (
+        <label className="block text-xs text-slate-300">
+          {t('objectGuideText')}
+          <textarea
+            value={form.leistung_text}
+            onChange={e => setForm(current => ({ ...current, leistung_text: e.target.value }))}
+            rows={2}
+            className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm leading-6 text-slate-100"
+          />
+        </label>
+      ) : null}
+      {form.fixed_hours ? (
+        <label className="block text-xs text-slate-300">
+          {t('objectFixedHours')}
+          <input
+            type="number"
+            min="0"
+            max="24"
+            step="0.01"
+            value={form.fixed_hours}
+            onChange={e => setForm(current => ({ ...current, fixed_hours: e.target.value }))}
+            className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+          />
+        </label>
+      ) : null}
+      {days.length ? (
+        <ul className="space-y-2">
+          {days.map(day => (
+            <li key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
+              <p className="text-[12px] font-medium text-slate-300">{weekdayLabel(day, language, 'cccc')}</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[7rem_1fr]">
+                <input
+                  type="number"
+                  min="0"
+                  max="24"
+                  step="0.01"
+                  value={form.fixed_hours_by_day?.[day] ?? ''}
+                  onChange={e => setForm(current => ({
+                    ...current,
+                    fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: e.target.value },
+                  }))}
+                  placeholder={t('objectFixedHours')}
+                  className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                />
+                <textarea
+                  value={turnus[day] || ''}
+                  onChange={e => setForm(current => ({
+                    ...current,
+                    turnus: { ...parseTurnus(current.turnus), [day]: e.target.value },
+                  }))}
+                  rows={2}
+                  className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm leading-5 text-slate-100"
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {(days.length || preview) && unused.length ? (
+        <label className="block text-xs text-slate-400">
+          {t('objectSheetAddDay')}
+          <select
+            value=""
+            onChange={e => {
+              const day = Number(e.target.value)
+              if (!day) return
+              setForm(current => ({
                 ...current,
-                fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: e.target.value },
-              }))}
-              placeholder={form.fixed_hours || '—'}
-              className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-        ))}
-      </div>
+                turnus: { ...parseTurnus(current.turnus), [day]: current.turnus?.[day] || '' },
+                fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: current.fixed_hours_by_day?.[day] || '' },
+              }))
+            }}
+            className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+          >
+            <option value="">{t('objectSheetAddDayPick')}</option>
+            {unused.map(day => (
+              <option key={day} value={day}>{weekdayLabel(day, language, 'cccc')}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
     </div>
   )
 }
@@ -81,81 +162,6 @@ function PrettyBody({ text }) {
   )
 }
 
-export function ObjectGuideFields({ t, language, form, setForm, onPickPhoto, photoBusy = false }) {
-  const turnus = parseTurnus(form.turnus)
-  return (
-    <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
-      <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectGuideTitle')}</p>
-        {t('objectGuideHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectGuideHint')}</p> : null}
-      </div>
-      <label className="block text-xs text-slate-300">
-        {t('objectGuideText')}
-        <textarea
-          value={form.leistung_text}
-          onChange={e => setForm(current => ({ ...current, leistung_text: e.target.value }))}
-          rows={5}
-          placeholder={t('objectGuideTextPlaceholder')}
-          className="mt-1.5 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm leading-6 text-slate-100"
-        />
-      </label>
-      <div>
-        <p className="text-xs text-slate-300">{t('objectGuidePhoto')}</p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-3">
-          <label className="inline-flex min-h-11 cursor-pointer items-center rounded-xl bg-slate-800 px-3 text-sm text-slate-100">
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              disabled={photoBusy}
-              onChange={event => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) onPickPhoto?.(file)
-              }}
-            />
-            {photoBusy ? t('saving') : t('objectGuidePhotoPick')}
-          </label>
-          {form.leistung_image_url ? (
-            <button
-              type="button"
-              onClick={() => setForm(current => ({ ...current, leistung_image_url: '' }))}
-              className="min-h-11 text-sm text-slate-300 underline"
-            >
-              {t('delete')}
-            </button>
-          ) : null}
-        </div>
-        {form.leistung_image_url ? (
-          <img src={form.leistung_image_url} alt="" className="mt-3 max-h-40 rounded-xl object-cover" />
-        ) : null}
-        {t('objectGuidePhotoHint') ? <p className="mt-2 text-[12px] leading-5 text-slate-400">{t('objectGuidePhotoHint')}</p> : null}
-      </div>
-      <div>
-        <p className="text-xs text-slate-300">{t('objectGuideTurnus')}</p>
-        {t('objectGuideTurnusHint') ? <p className="mt-1 text-[12px] leading-5 text-slate-400">{t('objectGuideTurnusHint')}</p> : null}
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {TURNUS_DAYS.map(day => (
-            <label key={day} className="block text-[11px] text-slate-400">
-              {weekdayLabel(day, language, 'cccc')}
-              <textarea
-                value={turnus[day] || ''}
-                onChange={e => setForm(current => ({
-                  ...current,
-                  turnus: { ...parseTurnus(current.turnus), [day]: e.target.value },
-                }))}
-                rows={2}
-                placeholder={t('objectGuideTurnusPlaceholder')}
-                className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm leading-5 text-slate-100"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function ObjectGuidePanel({ t, language, object, date, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
   if (!objectHasGuide(object)) return null
@@ -182,6 +188,7 @@ export function ObjectGuidePanel({ t, language, object, date, defaultOpen = fals
               {t('objectGuideToday')}
               {' · '}
               {weekdayLabel(weekday, language, 'cccc')}
+              {objectFixedHoursLabel(object, day) ? ` · ${objectFixedHoursLabel(object, day)}` : ''}
             </span>
           ) : null}
         </span>

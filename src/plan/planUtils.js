@@ -86,7 +86,7 @@ export function clockRange(start, end) {
 export function parseFixedHoursValue(value) {
   const hours = Number(String(value ?? '').replace(',', '.'))
   if (!Number.isFinite(hours) || hours <= 0) return 0
-  return Math.round(hours * 2) / 2
+  return Math.round(hours * 100) / 100
 }
 
 export function parseFixedHoursByDay(value) {

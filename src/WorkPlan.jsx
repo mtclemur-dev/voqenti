@@ -5,7 +5,9 @@ import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
 import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, ownerWorkerIdSet, parseFixedHoursByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
-import { ObjectFixedHoursFields, ObjectGuideFields } from './plan/ObjectGuide'
+import { ObjectSheetFields } from './plan/ObjectGuide'
+import { applyTurnusSheet } from './plan/turnusSheet'
+import { readTurnusFile } from './plan/readTurnusFile'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
@@ -535,6 +537,7 @@ export default function WorkPlan({
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
   const [editingObjectId, setEditingObjectId] = useState(null)
   const [objectPhotoBusy, setObjectPhotoBusy] = useState(false)
+  const [objectSheetMessage, setObjectSheetMessage] = useState('')
   const firstLoad = useRef(true)
 
   useEffect(() => {
@@ -1858,11 +1861,13 @@ export default function WorkPlan({
   const resetObjectForm = () => {
     setEditingObjectId(null)
     setObjectForm(emptyObjectForm())
+    setObjectSheetMessage('')
   }
 
   const startEditObject = (item) => {
     setAdminTab('places')
     setEditingObjectId(item.id)
+    setObjectSheetMessage('')
     setObjectForm({
       name: item.name ?? '',
       address: item.address ?? '',
@@ -1913,13 +1918,24 @@ export default function WorkPlan({
     onReloadObjects?.()
   }
 
-  const handleObjectPhoto = async (file) => {
+  const handleObjectSheet = async (file) => {
     if (!file) return
     setObjectPhotoBusy(true)
-    const safeName = String(file.name || 'foto.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+    setObjectSheetMessage('')
+    let sheet
+    try {
+      sheet = await readTurnusFile(file)
+    } catch (error) {
+      setObjectPhotoBusy(false)
+      alert(`${t('objectSheetReadError')} ${error.message || ''}`)
+      return
+    }
+    const uploadBlob = sheet.previewBlob || file
+    const ext = uploadBlob.type === 'application/pdf' ? 'pdf' : 'jpg'
+    const safeName = String(file.name || `blatt.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `object-guides/${editingObjectId || 'new'}/${Date.now()}-${safeName}`
-    const { error } = await supabase.storage.from('report-images').upload(path, file, {
-      contentType: file.type || 'image/jpeg',
+    const { error } = await supabase.storage.from('report-images').upload(path, uploadBlob, {
+      contentType: uploadBlob.type || file.type || 'image/jpeg',
       upsert: false,
     })
     if (error) {
@@ -1928,7 +1944,49 @@ export default function WorkPlan({
       return
     }
     const { data } = supabase.storage.from('report-images').getPublicUrl(path)
-    setObjectForm(current => ({ ...current, leistung_image_url: data?.publicUrl || current.leistung_image_url }))
+    const imageUrl = data?.publicUrl || ''
+    let matchedName = ''
+    let matchedDays = 0
+    setObjectForm(current => {
+      const next = applyTurnusSheet({ ...current, leistung_image_url: imageUrl || current.leistung_image_url }, sheet)
+      matchedName = next.row?.name || current.name
+      matchedDays = Object.keys(next.row?.days || {}).length
+      return next.form
+    })
+    let extra = 0
+    for (const item of objects) {
+      if (item.id === editingObjectId) continue
+      const next = applyTurnusSheet({
+        name: item.name ?? '',
+        address: item.address ?? '',
+        manager: item.manager ?? '',
+        phone: item.phone ?? '',
+        fixed_hours: item.fixed_hours != null && Number(item.fixed_hours) > 0 ? String(item.fixed_hours) : '',
+        fixed_hours_by_day: Object.fromEntries(
+          Object.entries(parseFixedHoursByDay(item.fixed_hours_json)).map(([day, hours]) => [Number(day), String(hours)]),
+        ),
+        leistung_text: item.leistung_text ?? '',
+        leistung_image_url: imageUrl || item.leistung_image_url || '',
+        turnus: parseTurnus(item.turnus_json),
+      }, sheet)
+      if (!next.matched) continue
+      const hours = Number(String(next.form.fixed_hours).replace(',', '.'))
+      const result = await supabase.from('objects').update({
+        fixed_hours: Number.isFinite(hours) && hours > 0 ? hours : item.fixed_hours ?? null,
+        fixed_hours_json: serializeFixedHoursByDay(next.form.fixed_hours_by_day),
+        leistung_text: next.form.leistung_text.trim() || null,
+        leistung_image_url: next.form.leistung_image_url.trim() || null,
+        turnus_json: serializeTurnus(next.form.turnus),
+      }).eq('id', item.id)
+      if (!result.error) extra += 1
+    }
+    if (!sheet.rows?.length) setObjectSheetMessage(t('objectSheetEmpty'))
+    else if (!matchedDays) setObjectSheetMessage(t('objectSheetNoRow'))
+    else {
+      const text = t('objectSheetApplied').replace('{name}', matchedName || t('objectName')).replace('{days}', String(matchedDays))
+      setObjectSheetMessage(extra ? `${text} ${t('objectSheetAppliedMore').replace('{count}', String(extra))}` : text)
+    }
+    if (extra) onReloadObjects?.()
     setObjectPhotoBusy(false)
   }
 
@@ -2386,19 +2444,14 @@ export default function WorkPlan({
                 className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
               />
             </label>
-            <ObjectFixedHoursFields
+            <ObjectSheetFields
               t={t}
               language={language}
               form={objectForm}
               setForm={setObjectForm}
-            />
-            <ObjectGuideFields
-              t={t}
-              language={language}
-              form={objectForm}
-              setForm={setObjectForm}
-              onPickPhoto={handleObjectPhoto}
-              photoBusy={objectPhotoBusy}
+              onPickFile={handleObjectSheet}
+              busy={objectPhotoBusy}
+              message={objectSheetMessage}
             />
           </div>
           <button type="submit" className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
