@@ -2,6 +2,8 @@ const memory = new Map()
 const GEO_KEY = 'voqenti-geo-v1'
 const ROUTE_KEY = 'voqenti-route-v1'
 
+export const DEPOT_ADDRESS = 'Lutherstraße 117, Jena'
+
 function readStore(key) {
   try {
     const raw = localStorage.getItem(key)
@@ -196,11 +198,15 @@ function workerPlacesFromJobs(jobs, objects = []) {
 
 export async function ensureDayTravels(jobs, objects = []) {
   const { all, byWorker } = workerPlacesFromJobs(jobs, objects)
-  await geocodeAll(all)
+  await geocodeAll([DEPOT_ADDRESS, ...all])
   const tasks = []
   for (const places of byWorker.values()) {
     const list = uniquePlaces(places)
-    if (list.length < 2) continue
+    if (!list.length) continue
+    for (const place of list) {
+      tasks.push(ensureTravel(DEPOT_ADDRESS, place))
+      tasks.push(ensureTravel(place, DEPOT_ADDRESS))
+    }
     for (let left = 0; left < list.length; left += 1) {
       for (let right = 0; right < list.length; right += 1) {
         if (left === right) continue
@@ -209,6 +215,12 @@ export async function ensureDayTravels(jobs, objects = []) {
     }
   }
   await Promise.all(tasks)
+}
+
+export function travelLegLabelKey(leg, named = false) {
+  if (leg?.kind === 'out') return named ? 'travelFromDepotNamed' : 'travelFromDepot'
+  if (leg?.kind === 'back') return named ? 'travelBackDepotNamed' : 'travelBackDepot'
+  return named ? 'travelMinutesNamed' : 'travelMinutes'
 }
 
 export function dayTravelOf(dayTravel, workerId) {

@@ -35,7 +35,7 @@ import {
   sortPlanRows,
   workerDayTravel,
 } from './planUtils'
-import { ensureDayTravels, formatKm } from './travel'
+import { ensureDayTravels, formatKm, travelLegLabelKey } from './travel'
 
 const NOTICES_SEEN_KEY = 'voqenti-notices-seen-at'
 
@@ -60,7 +60,7 @@ function TravelLeg({ t, leg }) {
     <div className="flex items-center gap-3 px-2 py-1 text-[11px] font-semibold tracking-wide text-slate-400">
       <span className="h-px flex-1 bg-white/10" />
       <span className="tabular-nums text-cyan-100/90">
-        {fillText(t('travelMinutes'), { minutes: String(leg.minutes || 0) })}
+        {fillText(t(travelLegLabelKey(leg)), { minutes: String(leg.minutes || 0) })}
         {leg.meters ? ` · ${formatKm(leg.meters)} km` : ''}
       </span>
       <span className="h-px flex-1 bg-white/10" />
@@ -76,6 +76,7 @@ function TravelDayCard({ t, trip }) {
       <p className="mt-1 text-lg font-semibold tabular-nums text-white">
         {fillText(t('travelDay'), { km: formatKm(trip.meters) || '0', time: minutesLabel(trip.minutes, t) })}
       </p>
+      {t('travelHint') ? <p className="mt-1 text-xs text-slate-400">{t('travelHint')}</p> : null}
     </div>
   )
 }
@@ -693,6 +694,7 @@ export default function EmployeeHome({
                 )}
               </Fragment>
             ))}
+            {liveDate === today ? <TravelLeg t={t} leg={(dayTrip?.legs || []).find(item => item.kind === 'back')} /> : null}
           </>
         )}
       </section>
@@ -800,6 +802,7 @@ export default function EmployeeHome({
                 />
               </Fragment>
             ))}
+            <TravelLeg t={t} leg={(dayTrip?.legs || []).find(item => item.kind === 'back')} />
           </div>
         )
       )}

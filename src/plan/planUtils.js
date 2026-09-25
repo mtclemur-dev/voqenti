@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
-import { travelBetweenSync, travelMinutesSync } from './travel.js'
+import { DEPOT_ADDRESS, travelBetweenSync, travelMinutesSync } from './travel.js'
 
 export function firstName(fullName) {
   const text = String(fullName || '').trim()
@@ -430,22 +430,50 @@ export function packWorkerSlots(slots) {
   return packWorkerDay(slots).moved
 }
 
+function addTravelLeg(legs, from, to, extra) {
+  const trip = travelBetweenSync(from, to)
+  if (!trip.minutes && !trip.meters) return { minutes: 0, meters: 0 }
+  legs.push({
+    minutes: trip.minutes,
+    meters: trip.meters,
+    ...extra,
+  })
+  return trip
+}
+
 export function workerDayTravel(jobs, workerId, date, objects) {
   const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
+  const legs = []
   let minutes = 0
   let meters = 0
-  const legs = []
+  const first = packed[0]
+  const last = packed[packed.length - 1]
+  if (first?.address) {
+    const out = addTravelLeg(legs, DEPOT_ADDRESS, first.address, {
+      kind: 'out',
+      fromJobId: '',
+      toJobId: first.jobId,
+    })
+    minutes += out.minutes
+    meters += out.meters
+  }
   for (let index = 1; index < packed.length; index += 1) {
-    const trip = travelBetweenSync(packed[index - 1].address, packed[index].address)
-    if (!trip.minutes && !trip.meters) continue
-    minutes += trip.minutes
-    meters += trip.meters
-    legs.push({
+    const hop = addTravelLeg(legs, packed[index - 1].address, packed[index].address, {
+      kind: 'leg',
       fromJobId: packed[index - 1].jobId,
       toJobId: packed[index].jobId,
-      minutes: trip.minutes,
-      meters: trip.meters,
     })
+    minutes += hop.minutes
+    meters += hop.meters
+  }
+  if (last?.address) {
+    const back = addTravelLeg(legs, last.address, DEPOT_ADDRESS, {
+      kind: 'back',
+      fromJobId: last.jobId,
+      toJobId: '',
+    })
+    minutes += back.minutes
+    meters += back.meters
   }
   return { minutes, meters, legs, packed }
 }
