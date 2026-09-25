@@ -231,6 +231,74 @@ export function rangesOverlap(left, right) {
   return fromA < toB && fromB < toA
 }
 
+export function rangeDurationMinutes(range) {
+  const start = clockMinutes(range?.start)
+  const end = clockMinutes(range?.end)
+  if (start == null || end == null) return 0
+  let minutes = end - start
+  if (minutes <= 0) minutes += 24 * 60
+  return minutes
+}
+
+export function workerDaySlots(jobs, workerId, date, options = {}) {
+  const day = isoDate(date)
+  const slots = []
+  if (!workerId || !day) return slots
+  for (const job of jobs || []) {
+    if (options.exceptJobId && job.id === options.exceptJobId) continue
+    if (isoDate(job.work_date) !== day) continue
+    if (job.status === 'cancelled' || job.status === 'canceled') continue
+    for (const row of job.work_job_assignees ?? []) {
+      if (row.worker_id !== workerId) continue
+      if (row.status && !['assigned', 'approved'].includes(row.status)) continue
+      const range = assignmentRange(row, job)
+      if (!formatClock(range.start) || !formatClock(range.end)) continue
+      slots.push({
+        jobId: job.id,
+        rowId: row.id,
+        workerId,
+        range,
+        duration: rangeDurationMinutes(range),
+      })
+    }
+  }
+  return slots.sort((left, right) => {
+    const leftStart = clockMinutes(left.range.start)
+    const rightStart = clockMinutes(right.range.start)
+    if (leftStart !== rightStart) return leftStart - rightStart
+    if (options.preferJobId) {
+      if (left.jobId === options.preferJobId) return -1
+      if (right.jobId === options.preferJobId) return 1
+    }
+    return String(left.jobId).localeCompare(String(right.jobId))
+  })
+}
+
+export function packWorkerSlots(slots) {
+  let nextFree = null
+  const moved = []
+  for (const slot of slots || []) {
+    const start = clockMinutes(slot.range.start)
+    const duration = slot.duration || rangeDurationMinutes(slot.range)
+    if (start == null || !duration) continue
+    const newStart = nextFree != null && start < nextFree ? nextFree : start
+    const newEnd = newStart + duration
+    nextFree = newEnd
+    const range = { start: minutesToClock(newStart), end: minutesToClock(newEnd) }
+    if (range.start !== slot.range.start || range.end !== slot.range.end) {
+      moved.push({ ...slot, range, previous: slot.range })
+    }
+  }
+  return moved
+}
+
+export function withSavedJob(jobs, saved) {
+  if (!saved?.id) return jobs || []
+  const list = jobs || []
+  if (list.some(job => job.id === saved.id)) return list.map(job => (job.id === saved.id ? { ...job, ...saved } : job))
+  return [...list, saved]
+}
+
 export function spanClockRange(ranges, fallback = {}) {
   const starts = ranges.map(item => clockMinutes(item?.start)).filter(value => value != null)
   const ends = ranges.map(item => clockMinutes(item?.end)).filter(value => value != null)
