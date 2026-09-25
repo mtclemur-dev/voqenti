@@ -1881,6 +1881,11 @@ export default function WorkPlan({
       leistung_image_url: item.leistung_image_url ?? '',
       turnus: parseTurnus(item.turnus_json),
     })
+    requestAnimationFrame(() => {
+      const node = document.getElementById('plan-object-form')
+      node?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      node?.querySelector('input')?.focus({ preventScroll: true })
+    })
   }
 
   const handleSaveObject = async (event) => {
@@ -2409,8 +2414,9 @@ export default function WorkPlan({
       )}
 
       {view === 'plan' && isAdmin && adminTab === 'places' && (
-        <form onSubmit={handleSaveObject} className="rounded-[1.75rem] bg-slate-900/85 p-5 ring-1 ring-slate-700">
+        <form id="plan-object-form" onSubmit={handleSaveObject} className="rounded-[1.75rem] bg-slate-900/85 p-5 ring-1 ring-slate-700">
           <p className="text-[11px] uppercase tracking-[0.25em] text-cyan-200">{t('adminTabPlaces')}</p>
+          {editingObjectId ? <p className="mt-1 text-sm font-semibold text-white">{objectForm.name || t('edit')}</p> : null}
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs text-slate-400">
               {t('objectName')}
@@ -2467,7 +2473,7 @@ export default function WorkPlan({
           ) : (
             <div className="mt-3 space-y-2">
               {objects.map(item => (
-                <div key={item.id} className="flex items-start justify-between gap-2 rounded-xl bg-slate-950/50 px-3 py-2">
+                <div key={item.id} className={`flex items-start justify-between gap-2 rounded-xl px-3 py-2 ${editingObjectId === item.id ? 'bg-cyan-500/10 ring-1 ring-cyan-300/30' : 'bg-slate-950/50'}`}>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-white">{item.name}</p>
                     {item.address ? <p className="text-xs text-slate-400">{item.address}</p> : null}
