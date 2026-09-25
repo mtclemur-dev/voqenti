@@ -8,6 +8,7 @@ import { HoursRow } from './EmployeeHours'
 import SelfWorkForm from './SelfWorkForm'
 import OpenPostActions from './OpenPostActions'
 import { ObjectGuidePanel } from './ObjectGuide'
+import { serviceLabel } from './objectServices'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
@@ -282,6 +283,9 @@ function NextAssignmentCard({
         </div>
         <div className="space-y-2">
           <h2 className="break-words text-xl font-bold text-white md:text-2xl">{place}</h2>
+          {serviceLabel(job, object) ? (
+            <p className="text-sm font-semibold text-cyan-200">{serviceLabel(job, object)}</p>
+          ) : null}
           {address && <p className="break-words text-sm leading-5 text-slate-200">{address}</p>}
           <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId} />
           {(object?.manager || phone) && (
@@ -569,6 +573,7 @@ export default function EmployeeHome({
             <article key={job.id} className="rounded-3xl border border-amber-300/30 bg-amber-400/12 p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-200">{t('notifyOpenPost')}</p>
               <h3 className="mt-2 text-lg font-black text-white">{job.location_text || job.object_name || t('planNoPlace')}</h3>
+              {job.service_name ? <p className="mt-1 text-sm font-semibold text-amber-100">{job.service_name}</p> : null}
               <p className="mt-1 text-sm font-semibold text-amber-100">
                 {formatDisplayDate(job.work_date, language)}
                 {assignmentRange({ work_jobs: job }, job).start ? ` · ${assignmentRange({ work_jobs: job }, job).start}` : ''}
@@ -656,7 +661,7 @@ export default function EmployeeHome({
               {formatDisplayDate(row.work_jobs?.work_date, language)}
               {assignmentRange(row).start ? ` · ${assignmentRange(row).start}` : ''}
               {' · '}
-              {row.work_jobs?.object_name || row.work_jobs?.location_text || t('planNoPlace')}
+              {[row.work_jobs?.object_name || row.work_jobs?.location_text || t('planNoPlace'), row.work_jobs?.service_name].filter(Boolean).join(' · ')}
             </p>
           ))}
         </div>

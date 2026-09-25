@@ -8,6 +8,8 @@ import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesIn
 import { ensureDayTravels } from './plan/travel'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
+import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
+import { jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceLabel, serviceOf } from './plan/objectServices'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, restoreMinutesForObject, stripSpreadBlatt } from './plan/clearBlattSpread'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -32,6 +34,7 @@ const emptyForm = () => {
     bring_text: '',
     remember_text: '',
     notes_text: '',
+    service_id: '',
     worker_ids: [],
     until_date: today,
     weekdays: [...WORK_WEEKDAYS],
@@ -61,6 +64,7 @@ const emptyObjectForm = () => ({
   leistung_image_url: '',
   turnus: {},
   groups: [],
+  services: [],
 })
 
 const emptyNeedForm = () => ({
@@ -72,6 +76,7 @@ const emptyNeedForm = () => ({
   task_text: '',
   needed_count: 1,
   early_hours: 3,
+  service_id: '',
 })
 
 function isMissingColumn(error) {
@@ -79,6 +84,8 @@ function isMissingColumn(error) {
   return error?.code === 'PGRST204'
     || message.includes('planned_start')
     || message.includes('planned_end')
+    || message.includes('service_id')
+    || message.includes('service_name')
     || message.includes('hours_changed')
     || message.includes('crew_names')
     || message.includes('schema cache')
@@ -154,6 +161,7 @@ function restoreJobForm(saved) {
     bring_text: stringOr(saved.bring_text),
     remember_text: stringOr(saved.remember_text),
     notes_text: stringOr(saved.notes_text),
+    service_id: stringOr(saved.service_id),
     worker_ids: Array.isArray(saved.worker_ids) ? saved.worker_ids.filter(id => typeof id === 'string') : [],
     until_date: isoDateOr(saved.until_date, isoDateOr(saved.work_date, base.until_date)),
     weekdays: (() => {
@@ -266,6 +274,7 @@ function relatedSeriesJobs(jobs, job, today) {
     const date = isoDate(other.work_date)
     if (!date || date < today) return false
     if (jobPlaceKey(other) !== place) return false
+    if (jobServiceKey(other) !== jobServiceKey(job)) return false
     return sameWorkerSet(workers, new Set(assignedWorkerIds(other)))
   })
   const center = isoDate(job.work_date)
@@ -388,7 +397,7 @@ function dayStamp(date, today, t) {
   return null
 }
 
-function JobCard({ job, t, mapsHref, badge, children, objectAddress, language = 'de', embedded = false }) {
+function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '', language = 'de', embedded = false }) {
   const place = job.location_text || job.object_name || t('planNoPlace')
   const stamp = badge
   const dateLabel = formatDisplayDate(job.work_date)
@@ -418,6 +427,9 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, language = 
             <p className="text-sm font-semibold text-slate-200">{dateLabel}{time ? ` · ${time}` : ''}{duration ? ` · ${duration}` : ''}</p>
           </div>
           <h3 className="mt-1 text-lg font-bold text-white">{place}</h3>
+          {service ? (
+            <p className="mt-0.5 text-sm text-cyan-200">{service}</p>
+          ) : null}
           {objectAddress && objectAddress !== place && (
             <p className="mt-0.5 text-sm text-slate-400">{objectAddress}</p>
           )}
@@ -1038,6 +1050,7 @@ export default function WorkPlan({
       const next = {
         ...current,
         object_id: objectId,
+        service_id: nextServiceIdForObject(object, current.service_id),
         location_text: object
           ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
           : current.location_text,
@@ -1064,6 +1077,7 @@ export default function WorkPlan({
       const next = {
         ...current,
         object_id: objectId,
+        service_id: nextServiceIdForObject(object, current.service_id),
         location_text: object
           ? `${object.name}${object.address ? ` - ${object.address}` : ''}`
           : current.location_text,
@@ -1245,6 +1259,7 @@ export default function WorkPlan({
     bring_text: job.bring_text ?? '',
     remember_text: job.remember_text ?? '',
     notes_text: job.notes_text ?? '',
+    service_id: job.service_id || (serviceOf(objects.find(item => item.id === job.object_id), job.service_id, job.service_name)?.id || ''),
     worker_ids: (job.work_job_assignees ?? [])
       .filter(row => ['assigned', 'approved'].includes(row.status))
       .map(row => row.worker_id)
@@ -1292,6 +1307,7 @@ export default function WorkPlan({
         task_text: job.task_text ?? '',
         needed_count: job.needed_count ?? 1,
         early_hours: 3,
+        service_id: job.service_id || nextServiceIdForObject(object, job.service_id),
       }
     })())
     document.getElementById('plan-need-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1312,6 +1328,7 @@ export default function WorkPlan({
         task_text: job.task_text ?? '',
         needed_count: job.needed_count ?? 1,
         early_hours: 3,
+        service_id: job.service_id || nextServiceIdForObject(object, job.service_id),
       }
     })())
     document.getElementById('plan-need-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1327,6 +1344,7 @@ export default function WorkPlan({
     const firstDate = editingId ? form.work_date : planDays[0]
     const extraDates = planDays.filter(day => day !== firstDate)
     if (!form.location_text.trim() && !form.object_id) return alert(t('planPlaceRequired'))
+    if (parseServices(selectedObject?.services_json).length && !form.service_id) return alert(t('serviceRequired'))
     if (form.worker_ids.length === 0) return alert(t('planWorkersRequired'))
     const blocked = form.worker_ids.filter(id => absenceOnDate(absences, id, firstDate))
     if (blocked.length) {
@@ -1348,6 +1366,8 @@ export default function WorkPlan({
       bring_text: form.bring_text.trim() || null,
       remember_text: form.remember_text.trim() || null,
       notes_text: form.notes_text.trim() || null,
+      service_id: form.service_id || null,
+      service_name: serviceOf(selectedObject, form.service_id)?.name || null,
       kind: jobs.find(item => item.id === editingId)?.kind === 'open_post' ? 'open_post' : 'assigned',
       needed_count: Math.max(
         1,
@@ -1365,6 +1385,11 @@ export default function WorkPlan({
     if (result.error && isMissingColumn(result.error)) {
       const basic = { ...payload }
       delete basic.crew_names
+      if (/service_id|service_name/i.test(result.error.message || '')) {
+        delete basic.service_id
+        delete basic.service_name
+        alert(t('serviceSetup'))
+      }
       result = editingId
         ? await supabase.from('work_jobs').update(basic).eq('id', editingId).select().single()
         : await supabase.from('work_jobs').insert([basic]).select().single()
@@ -1555,6 +1580,7 @@ export default function WorkPlan({
     if (!isAdmin) return
     if (!needForm.work_date) return alert(t('planDateRequired'))
     if (!needForm.location_text.trim() && !needForm.object_id) return alert(t('planPlaceRequired'))
+    if (parseServices(selectedNeedObject?.services_json).length && !needForm.service_id) return alert(t('serviceRequired'))
 
     setSaving(true)
     const now = DateTime.now().setZone('Europe/Berlin')
@@ -1570,6 +1596,8 @@ export default function WorkPlan({
       object_name: selectedNeedObject?.name || needForm.location_text.trim() || null,
       location_text: needForm.location_text.trim() || selectedNeedObject?.name || null,
       task_text: needForm.task_text.trim() || null,
+      service_id: needForm.service_id || null,
+      service_name: serviceOf(selectedNeedObject, needForm.service_id)?.name || null,
       kind: 'open_post',
       needed_count: Math.max(1, Number(needForm.needed_count) || 1),
       status: 'active',
@@ -1585,11 +1613,14 @@ export default function WorkPlan({
     let result = editingNeedId
       ? await supabase.from('work_jobs').update(payload).eq('id', editingNeedId).select().single()
       : await supabase.from('work_jobs').insert([payload]).select().single()
-    if (result.error && /released_at|public_at|early_min_count|schema cache/i.test(result.error.message)) {
+    if (result.error && /service_id|service_name|released_at|public_at|early_min_count|schema cache/i.test(result.error.message)) {
       const basic = { ...payload }
       delete basic.released_at
       delete basic.public_at
       delete basic.early_min_count
+      delete basic.service_id
+      delete basic.service_name
+      if (/service_id|service_name/i.test(result.error.message || '')) alert(t('serviceSetup'))
       result = editingNeedId
         ? await supabase.from('work_jobs').update(basic).eq('id', editingNeedId).select().single()
         : await supabase.from('work_jobs').insert([basic]).select().single()
@@ -1774,6 +1805,8 @@ export default function WorkPlan({
         bring_text: job.bring_text || null,
         remember_text: job.remember_text || null,
         notes_text: job.notes_text || null,
+        service_id: job.service_id || null,
+        service_name: job.service_name || serviceOf(object, job.service_id)?.name || null,
         kind: 'assigned',
         needed_count: Math.max(1, available.length),
         status: 'active',
@@ -1784,6 +1817,8 @@ export default function WorkPlan({
       if (error && isMissingColumn(error)) {
         const basic = { ...copyPayload }
         delete basic.crew_names
+        delete basic.service_id
+        delete basic.service_name
         const fallback = await supabase.from('work_jobs').insert([basic]).select().single()
         data = fallback.data
         error = fallback.error
@@ -2149,6 +2184,7 @@ export default function WorkPlan({
       leistung_image_url: item.leistung_image_url ?? '',
       turnus: parseTurnus(item.turnus_json),
       groups: groupsFromObject(item),
+      services: parseServices(item.services_json),
     })
     requestAnimationFrame(() => {
       const node = document.getElementById('plan-object-form')
@@ -2247,10 +2283,19 @@ export default function WorkPlan({
       leistung_image_url: objectForm.leistung_image_url.trim() || null,
       turnus_json: serializeTurnus(objectForm.turnus),
       guide_json: serializeGroups(objectForm.groups),
+      services_json: serializeServices(objectForm.services),
     }
     let result = editingObjectId
       ? await supabase.from('objects').update(payload).eq('id', editingObjectId)
       : await supabase.from('objects').insert([payload]).select('id').single()
+    if (result.error && /services_json/i.test(result.error.message || '')) {
+      const without = { ...payload }
+      delete without.services_json
+      result = editingObjectId
+        ? await supabase.from('objects').update(without).eq('id', editingObjectId)
+        : await supabase.from('objects').insert([without]).select('id').single()
+      if (parseServices(objectForm.services).length) alert(t('serviceSetup'))
+    }
     if (result.error && /guide_json|schema cache|column/i.test(result.error.message || '')) {
       const fallback = {
         ...payload,
@@ -2613,6 +2658,7 @@ export default function WorkPlan({
         mapsHref={mapsHref(job)}
         badge={dayStamp(job.work_date, today, t) || (past ? t('planDone') : null)}
         objectAddress={object?.address || ''}
+        service={serviceLabel(job, object)}
       >
         <div className="mt-3 space-y-1 text-sm text-slate-300">
           {activePeople.map(row => (
@@ -2792,12 +2838,13 @@ export default function WorkPlan({
             </label>
             <label className="text-xs text-slate-400">
               {t('objectPhone')}
-              <input
+                <input
                 value={objectForm.phone}
                 onChange={e => setObjectForm(current => ({ ...current, phone: e.target.value }))}
                 className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
               />
             </label>
+            <ObjectServicesFields t={t} form={objectForm} setForm={setObjectForm} />
             <ObjectSheetFields
               t={t}
               language={language}
@@ -2832,6 +2879,9 @@ export default function WorkPlan({
                       </p>
                     ) : objectTimeLocked(item) ? (
                       <p className="mt-0.5 text-xs text-cyan-200/80">{t('objectTimeRigidBadge')}</p>
+                    ) : null}
+                    {parseServices(item.services_json).length ? (
+                      <p className="mt-0.5 text-xs text-cyan-200/80">{parseServices(item.services_json).map(row => row.name).join(' · ')}</p>
                     ) : null}
                     {objectHasGuide(item) ? <p className="mt-0.5 text-xs text-slate-300">{t('objectGuideTitle')}</p> : null}
                   </div>
@@ -3041,6 +3091,12 @@ export default function WorkPlan({
               ))}
             </select>
           </label>
+          <JobServiceField
+            t={t}
+            object={selectedObject}
+            value={form.service_id}
+            onChange={value => setField('service_id', value)}
+          />
 
           <label className="mt-3 block text-xs text-slate-400">
             {t('planPlace')}
@@ -3360,6 +3416,13 @@ export default function WorkPlan({
                   ))}
                 </select>
               </label>
+              <JobServiceField
+                t={t}
+                object={selectedNeedObject}
+                value={needForm.service_id}
+                onChange={value => setNeedField('service_id', value)}
+                className="mt-3 block text-xs text-amber-100/80"
+              />
               <label className="mt-3 block text-xs text-amber-100/80">
                 {t('planPlace')}
                 <input value={needForm.location_text} onChange={e => setNeedField('location_text', e.target.value)} placeholder={t('needPlacePlaceholder')} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100" />

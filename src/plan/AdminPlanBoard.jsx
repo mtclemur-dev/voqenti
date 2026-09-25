@@ -18,6 +18,7 @@ import {
   turnusForDate,
   workerInitials,
 } from './planUtils'
+import { serviceLabel } from './objectServices'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -514,6 +515,7 @@ export default function AdminPlanBoard({
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>
                           <span className="mt-0.5 block truncate text-xs text-slate-300">
                             {[
+                              serviceLabel(job, object),
                               area && area !== place ? area : '',
                               focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
                             ].filter(Boolean).join(' · ')}
