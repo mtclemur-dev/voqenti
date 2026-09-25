@@ -647,7 +647,10 @@ function App() {
       .from('objects')
       .select(columns)
       .order('name', { ascending: true })
-    let { data, error } = await query('id, name, address, manager, phone, fixed_hours')
+    let { data, error } = await query('id, name, address, manager, phone, fixed_hours, leistung_text, leistung_image_url, turnus_json')
+    if (error && /leistung_text|leistung_image_url|turnus_json|schema cache|column/i.test(error.message || '')) {
+      ;({ data, error } = await query('id, name, address, manager, phone, fixed_hours'))
+    }
     if (error && /fixed_hours|schema cache|column/i.test(error.message || '')) {
       ;({ data, error } = await query('id, name, address, manager, phone'))
     }

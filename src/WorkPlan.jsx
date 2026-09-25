@@ -4,7 +4,8 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatFixedHoursLabel, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedMinutes, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatFixedHoursLabel, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedMinutes, objectHasGuide, ownerWorkerIdSet, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, WORK_WEEKDAYS } from './plan/planUtils'
+import { ObjectGuideFields } from './plan/ObjectGuide'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
@@ -47,6 +48,9 @@ const emptyObjectForm = () => ({
   manager: '',
   phone: '',
   fixed_hours: '',
+  leistung_text: '',
+  leistung_image_url: '',
+  turnus: {},
 })
 
 const emptyNeedForm = () => ({
@@ -529,6 +533,7 @@ export default function WorkPlan({
   const [shortcutBusy, setShortcutBusy] = useState(false)
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
   const [editingObjectId, setEditingObjectId] = useState(null)
+  const [objectPhotoBusy, setObjectPhotoBusy] = useState(false)
   const firstLoad = useRef(true)
 
   useEffect(() => {
@@ -1852,6 +1857,9 @@ export default function WorkPlan({
       manager: item.manager ?? '',
       phone: item.phone ?? '',
       fixed_hours: item.fixed_hours != null && Number(item.fixed_hours) > 0 ? String(item.fixed_hours) : '',
+      leistung_text: item.leistung_text ?? '',
+      leistung_image_url: item.leistung_image_url ?? '',
+      turnus: parseTurnus(item.turnus_json),
     })
   }
 
@@ -1866,10 +1874,17 @@ export default function WorkPlan({
       manager: objectForm.manager.trim() || null,
       phone: objectForm.phone.trim() || null,
       fixed_hours: Number.isFinite(hours) && hours > 0 ? Math.round(hours * 2) / 2 : null,
+      leistung_text: objectForm.leistung_text.trim() || null,
+      leistung_image_url: objectForm.leistung_image_url.trim() || null,
+      turnus_json: serializeTurnus(objectForm.turnus),
     }
     const result = editingObjectId
       ? await supabase.from('objects').update(payload).eq('id', editingObjectId)
       : await supabase.from('objects').insert([payload])
+    if (result.error && /leistung_text|leistung_image_url|turnus_json|schema cache|column/i.test(result.error.message || '')) {
+      alert(t('objectGuideSetup'))
+      return
+    }
     if (result.error && /fixed_hours|schema cache|column/i.test(result.error.message || '')) {
       alert(t('objectFixedSetup'))
       return
@@ -1880,6 +1895,25 @@ export default function WorkPlan({
     }
     resetObjectForm()
     onReloadObjects?.()
+  }
+
+  const handleObjectPhoto = async (file) => {
+    if (!file) return
+    setObjectPhotoBusy(true)
+    const safeName = String(file.name || 'foto.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `object-guides/${editingObjectId || 'new'}/${Date.now()}-${safeName}`
+    const { error } = await supabase.storage.from('report-images').upload(path, file, {
+      contentType: file.type || 'image/jpeg',
+      upsert: false,
+    })
+    if (error) {
+      setObjectPhotoBusy(false)
+      alert(`${t('imageUploadError')} ${error.message}`)
+      return
+    }
+    const { data } = supabase.storage.from('report-images').getPublicUrl(path)
+    setObjectForm(current => ({ ...current, leistung_image_url: data?.publicUrl || current.leistung_image_url }))
+    setObjectPhotoBusy(false)
   }
 
   const handleDeleteObject = async (item) => {
@@ -2350,6 +2384,14 @@ export default function WorkPlan({
               />
               {t('objectFixedHint') ? <span className="mt-1.5 block text-[11px] leading-5 text-slate-500">{t('objectFixedHint')}</span> : null}
             </label>
+            <ObjectGuideFields
+              t={t}
+              language={language}
+              form={objectForm}
+              setForm={setObjectForm}
+              onPickPhoto={handleObjectPhoto}
+              photoBusy={objectPhotoBusy}
+            />
           </div>
           <button type="submit" className="mt-3 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white">
             {t('objectSave')}
@@ -2371,6 +2413,7 @@ export default function WorkPlan({
                     {objectFixedMinutes(item) ? (
                       <p className="mt-0.5 text-xs text-cyan-200/80">{t('objectFixedBadge').replace('{hours}', formatFixedHoursLabel(item.fixed_hours))}</p>
                     ) : null}
+                    {objectHasGuide(item) ? <p className="mt-0.5 text-xs text-slate-300">{t('objectGuideTitle')}</p> : null}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button type="button" onClick={() => startEditObject(item)} className="text-xs font-semibold text-cyan-200">{t('edit')}</button>

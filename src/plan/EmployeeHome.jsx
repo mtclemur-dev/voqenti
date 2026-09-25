@@ -7,6 +7,7 @@ import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, s
 import { HoursRow } from './EmployeeHours'
 import SelfWorkForm from './SelfWorkForm'
 import OpenPostActions from './OpenPostActions'
+import { ObjectGuidePanel } from './ObjectGuide'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
@@ -299,6 +300,10 @@ function NextAssignmentCard({
 
       <div className="mt-4">
         <AssignmentDetails t={t} job={job} />
+      </div>
+
+      <div className="mt-4">
+        <ObjectGuidePanel t={t} language={language} object={object} date={job.work_date} />
       </div>
 
       {onSaveHours && (

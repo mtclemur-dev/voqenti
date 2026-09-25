@@ -409,10 +409,59 @@ export function isWeekend(value) {
 }
 
 export const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
+export const TURNUS_DAYS = [1, 2, 3, 4, 5, 6, 7]
 
-export function weekdayLabel(weekday, language = 'de') {
+export function parseTurnus(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const map = {}
+    for (const [key, body] of Object.entries(value)) {
+      const day = Number(key)
+      if (day >= 1 && day <= 7 && String(body || '').trim()) map[day] = String(body).trim()
+    }
+    return map
+  }
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    if (Array.isArray(parsed)) {
+      const map = {}
+      for (const item of parsed) {
+        const day = Number(item?.weekday)
+        const body = String(item?.body || '').trim()
+        if (day >= 1 && day <= 7 && body) map[day] = body
+      }
+      return map
+    }
+    return parseTurnus(parsed && typeof parsed === 'object' ? parsed : {})
+  } catch {
+    return {}
+  }
+}
+
+export function serializeTurnus(map) {
+  return TURNUS_DAYS
+    .map(weekday => ({ weekday, body: String(map?.[weekday] || '').trim() }))
+    .filter(item => item.body)
+}
+
+export function objectHasGuide(object) {
+  return Boolean(
+    String(object?.leistung_text || '').trim()
+    || object?.leistung_image_url
+    || serializeTurnus(parseTurnus(object?.turnus_json)).length
+  )
+}
+
+export function turnusForDate(object, date) {
+  const iso = isoDate(date)
+  const dt = iso ? DateTime.fromISO(iso, { zone: 'Europe/Berlin' }) : DateTime.now().setZone('Europe/Berlin')
+  if (!dt.isValid) return ''
+  return String(parseTurnus(object?.turnus_json)[dt.weekday] || '').trim()
+}
+
+export function weekdayLabel(weekday, language = 'de', format = 'ccc') {
   const dt = DateTime.fromObject({ weekday }, { zone: 'Europe/Berlin' }).setLocale(language)
-  return dt.isValid ? dt.toFormat('ccc') : ''
+  return dt.isValid ? dt.toFormat(format) : ''
 }
 
 export function datesInRange(from, until, weekdays = WORK_WEEKDAYS, { keepSingleIfEmpty = true } = {}) {
