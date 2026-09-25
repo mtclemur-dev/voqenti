@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import WeekBoard from './WeekBoard'
 import { IconAlert, IconChevron, IconUser, IconWork } from './icons'
+import WorkerShortcutRow from './WorkerShortcuts'
 import {
   assignmentRange,
   durationMinutes,
@@ -116,6 +117,11 @@ export default function AdminPlanBoard({
   workerName,
   renderJob,
   jobFormOpen = false,
+  shortcutJobsFor,
+  onWorkerMessage,
+  onAddWorkerToJobs,
+  onStartJobWithWorker,
+  shortcutBusy = false,
   hideOwnerHours = false,
   ownerIds,
   skipWorkerIds,
@@ -304,22 +310,33 @@ export default function AdminPlanBoard({
               const fill = Math.max(8, Math.round((person.minutes / DAY_TARGET_MINUTES) * 100))
               return (
                 <li key={person.id}>
-                  <button
-                    type="button"
-                    onClick={() => onFocusWorker(selected ? '' : person.id)}
-                    aria-pressed={selected}
-                    className={`w-full rounded-xl px-3 py-2.5 text-left ring-1 transition hover:bg-slate-950/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                      selected ? 'bg-slate-950/70 ring-cyan-300/50' : 'bg-slate-950/35 ring-amber-300/20'
-                    }`}
+                  <WorkerShortcutRow
+                    t={t}
+                    person={person}
+                    jobs={shortcutJobsFor?.(person.id) || []}
+                    canAssign
+                    onMessage={onWorkerMessage}
+                    onAddToJobs={onAddWorkerToJobs}
+                    onStartJob={onStartJobWithWorker}
+                    busy={shortcutBusy}
                   >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm font-semibold text-white">{person.name}</span>
-                      <span className="shrink-0 text-sm font-bold tabular-nums text-amber-100">{minutesLabel(person.minutes, t)}</span>
-                    </span>
-                    <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
-                      <span className="block h-full rounded-full bg-amber-300" style={{ width: `${fill}%` }} />
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => onFocusWorker(selected ? '' : person.id)}
+                      aria-pressed={selected}
+                      className={`w-full rounded-xl px-3 py-2.5 text-left ring-1 transition hover:bg-slate-950/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                        selected ? 'bg-slate-950/70 ring-cyan-300/50' : 'bg-slate-950/35 ring-amber-300/20'
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-semibold text-white">{person.name}</span>
+                        <span className="shrink-0 text-sm font-bold tabular-nums text-amber-100">{minutesLabel(person.minutes, t)}</span>
+                      </span>
+                      <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                        <span className="block h-full rounded-full bg-amber-300" style={{ width: `${fill}%` }} />
+                      </span>
+                    </button>
+                  </WorkerShortcutRow>
                 </li>
               )
             })}
@@ -366,28 +383,39 @@ export default function AdminPlanBoard({
                       : t('planRosterFree')
                   return (
                     <li key={person.id}>
-                      <button
-                        type="button"
-                        onClick={() => onFocusWorker(selected ? '' : person.id)}
-                        aria-pressed={selected}
-                        className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                          selected ? 'bg-cyan-500/15 ring-1 ring-cyan-300/40' : ''
-                        }`}
+                      <WorkerShortcutRow
+                        t={t}
+                        person={person}
+                        jobs={shortcutJobsFor?.(person.id) || []}
+                        canAssign={person.status !== 'off'}
+                        onMessage={onWorkerMessage}
+                        onAddToJobs={onAddWorkerToJobs}
+                        onStartJob={onStartJobWithWorker}
+                        busy={shortcutBusy}
                       >
-                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-cyan-100">
-                          {workerInitials(person.name)}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
-                          <span className="mt-0.5 block truncate text-xs text-slate-300">
-                            {person.status === 'working'
-                              ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
-                              : person.status === 'off'
-                                ? `${person.label} · ${statusLabel}`
-                                : statusLabel}
+                        <button
+                          type="button"
+                          onClick={() => onFocusWorker(selected ? '' : person.id)}
+                          aria-pressed={selected}
+                          className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                            selected ? 'bg-cyan-500/15 ring-1 ring-cyan-300/40' : ''
+                          }`}
+                        >
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-cyan-100">
+                            {workerInitials(person.name)}
                           </span>
-                        </span>
-                      </button>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
+                            <span className="mt-0.5 block truncate text-xs text-slate-300">
+                              {person.status === 'working'
+                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''}${person.short ? ` · ${t('adminUnderHoursTitle')}` : ''} · ${statusLabel}`
+                                : person.status === 'off'
+                                  ? `${person.label} · ${statusLabel}`
+                                  : statusLabel}
+                            </span>
+                          </span>
+                        </button>
+                      </WorkerShortcutRow>
                     </li>
                   )
                 })}

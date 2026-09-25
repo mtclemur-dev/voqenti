@@ -515,6 +515,7 @@ export default function WorkPlan({
   const [rosterSearch, setRosterSearch] = useState('')
   const [focusWorkerId, setFocusWorkerId] = useState('')
   const [jobMenuId, setJobMenuId] = useState('')
+  const [shortcutBusy, setShortcutBusy] = useState(false)
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
   const [editingObjectId, setEditingObjectId] = useState(null)
   const firstLoad = useRef(true)
@@ -1917,6 +1918,139 @@ export default function WorkPlan({
     }
     return { working, free, off }
   }, [absences, activeWorkers, liveBoardDate, boardJobs, busyOnBoardDate, t])
+
+  const shortcutJobsFor = (workerId) => boardJobs
+    .filter(job => job?.status !== 'cancelled' && job?.status !== 'canceled' && job?.kind !== 'open_post')
+    .map((job) => {
+      const row = (job.work_job_assignees ?? []).find(item => item.worker_id === workerId)
+      const assigned = Boolean(row && ['assigned', 'approved'].includes(row.status))
+      const range = clockRange(job.start_time, job.end_time)
+      const hit = !assigned && overlapJobForWorker(workerId, job.work_date, range, job.id)
+      return {
+        id: job.id,
+        place: job.location_text || job.object_name || t('planNoPlace'),
+        start: formatClock(job.start_time),
+        end: formatClock(job.end_time),
+        assigned,
+        overlap: Boolean(hit),
+        declined: row?.status === 'declined',
+      }
+    })
+    .filter(item => !item.assigned)
+
+  const handleWorkerMessage = async (workerId, text) => {
+    const body = String(text || '').trim()
+    if (!body) {
+      alert(t('workerMessageRequired'))
+      return false
+    }
+    setShortcutBusy(true)
+    const { error } = await supabase.from('work_notifications').insert({
+      audience: 'worker',
+      worker_id: workerId,
+      title: 'notifyMessage',
+      body,
+      kind: 'message',
+    })
+    setShortcutBusy(false)
+    if (error) {
+      alert(`${t('planSaveError')} ${error.message}`)
+      return false
+    }
+    return true
+  }
+
+  const handleAddWorkerToJobs = async (workerId, jobIds) => {
+    if (!workerId || !jobIds?.length) return false
+    if (absenceOnDate(absences, workerId, liveBoardDate)) {
+      alert(t('absenceBlocked'))
+      return false
+    }
+    setShortcutBusy(true)
+    for (const jobId of jobIds) {
+      const job = boardJobs.find(item => item.id === jobId)
+      if (!job) continue
+      const range = clockRange(job.start_time, job.end_time)
+      const hit = overlapJobForWorker(workerId, job.work_date, range, job.id)
+      if (hit) {
+        setShortcutBusy(false)
+        alert(t('planOverlapBlocked')
+          .replace('{name}', workerName(workerId))
+          .replace('{place}', jobPlaceLabel(hit.job) || t('planNoPlace'))
+          .replace('{time}', clockRangeLabel(hit.range) || t('planBusy')))
+        return false
+      }
+      const existing = (job.work_job_assignees ?? []).find(row => row.worker_id === workerId)
+      if (existing && ['assigned', 'approved'].includes(existing.status)) continue
+      let error
+      if (existing) {
+        const updated = await supabase
+          .from('work_job_assignees')
+          .update({
+            status: 'assigned',
+            decline_reason: null,
+            seen_at: null,
+            planned_start: range.start || null,
+            planned_end: range.end || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+        error = updated.error
+        if (error && isMissingColumn(error)) {
+          const fallback = await supabase
+            .from('work_job_assignees')
+            .update({ status: 'assigned', decline_reason: null, seen_at: null, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+          error = fallback.error
+        }
+      } else {
+        const inserted = await supabase.from('work_job_assignees').insert({
+          job_id: job.id,
+          worker_id: workerId,
+          status: 'assigned',
+          planned_start: range.start || null,
+          planned_end: range.end || null,
+        })
+        error = inserted.error
+        if (error && isMissingColumn(error)) {
+          const fallback = await supabase.from('work_job_assignees').insert({
+            job_id: job.id,
+            worker_id: workerId,
+            status: 'assigned',
+          })
+          error = fallback.error
+        }
+      }
+      if (error) {
+        setShortcutBusy(false)
+        alert(`${t('planSaveError')} ${error.message}`)
+        return false
+      }
+    }
+    setShortcutBusy(false)
+    loadData(view === 'history' ? 'history' : 'live')
+    return true
+  }
+
+  const startJobWithWorker = (workerId) => {
+    if (absenceOnDate(absences, workerId, liveBoardDate)) {
+      alert(t('absenceBlocked'))
+      return
+    }
+    setFocusWorkerId(workerId)
+    setEditingId(null)
+    setDuplicating(false)
+    setForm({
+      ...emptyForm(),
+      work_date: liveBoardDate,
+      until_date: liveBoardDate,
+      worker_ids: [workerId],
+      worker_hours: { [workerId]: clockRange('', '') },
+    })
+    setJobFormOpen(true)
+    setAdminTab('board')
+    requestAnimationFrame(() => document.getElementById('plan-job-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const filteredWorkers = activeWorkers
     .filter(worker => (worker.name || '').toLowerCase().includes(workerSearch.trim().toLowerCase()))
     .slice()
@@ -2305,6 +2439,11 @@ export default function WorkPlan({
           workerName={workerName}
           renderJob={renderAdminJob}
           jobFormOpen={Boolean(jobFormOpen || editingId || duplicating)}
+          shortcutJobsFor={shortcutJobsFor}
+          onWorkerMessage={handleWorkerMessage}
+          onAddWorkerToJobs={handleAddWorkerToJobs}
+          onStartJobWithWorker={startJobWithWorker}
+          shortcutBusy={shortcutBusy}
         >
       {(jobFormOpen || editingId || duplicating) && (
         <form id="plan-job-form" onSubmit={handleSave} className="rounded-[1.75rem] bg-slate-900/85 p-5 ring-1 ring-slate-700">
