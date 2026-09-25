@@ -1888,6 +1888,71 @@ export default function WorkPlan({
     })
   }
 
+  const applyObjectFixedHours = async (object) => {
+    if (!object?.id || !objectHasFixedHours(object)) return 0
+    const { data: jobs, error } = await supabase
+      .from('work_jobs')
+      .select('id, work_date, start_time, end_time')
+      .eq('object_id', object.id)
+      .neq('status', 'cancelled')
+    if (error || !jobs?.length) return 0
+    const now = new Date().toISOString()
+    const { data: rows } = await supabase
+      .from('work_job_assignees')
+      .select('id, job_id, planned_start, planned_end, actual_start, actual_end')
+      .in('job_id', jobs.map(job => job.id))
+    const byJob = new Map()
+    for (const row of rows || []) {
+      const list = byJob.get(row.job_id) || []
+      list.push(row)
+      byJob.set(row.job_id, list)
+    }
+    let touched = 0
+    for (const job of jobs) {
+      if (!objectFixedMinutes(object, job.work_date)) continue
+      const jobTimed = withFixedEnd({ start: job.start_time, end: job.end_time }, object, job.work_date)
+      if (jobTimed.start && jobTimed.end && formatClock(job.end_time) !== jobTimed.end) {
+        await supabase.from('work_jobs').update({ end_time: jobTimed.end, updated_at: now }).eq('id', job.id)
+        touched += 1
+      }
+      for (const row of byJob.get(job.id) || []) {
+        const planned = withFixedEnd({
+          start: row.planned_start || jobTimed.start || job.start_time,
+          end: row.planned_end,
+        }, object, job.work_date)
+        const patch = {
+          planned_start: planned.start || null,
+          planned_end: planned.end || null,
+          updated_at: now,
+        }
+        if (formatClock(row.actual_start)) {
+          const actual = withFixedEnd({ start: row.actual_start, end: row.actual_end }, object, job.work_date)
+          patch.actual_start = actual.start || null
+          patch.actual_end = actual.end || null
+        }
+        if (
+          formatClock(row.planned_start) === formatClock(patch.planned_start)
+          && formatClock(row.planned_end) === formatClock(patch.planned_end)
+          && (!patch.actual_end || formatClock(row.actual_end) === formatClock(patch.actual_end))
+        ) continue
+        await supabase.from('work_job_assignees').update(patch).eq('id', row.id)
+        touched += 1
+      }
+    }
+    const { data: logs } = await supabase
+      .from('work_self_logs')
+      .select('id, work_date, start_time, end_time')
+      .eq('object_id', object.id)
+    for (const log of logs || []) {
+      if (!objectFixedMinutes(object, log.work_date) || !formatClock(log.start_time)) continue
+      const timed = withFixedEnd({ start: log.start_time, end: log.end_time }, object, log.work_date)
+      if (!timed.end || formatClock(log.end_time) === timed.end) continue
+      await supabase.from('work_self_logs').update({ end_time: timed.end, updated_at: now }).eq('id', log.id)
+      touched += 1
+    }
+    return touched
+  }
+
   const handleSaveObject = async (event) => {
     event.preventDefault()
     const name = objectForm.name.trim()
@@ -1905,7 +1970,7 @@ export default function WorkPlan({
     }
     const result = editingObjectId
       ? await supabase.from('objects').update(payload).eq('id', editingObjectId)
-      : await supabase.from('objects').insert([payload])
+      : await supabase.from('objects').insert([payload]).select('id').single()
     if (result.error && /leistung_text|leistung_image_url|turnus_json|schema cache|column/i.test(result.error.message || '')) {
       alert(t('objectGuideSetup'))
       return
@@ -1918,8 +1983,11 @@ export default function WorkPlan({
       alert(`${t('planSaveError')} ${result.error.message}`)
       return
     }
+    const objectId = editingObjectId || result.data?.id
+    if (objectId) await applyObjectFixedHours({ id: objectId, ...payload })
     resetObjectForm()
     onReloadObjects?.()
+    loadData(view === 'history' ? 'history' : 'live')
   }
 
   const handleObjectSheet = async (file) => {
@@ -1975,14 +2043,18 @@ export default function WorkPlan({
       }, sheet)
       if (!next.matched) continue
       const hours = Number(String(next.form.fixed_hours).replace(',', '.'))
-      const result = await supabase.from('objects').update({
+      const extraPayload = {
         fixed_hours: Number.isFinite(hours) && hours > 0 ? hours : item.fixed_hours ?? null,
         fixed_hours_json: serializeFixedHoursByDay(next.form.fixed_hours_by_day),
         leistung_text: next.form.leistung_text.trim() || null,
         leistung_image_url: next.form.leistung_image_url.trim() || null,
         turnus_json: serializeTurnus(next.form.turnus),
-      }).eq('id', item.id)
-      if (!result.error) extra += 1
+      }
+      const result = await supabase.from('objects').update(extraPayload).eq('id', item.id)
+      if (!result.error) {
+        extra += 1
+        await applyObjectFixedHours({ id: item.id, ...extraPayload })
+      }
     }
     if (!sheet.rows?.length) setObjectSheetMessage(t('objectSheetEmpty'))
     else if (!matchedDays) setObjectSheetMessage(t('objectSheetNoRow'))
