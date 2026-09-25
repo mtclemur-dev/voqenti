@@ -479,7 +479,7 @@ export default function AdminPlanBoard({
                       <span className="grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[5.5rem_minmax(0,1fr)_auto]">
                         <span className="text-sm font-bold tabular-nums text-white">
                           {start || '—'}
-                          {end && start ? <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">{end}</span> : null}
+                          {end && start ? <span className="mt-0.5 block text-[11px] font-semibold tabular-nums text-slate-400">– {end}</span> : null}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>

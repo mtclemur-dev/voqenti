@@ -102,38 +102,61 @@ export function hundredthsToMinutes(hours) {
   return value ? Math.round(value * 60) : 0
 }
 
+function parseFixedHoursRaw(value) {
+  if (!value) return null
+  if (typeof value === 'object') return value
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
 export function parseFixedHoursByDay(value) {
-  if (!value) return {}
-  if (typeof value === 'object' && !Array.isArray(value)) {
+  const parsed = parseFixedHoursRaw(value)
+  if (!parsed) return {}
+  if (typeof parsed === 'object' && !Array.isArray(parsed) && parsed.days) {
+    return parseFixedHoursByDay(parsed.days)
+  }
+  if (typeof parsed === 'object' && !Array.isArray(parsed)) {
     const map = {}
-    for (const [key, hours] of Object.entries(value)) {
+    for (const [key, hours] of Object.entries(parsed)) {
       const day = Number(key)
       const amount = parseFixedHoursValue(hours)
       if (day >= 1 && day <= 7 && amount) map[day] = amount
     }
     return map
   }
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value
-    if (Array.isArray(parsed)) {
-      const map = {}
-      for (const item of parsed) {
-        const day = Number(item?.weekday)
-        const amount = parseFixedHoursValue(item?.hours)
-        if (day >= 1 && day <= 7 && amount) map[day] = amount
-      }
-      return map
+  if (Array.isArray(parsed)) {
+    const map = {}
+    for (const item of parsed) {
+      const day = Number(item?.weekday)
+      const amount = parseFixedHoursValue(item?.hours)
+      if (day >= 1 && day <= 7 && amount) map[day] = amount
     }
-    return parseFixedHoursByDay(parsed && typeof parsed === 'object' ? parsed : {})
-  } catch {
-    return {}
+    return map
   }
+  return {}
+}
+
+export function objectTimeLocked(object) {
+  const parsed = parseFixedHoursRaw(object?.fixed_hours_json)
+  return Boolean(parsed && !Array.isArray(parsed) && (parsed.locked || parsed.time_locked))
 }
 
 export function serializeFixedHoursByDay(map) {
   return TURNUS_DAYS
     .map(weekday => ({ weekday, hours: parseFixedHoursValue(map?.[weekday]) }))
     .filter(item => item.hours)
+}
+
+export function serializeFixedHoursJson(map, locked = false) {
+  const days = serializeFixedHoursByDay(map)
+  if (locked) return { days, locked: true }
+  return days
 }
 
 export function weekdayFromDate(date) {
@@ -266,16 +289,17 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
       if (row.worker_id !== workerId) continue
       if (row.status && !['assigned', 'approved'].includes(row.status)) continue
       const range = assignmentRange(row, job, object)
-      if (!formatClock(range.start)) continue
       let duration = rangeDurationMinutes(range)
       if (!duration) duration = objectFixedMinutes(object, day)
       if (!duration) continue
+      const start = formatClock(range.start) || '06:00'
       slots.push({
         jobId: job.id,
         rowId: row.id,
         workerId,
         createdAt: row.created_at || job.created_at || '',
-        range: { start: range.start, end: range.end || clockPlusMinutes(range.start, duration) },
+        locked: Boolean(objectTimeLocked(object) && formatClock(range.start)),
+        range: { start, end: range.end || clockPlusMinutes(start, duration) },
         duration,
       })
     }
@@ -297,18 +321,42 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
   })
 }
 
+function nextUnlockedStart(start, duration, lockedWindows) {
+  let from = start
+  for (let step = 0; step < 12; step += 1) {
+    const end = from + duration
+    const hit = lockedWindows.find(window => from < window.end && window.start < end)
+    if (!hit) return from
+    from = hit.end
+  }
+  return from
+}
+
 export function packWorkerDay(slots) {
-  let nextFree = null
-  const packed = []
-  const moved = []
+  const locked = []
+  const flexible = []
   for (const slot of slots || []) {
+    if (slot.locked) locked.push(slot)
+    else flexible.push(slot)
+  }
+  const lockedWindows = locked.map((slot) => {
+    const start = clockMinutes(slot.range.start)
+    const duration = slot.duration || rangeDurationMinutes(slot.range)
+    return start == null || !duration ? null : { start, end: start + duration }
+  }).filter(Boolean).sort((left, right) => left.start - right.start)
+
+  const packed = locked.map(slot => ({ ...slot, range: { ...slot.range } }))
+  const moved = []
+  let nextFree = null
+  for (const slot of flexible) {
     const start = clockMinutes(slot.range.start)
     const duration = slot.duration || rangeDurationMinutes(slot.range)
     if (start == null || !duration) {
       packed.push(slot)
       continue
     }
-    const newStart = nextFree != null && start < nextFree ? nextFree : start
+    let newStart = nextFree != null && start < nextFree ? nextFree : start
+    newStart = nextUnlockedStart(newStart, duration, lockedWindows)
     const newEnd = newStart + duration
     nextFree = newEnd
     const range = { start: minutesToClock(newStart), end: minutesToClock(newEnd) }
@@ -318,6 +366,12 @@ export function packWorkerDay(slots) {
       moved.push({ ...next, previous: slot.range })
     }
   }
+  packed.sort((left, right) => {
+    const leftStart = clockMinutes(left.range.start)
+    const rightStart = clockMinutes(right.range.start)
+    if (leftStart !== rightStart) return leftStart - rightStart
+    return String(left.jobId).localeCompare(String(right.jobId))
+  })
   return { packed, moved }
 }
 

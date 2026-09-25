@@ -168,6 +168,18 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
             </label>
           ))}
         </div>
+        <label className="mt-4 flex items-start gap-3 rounded-xl bg-slate-900/80 px-3 py-3 text-sm text-slate-100">
+          <input
+            type="checkbox"
+            checked={Boolean(form.time_locked)}
+            onChange={e => setForm(current => ({ ...current, time_locked: e.target.checked }))}
+            className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-500"
+          />
+          <span>
+            <span className="block font-semibold text-white">{t('objectTimeRigid')}</span>
+            {t('objectTimeRigidHint') ? <span className="mt-1 block text-[13px] leading-6 text-slate-300">{t('objectTimeRigidHint')}</span> : null}
+          </span>
+        </label>
       </div>
       <div>
         <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectGuideTitle')}</p>

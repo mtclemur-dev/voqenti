@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, WORK_WEEKDAYS } from './plan/planUtils'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
@@ -52,6 +52,7 @@ const emptyObjectForm = () => ({
   phone: '',
   fixed_hours: '',
   fixed_hours_by_day: {},
+  time_locked: false,
   leistung_text: '',
   leistung_image_url: '',
   turnus: {},
@@ -2046,6 +2047,7 @@ export default function WorkPlan({
       fixed_hours_by_day: Object.fromEntries(
         Object.entries(parseFixedHoursByDay(item.fixed_hours_json)).map(([day, hours]) => [Number(day), String(hours)]),
       ),
+      time_locked: objectTimeLocked(item),
       leistung_text: item.leistung_text ?? '',
       leistung_image_url: item.leistung_image_url ?? '',
       turnus: parseTurnus(item.turnus_json),
@@ -2133,7 +2135,7 @@ export default function WorkPlan({
       manager: objectForm.manager.trim() || null,
       phone: objectForm.phone.trim() || null,
       fixed_hours: parseFixedHoursValue(objectForm.fixed_hours) || null,
-      fixed_hours_json: serializeFixedHoursByDay(objectForm.fixed_hours_by_day),
+      fixed_hours_json: serializeFixedHoursJson(objectForm.fixed_hours_by_day, objectForm.time_locked),
       leistung_text: objectForm.leistung_text.trim() || null,
       leistung_image_url: objectForm.leistung_image_url.trim() || null,
       turnus_json: serializeTurnus(objectForm.turnus),
@@ -2230,7 +2232,7 @@ export default function WorkPlan({
       const hours = Number(String(next.form.fixed_hours).replace(',', '.'))
       const extraPayload = {
         fixed_hours: Number.isFinite(hours) && hours > 0 ? hours : item.fixed_hours ?? null,
-        fixed_hours_json: serializeFixedHoursByDay(next.form.fixed_hours_by_day),
+        fixed_hours_json: serializeFixedHoursJson(next.form.fixed_hours_by_day, objectTimeLocked(item)),
         leistung_text: next.form.leistung_text.trim() || null,
         leistung_image_url: next.form.leistung_image_url.trim() || null,
         turnus_json: serializeTurnus(next.form.turnus),
@@ -2743,7 +2745,12 @@ export default function WorkPlan({
                     <p className="text-sm font-semibold text-white">{item.name}</p>
                     {item.address ? <p className="text-xs text-slate-400">{item.address}</p> : null}
                     {objectHasFixedHours(item) ? (
-                      <p className="mt-0.5 text-xs text-cyan-200/80">{t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(item, language))}</p>
+                      <p className="mt-0.5 text-xs text-cyan-200/80">
+                        {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(item, language))}
+                        {objectTimeLocked(item) ? ` · ${t('objectTimeRigidBadge')}` : ''}
+                      </p>
+                    ) : objectTimeLocked(item) ? (
+                      <p className="mt-0.5 text-xs text-cyan-200/80">{t('objectTimeRigidBadge')}</p>
                     ) : null}
                     {objectHasGuide(item) ? <p className="mt-0.5 text-xs text-slate-300">{t('objectGuideTitle')}</p> : null}
                   </div>
