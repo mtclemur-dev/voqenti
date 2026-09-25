@@ -94,6 +94,24 @@ export async function respondToOpenPost({
   const range = choice === 'go'
     ? await jobClock(jobId, startTime, endTime)
     : { start: null, end: null }
+  const rpc = await supabase.rpc('respond_to_open_post', {
+    p_job_id: jobId,
+    p_choice: choice,
+    p_start: range.start,
+    p_end: range.end,
+  })
+  if (!rpc.error) {
+    await supabase
+      .from('work_notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('job_id', jobId)
+      .eq('worker_id', workerId)
+      .is('read_at', null)
+    return { error: null, status: rpc.data || status }
+  }
+  if (!/respond_to_open_post|schema cache|does not exist/i.test(rpc.error.message || '')) {
+    return { error: rpc.error, status }
+  }
   const payload = {
     job_id: jobId,
     worker_id: workerId,
