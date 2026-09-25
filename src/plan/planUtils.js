@@ -182,10 +182,16 @@ export function weekdayFromDate(date) {
 export function objectForService(object, serviceId, fallbackName = '') {
   if (!object) return object
   const service = serviceOf(object, serviceId, fallbackName)
-  if (!serviceHasHours(service)) return object
-  const byDay = { ...(service.hours_by_day || {}) }
-  const daily = parseFixedHoursValue(service.hours)
-  if (daily) {
+  if (!service) return object
+  const hasHours = serviceHasHours(service)
+  const start = formatClock(service.start) || objectFixedStart(object)
+  const locked = Boolean(service.locked || objectTimeLocked(object))
+  if (!hasHours && start === objectFixedStart(object) && locked === objectTimeLocked(object)) return object
+  const byDay = hasHours
+    ? { ...(service.hours_by_day || {}) }
+    : parseFixedHoursByDay(object.fixed_hours_json)
+  const daily = hasHours ? parseFixedHoursValue(service.hours) : parseFixedHoursValue(object.fixed_hours)
+  if (hasHours && daily) {
     for (const day of WORK_WEEKDAYS) {
       if (!parseFixedHoursValue(byDay[day])) byDay[day] = daily
     }
@@ -193,10 +199,7 @@ export function objectForService(object, serviceId, fallbackName = '') {
   return {
     ...object,
     fixed_hours: daily || null,
-    fixed_hours_json: serializeFixedHoursJson(byDay, {
-      locked: service.locked,
-      start: service.start,
-    }),
+    fixed_hours_json: serializeFixedHoursJson(byDay, { locked, start }),
   }
 }
 
@@ -242,7 +245,7 @@ export function formatObjectFixedSummary(object, language = 'de') {
       hours = parts.join(' · ')
     }
   }
-  if (start && objectTimeLocked(object)) return hours ? `${start} · ${hours}` : start
+  if (start) return hours ? `${start} · ${hours}` : start
   return hours
 }
 
@@ -255,20 +258,20 @@ export function clockPlusMinutes(start, minutes) {
 
 export function withFixedEnd(range, object, date) {
   const minutes = objectFixedMinutes(object, date)
-  const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
-  const start = lockedStart || formatClock(range?.start)
+  const preferredStart = objectFixedStart(object)
+  const start = preferredStart || formatClock(range?.start)
   if (!minutes) return clockRange(start || range?.start, range?.end)
   return { start, end: start ? clockPlusMinutes(start, minutes) : '' }
 }
 
 export function formWithFixedTimes(current, object) {
   const date = current?.work_date
-  const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
-  if (!objectFixedMinutes(object, date) && !lockedStart) return current
-  const job = withFixedEnd({ start: lockedStart || current.start_time, end: current.end_time }, object, date)
+  const preferredStart = objectFixedStart(object)
+  if (!objectFixedMinutes(object, date) && !preferredStart) return current
+  const job = withFixedEnd({ start: preferredStart || current.start_time, end: current.end_time }, object, date)
   const hours = {}
   for (const [id, range] of Object.entries(current.worker_hours || {})) {
-    hours[id] = withFixedEnd({ ...range, start: lockedStart || range.start }, object, date)
+    hours[id] = withFixedEnd({ ...range, start: preferredStart || range.start }, object, date)
   }
   return {
     ...current,
@@ -288,10 +291,10 @@ export function objectByIdMap(objects) {
 }
 
 export function assignmentRange(row, job = row?.work_jobs, object) {
-  const start = formatClock(row?.planned_start || job?.start_time)
-  let end = formatClock(row?.planned_end || job?.end_time)
-  if (start && !end) end = withFixedEnd({ start, end: '' }, object, job?.work_date).end
-  return { start, end }
+  return withFixedEnd({
+    start: formatClock(row?.planned_start || job?.start_time),
+    end: formatClock(row?.planned_end || job?.end_time),
+  }, object, job?.work_date)
 }
 
 export function clockRangeLabel(range) {
@@ -332,7 +335,7 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
     if (options.exceptJobId && job.id === options.exceptJobId) continue
     if (isoDate(job.work_date) !== day) continue
     if (job.status === 'cancelled' || job.status === 'canceled') continue
-    const object = objects.get(job.object_id)
+    const object = objectForService(objects.get(job.object_id), job.service_id, job.service_name)
     for (const row of job.work_job_assignees ?? []) {
       if (row.worker_id !== workerId) continue
       if (row.status && !['assigned', 'approved'].includes(row.status)) continue

@@ -5,6 +5,7 @@ import WorkerShortcutRow from './WorkerShortcuts'
 import {
   assignmentRange,
   clockRange,
+  objectForService,
   durationMinutes,
   fillText,
   formatClock,
@@ -470,7 +471,7 @@ export default function AdminPlanBoard({
               )}
               {(focusWorkerId ? visibleJobs : sortedJobs).map((job) => {
                 const open = boardOpenId === job.id
-                const object = objects.find(item => item.id === job.object_id)
+                const object = objectForService(objects.find(item => item.id === job.object_id), job.service_id, job.service_name)
                 const place = job.object_name || job.location_text || t('planNoPlace')
                 const area = shortPlace(job, object)
                 const focusRow = focusWorkerId

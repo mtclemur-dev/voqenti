@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { isoDate, objectFixedHours, objectHasGuide, parseTurnus, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
-import TimeField from './TimeField'
+import { clockPlusMinutes, isoDate, objectFixedHours, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectHasGuide, parseTurnus, serializeFixedHoursJson, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import TimeField, { ComputedEnd } from './TimeField'
 import { emptyGroup, emptyRoom, formatHoursWithUnit, groupsForDay, groupsFromObject, roomLine } from './objectRooms'
 
 function HundredthsField({ value, onChange, placeholder, className }) {
@@ -149,6 +149,19 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
   const preview = String(form.leistung_image_url || '')
   const imagePreview = preview && !/\.pdf(\?|$)/i.test(preview)
   const hasRooms = (form.groups || []).some(group => group.name || group.rooms?.length)
+  const previewObject = {
+    fixed_hours: form.fixed_hours,
+    fixed_hours_json: serializeFixedHoursJson(form.fixed_hours_by_day, {
+      locked: form.time_locked,
+      start: form.fixed_start,
+    }),
+  }
+  const previewDay = WORK_WEEKDAYS.find(day => form.fixed_hours_by_day?.[day]) || 1
+  const previewDate = DateTime.now().setZone('Europe/Berlin').set({ weekday: previewDay }).toISODate()
+  const previewStart = objectFixedStart(previewObject) || form.fixed_start
+  const previewMinutes = objectFixedMinutes(previewObject, previewDate)
+  const previewEnd = previewStart && previewMinutes ? clockPlusMinutes(previewStart, previewMinutes) : ''
+  const previewHours = objectFixedHoursLabel(previewObject, previewDate)
   return (
     <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
       <div>
@@ -169,6 +182,22 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
             </label>
           ))}
         </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <TimeField
+            label={t('objectTimeFrom')}
+            value={form.fixed_start || ''}
+            onChange={value => setForm(current => ({ ...current, fixed_start: value }))}
+            className="block text-[11px] text-slate-400"
+          />
+          <ComputedEnd
+            label={t('planEnd')}
+            time={previewEnd}
+            note={previewHours
+              ? t('objectFixedEnd').replace('{hours}', previewHours)
+              : t('objectTimeNeedHours')}
+          />
+        </div>
+        {t('objectTimeFromHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-300">{t('objectTimeFromHint')}</p> : null}
         <label className="mt-4 flex items-start gap-3 rounded-xl bg-slate-900/80 px-3 py-3 text-sm text-slate-100">
           <input
             type="checkbox"
@@ -179,16 +208,6 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
           <span className="min-w-0 flex-1">
             <span className="block font-semibold text-white">{t('objectTimeRigid')}</span>
             {t('objectTimeRigidHint') ? <span className="mt-1 block text-[13px] leading-6 text-slate-300">{t('objectTimeRigidHint')}</span> : null}
-            {form.time_locked ? (
-              <span className="mt-3 block max-w-[11rem]">
-                <TimeField
-                  label={t('objectTimeFrom')}
-                  value={form.fixed_start || ''}
-                  onChange={value => setForm(current => ({ ...current, fixed_start: value }))}
-                  className="block text-[11px] text-slate-400"
-                />
-              </span>
-            ) : null}
           </span>
         </label>
       </div>

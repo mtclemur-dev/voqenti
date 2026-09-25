@@ -1,6 +1,47 @@
 import { useState } from 'react'
-import { parseServices, serviceHasHours, suggestedServiceNames } from './objectServices'
-import { formatObjectFixedSummary, objectForService, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import { DateTime } from 'luxon'
+import { parseServices, suggestedServiceNames } from './objectServices'
+import { clockPlusMinutes, formatObjectFixedSummary, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, serializeFixedHoursJson, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import TimeField, { ComputedEnd } from './TimeField'
+
+function ServiceClock({ t, language, form, service, onStart }) {
+  const scoped = objectForService({
+    services: form.services,
+    fixed_hours: form.fixed_hours,
+    fixed_hours_json: serializeFixedHoursJson(form.fixed_hours_by_day, {
+      locked: form.time_locked,
+      start: form.fixed_start,
+    }),
+  }, service.id)
+  const day = WORK_WEEKDAYS.find(item => service.hours_by_day?.[item]) || 1
+  const date = DateTime.now().setZone('Europe/Berlin').set({ weekday: day }).toISODate()
+  const start = objectFixedStart(scoped) || service.start || form.fixed_start || ''
+  const minutes = objectFixedMinutes(scoped, date)
+  const end = start && minutes ? clockPlusMinutes(start, minutes) : ''
+  const hours = objectFixedHoursLabel(scoped, date)
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TimeField
+          label={t('objectTimeFrom')}
+          value={service.start || ''}
+          onChange={onStart}
+          className="block text-[11px] text-slate-400"
+        />
+        <ComputedEnd
+          label={t('planEnd')}
+          time={end}
+          note={hours ? t('objectFixedEnd').replace('{hours}', hours) : t('objectTimeNeedHours')}
+        />
+      </div>
+      {hours || start ? (
+        <p className="text-[11px] text-cyan-200/80">
+          {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(scoped, language) || service.name)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 function HoursField({ value, onChange, placeholder, className }) {
   return (
@@ -87,9 +128,7 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
                   </label>
                 ))}
               </div>
-              {serviceHasHours(item) ? (
-                <p className="mt-2 text-[11px] text-cyan-200/80">{t('objectFixedBadge').replace('{hours}', item.name)}</p>
-              ) : null}
+              <ServiceClock t={t} language={language} form={form} service={item} onStart={value => patch(item.id, { start: value })} />
             </li>
           ))}
         </ul>

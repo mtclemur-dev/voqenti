@@ -561,6 +561,7 @@ export default function WorkPlan({
   const [editingObjectId, setEditingObjectId] = useState(null)
   const [objectPhotoBusy, setObjectPhotoBusy] = useState(false)
   const [objectSheetMessage, setObjectSheetMessage] = useState('')
+  const [objectApplyMessage, setObjectApplyMessage] = useState('')
   const firstLoad = useRef(true)
 
   useEffect(() => {
@@ -2235,8 +2236,10 @@ export default function WorkPlan({
 
   const applyObjectFixedHours = async (object) => {
     if (!object?.id) return 0
-    const hasObjectHours = objectHasFixedHours(object)
-    const hasServiceHours = parseServices(object.services_json ?? object.services).some(item => item.hours || Object.keys(item.hours_by_day || {}).length)
+    const hasObjectHours = objectHasFixedHours(object) || Boolean(objectFixedStart(object))
+    const hasServiceHours = parseServices(object.services_json ?? object.services).some(item => (
+      item.hours || item.start || Object.keys(item.hours_by_day || {}).length
+    ))
     if (!hasObjectHours && !hasServiceHours) return 0
     let loaded = await supabase
       .from('work_jobs')
@@ -2266,7 +2269,7 @@ export default function WorkPlan({
     let touched = 0
     for (const job of jobs) {
       const scoped = objectForService(object, job.service_id, job.service_name)
-      if (!objectFixedMinutes(scoped, job.work_date)) continue
+      if (!objectFixedMinutes(scoped, job.work_date) && !objectFixedStart(scoped)) continue
       const jobTimed = withFixedEnd({ start: job.start_time, end: job.end_time }, scoped, job.work_date)
       if (
         jobTimed.start
@@ -2374,7 +2377,8 @@ export default function WorkPlan({
       return
     }
     const objectId = editingObjectId || result.data?.id
-    if (objectId) await applyObjectFixedHours({ id: objectId, ...payload })
+    const touched = objectId ? await applyObjectFixedHours({ id: objectId, ...payload }) : 0
+    setObjectApplyMessage(touched ? t('objectFixedApplied').replace('{count}', String(touched)) : '')
     resetObjectForm()
     onReloadObjects?.()
     loadData(view === 'history' ? 'history' : 'live')
@@ -2915,6 +2919,9 @@ export default function WorkPlan({
               {t('cancel')}
             </button>
           )}
+          {objectApplyMessage ? (
+            <p className="mt-3 text-sm text-cyan-100">{objectApplyMessage}</p>
+          ) : null}
           {objects.length === 0 ? (
             <p className="mt-3 text-center text-sm text-slate-400">{t('objectEmpty')}</p>
           ) : (
@@ -2924,9 +2931,9 @@ export default function WorkPlan({
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-white">{item.name}</p>
                     {item.address ? <p className="text-xs text-slate-400">{item.address}</p> : null}
-                    {objectHasFixedHours(item) ? (
+                    {objectHasFixedHours(item) || objectFixedStart(item) ? (
                       <p className="mt-0.5 text-xs text-cyan-200/80">
-                        {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(item, language))}
+                        {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(item, language) || objectFixedStart(item))}
                         {objectTimeLocked(item) ? ` · ${t('objectTimeRigidBadge')}` : ''}
                       </p>
                     ) : objectTimeLocked(item) ? (
