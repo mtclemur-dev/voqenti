@@ -33,7 +33,7 @@ function GuideGroups({ groups }) {
         <div key={group.id || group.name}>
           {group.name ? <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-slate-300">{group.name}</p> : null}
           <ul className={group.name ? 'mt-1 space-y-0.5' : 'space-y-0.5'}>
-            {group.rooms.map(room => (
+            {(group.rooms || []).map(room => (
               <li key={room.id || room.name} className="text-[14px] leading-6 text-slate-100">
                 {roomLine(room)}
               </li>
@@ -74,7 +74,7 @@ function GuideFields({ t, language, form, setForm }) {
             </button>
           </div>
           <ul className="space-y-2">
-            {group.rooms.map(room => (
+            {(group.rooms || []).map(room => (
               <li key={room.id} className="rounded-xl bg-slate-900/80 px-3 py-3">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="block text-[11px] text-slate-400">

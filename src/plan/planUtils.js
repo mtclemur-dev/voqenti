@@ -442,40 +442,44 @@ function addTravelLeg(legs, from, to, extra) {
 }
 
 export function workerDayTravel(jobs, workerId, date, objects) {
-  const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
-  const legs = []
-  let minutes = 0
-  let meters = 0
-  const first = packed[0]
-  const last = packed[packed.length - 1]
-  if (first?.address) {
-    const out = addTravelLeg(legs, DEPOT_ADDRESS, first.address, {
-      kind: 'out',
-      fromJobId: '',
-      toJobId: first.jobId,
-    })
-    minutes += out.minutes
-    meters += out.meters
+  try {
+    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
+    const legs = []
+    let minutes = 0
+    let meters = 0
+    const first = packed[0]
+    const last = packed[packed.length - 1]
+    if (first?.address) {
+      const out = addTravelLeg(legs, DEPOT_ADDRESS, first.address, {
+        kind: 'out',
+        fromJobId: '',
+        toJobId: first.jobId,
+      })
+      minutes += out.minutes
+      meters += out.meters
+    }
+    for (let index = 1; index < packed.length; index += 1) {
+      const hop = addTravelLeg(legs, packed[index - 1].address, packed[index].address, {
+        kind: 'leg',
+        fromJobId: packed[index - 1].jobId,
+        toJobId: packed[index].jobId,
+      })
+      minutes += hop.minutes
+      meters += hop.meters
+    }
+    if (last?.address) {
+      const back = addTravelLeg(legs, last.address, DEPOT_ADDRESS, {
+        kind: 'back',
+        fromJobId: last.jobId,
+        toJobId: '',
+      })
+      minutes += back.minutes
+      meters += back.meters
+    }
+    return { minutes, meters, legs, packed }
+  } catch {
+    return { minutes: 0, meters: 0, legs: [], packed: [] }
   }
-  for (let index = 1; index < packed.length; index += 1) {
-    const hop = addTravelLeg(legs, packed[index - 1].address, packed[index].address, {
-      kind: 'leg',
-      fromJobId: packed[index - 1].jobId,
-      toJobId: packed[index].jobId,
-    })
-    minutes += hop.minutes
-    meters += hop.meters
-  }
-  if (last?.address) {
-    const back = addTravelLeg(legs, last.address, DEPOT_ADDRESS, {
-      kind: 'back',
-      fromJobId: last.jobId,
-      toJobId: '',
-    })
-    minutes += back.minutes
-    meters += back.meters
-  }
-  return { minutes, meters, legs, packed }
 }
 
 export function overlappingWorkerDays(jobs, objects, options = {}) {
@@ -575,32 +579,36 @@ export function withChainedBoardJobs(jobs, date, objects) {
 }
 
 export function withChainedAssignmentRows(rows, objects) {
-  const groups = new Map()
-  for (const row of rows || []) {
-    if (!isAssignmentActive(row)) continue
-    const day = isoDate(row.work_jobs?.work_date)
-    if (!row.worker_id || !day) continue
-    const key = `${row.worker_id}|${day}`
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
+  try {
+    const groups = new Map()
+    for (const row of rows || []) {
+      if (!isAssignmentActive(row)) continue
+      const day = isoDate(row.work_jobs?.work_date)
+      if (!row.worker_id || !day) continue
+      const key = `${row.worker_id}|${day}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(row)
+    }
+    const packedByRow = new Map()
+    for (const group of groups.values()) {
+      const jobs = group.map(row => (
+        row.work_jobs
+          ? { ...row.work_jobs, work_job_assignees: [row] }
+          : null
+      )).filter(Boolean)
+      const workerId = group[0].worker_id
+      const day = isoDate(group[0].work_jobs?.work_date)
+      const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
+      for (const slot of packed) packedByRow.set(slot.rowId, slot.range)
+    }
+    return (rows || []).map((row) => {
+      const range = packedByRow.get(row.id)
+      if (!range) return row
+      return { ...row, planned_start: range.start, planned_end: range.end }
+    })
+  } catch {
+    return rows || []
   }
-  const packedByRow = new Map()
-  for (const group of groups.values()) {
-    const jobs = group.map(row => (
-      row.work_jobs
-        ? { ...row.work_jobs, work_job_assignees: [row] }
-        : null
-    )).filter(Boolean)
-    const workerId = group[0].worker_id
-    const day = isoDate(group[0].work_jobs?.work_date)
-    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
-    for (const slot of packed) packedByRow.set(slot.rowId, slot.range)
-  }
-  return (rows || []).map((row) => {
-    const range = packedByRow.get(row.id)
-    if (!range) return row
-    return { ...row, planned_start: range.start, planned_end: range.end }
-  })
 }
 
 export function withSavedJob(jobs, saved) {
@@ -821,7 +829,11 @@ export function shortPlace(job, object) {
 }
 
 export function fillText(template, values) {
-  return Object.entries(values).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, value ?? ''), template)
+  let text = typeof template === 'string' ? template : String(template ?? '')
+  for (const [key, value] of Object.entries(values || {})) {
+    text = text.replaceAll(`{${key}}`, value == null ? '' : String(value))
+  }
+  return text
 }
 
 export function berlinWeekStart(value) {

@@ -28,6 +28,10 @@ export default class ErrorBoundary extends Component {
     return { error }
   }
 
+  componentDidCatch(error) {
+    console.error(error)
+  }
+
   render() {
     if (!this.state.error) return this.props.children
     const lang = (this.props.language || navigator.language || 'de').slice(0, 2)
