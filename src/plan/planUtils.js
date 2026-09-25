@@ -496,8 +496,10 @@ export const TURNUS_DAYS = [1, 2, 3, 4, 5, 6, 7]
 export function parseTurnus(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) {
+    if (value.days && typeof value.days === 'object') return parseTurnus(value.days)
     const map = {}
     for (const [key, body] of Object.entries(value)) {
+      if (key === 'groups' || key === 'days') continue
       const day = Number(key)
       if (day >= 1 && day <= 7 && String(body || '').trim()) map[day] = String(body).trim()
     }
@@ -526,11 +528,27 @@ export function serializeTurnus(map) {
     .filter(item => item.body)
 }
 
+function hasGuideGroups(value) {
+  if (!value) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Array.isArray(value.groups) && value.groups.length > 0
+  if (typeof value === 'string') {
+    try {
+      return hasGuideGroups(JSON.parse(value))
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 export function objectHasGuide(object) {
   return Boolean(
     String(object?.leistung_text || '').trim()
     || object?.leistung_image_url
     || serializeTurnus(parseTurnus(object?.turnus_json)).length
+    || hasGuideGroups(object?.guide_json)
+    || hasGuideGroups(object?.turnus_json)
   )
 }
 

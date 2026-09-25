@@ -5,6 +5,7 @@ import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
 import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectHasFixedHours, objectHasGuide, objectPlanWeekdays, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursByDay, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, WORK_WEEKDAYS } from './plan/planUtils'
+import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -54,6 +55,7 @@ const emptyObjectForm = () => ({
   leistung_text: '',
   leistung_image_url: '',
   turnus: {},
+  groups: [],
 })
 
 const emptyNeedForm = () => ({
@@ -1883,6 +1885,7 @@ export default function WorkPlan({
       leistung_text: item.leistung_text ?? '',
       leistung_image_url: item.leistung_image_url ?? '',
       turnus: parseTurnus(item.turnus_json),
+      groups: groupsFromObject(item),
     })
     requestAnimationFrame(() => {
       const node = document.getElementById('plan-object-form')
@@ -1970,11 +1973,25 @@ export default function WorkPlan({
       leistung_text: objectForm.leistung_text.trim() || null,
       leistung_image_url: objectForm.leistung_image_url.trim() || null,
       turnus_json: serializeTurnus(objectForm.turnus),
+      guide_json: serializeGroups(objectForm.groups),
     }
-    const result = editingObjectId
+    let result = editingObjectId
       ? await supabase.from('objects').update(payload).eq('id', editingObjectId)
       : await supabase.from('objects').insert([payload]).select('id').single()
-    if (result.error && /leistung_text|leistung_image_url|turnus_json|schema cache|column/i.test(result.error.message || '')) {
+    if (result.error && /guide_json|schema cache|column/i.test(result.error.message || '')) {
+      const fallback = {
+        ...payload,
+        turnus_json: {
+          groups: payload.guide_json,
+          days: payload.turnus_json,
+        },
+      }
+      delete fallback.guide_json
+      result = editingObjectId
+        ? await supabase.from('objects').update(fallback).eq('id', editingObjectId)
+        : await supabase.from('objects').insert([fallback]).select('id').single()
+    }
+    if (result.error && /leistung_text|leistung_image_url|turnus_json|guide_json|schema cache|column/i.test(result.error.message || '')) {
       alert(t('objectGuideSetup'))
       return
     }
@@ -2043,6 +2060,7 @@ export default function WorkPlan({
         leistung_text: item.leistung_text ?? '',
         leistung_image_url: imageUrl || item.leistung_image_url || '',
         turnus: parseTurnus(item.turnus_json),
+        groups: groupsFromObject(item),
       }, sheet)
       if (!next.matched) continue
       const hours = Number(String(next.form.fixed_hours).replace(',', '.'))

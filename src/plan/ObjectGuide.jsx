@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { isoDate, objectFixedHoursLabel, objectHasGuide, parseTurnus, TURNUS_DAYS, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import { isoDate, objectFixedHours, objectHasGuide, parseTurnus, turnusForDate, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
+import { emptyGroup, emptyRoom, formatHoursWithUnit, groupsForDay, groupsFromObject, roomLine } from './objectRooms'
 
 function HundredthsField({ value, onChange, placeholder, className }) {
   return (
@@ -15,11 +16,138 @@ function HundredthsField({ value, onChange, placeholder, className }) {
   )
 }
 
+function planDayTitle(object, date, language) {
+  const iso = isoDate(date) || DateTime.now().setZone('Europe/Berlin').toISODate()
+  const weekday = DateTime.fromISO(iso, { zone: 'Europe/Berlin' }).weekday
+  const dayName = weekdayLabel(weekday, language, 'cccc')
+  const hours = formatHoursWithUnit(objectFixedHours(object, date))
+  return hours ? `${dayName} · ${hours}` : dayName
+}
+
+function GuideGroups({ groups }) {
+  if (!groups?.length) return null
+  return (
+    <div className="space-y-3">
+      {groups.map(group => (
+        <div key={group.id || group.name}>
+          {group.name ? <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-slate-300">{group.name}</p> : null}
+          <ul className={group.name ? 'mt-1 space-y-0.5' : 'space-y-0.5'}>
+            {group.rooms.map(room => (
+              <li key={room.id || room.name} className="text-[14px] leading-6 text-slate-100">
+                {roomLine(room)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function GuideFields({ t, language, form, setForm }) {
+  const groups = Array.isArray(form.groups) ? form.groups : []
+  const setGroups = next => setForm(current => ({ ...current, groups: next }))
+  const patchGroup = (groupId, patch) => setGroups(groups.map(group => (group.id === groupId ? { ...group, ...patch } : group)))
+  const patchRoom = (groupId, roomId, patch) => setGroups(groups.map(group => (
+    group.id === groupId
+      ? { ...group, rooms: group.rooms.map(room => (room.id === roomId ? { ...room, ...patch } : room)) }
+      : group
+  )))
+  return (
+    <div className="space-y-4">
+      {groups.map(group => (
+        <div key={group.id} className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              value={group.name}
+              onChange={e => patchGroup(group.id, { name: e.target.value })}
+              placeholder={t('objectSection')}
+              className="w-full rounded-xl bg-slate-900 px-3 py-2 text-[12px] font-medium uppercase tracking-[0.16em] text-slate-100"
+            />
+            <button
+              type="button"
+              onClick={() => setGroups(groups.filter(item => item.id !== group.id))}
+              className="shrink-0 text-xs text-slate-400 underline"
+            >
+              {t('delete')}
+            </button>
+          </div>
+          <ul className="space-y-2">
+            {group.rooms.map(room => (
+              <li key={room.id} className="rounded-xl bg-slate-900/80 px-3 py-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="block text-[11px] text-slate-400">
+                    {t('objectRoom')}
+                    <input
+                      value={room.name}
+                      onChange={e => patchRoom(group.id, room.id, { name: e.target.value })}
+                      placeholder={t('objectRoomName')}
+                      className="mt-1 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    />
+                  </label>
+                  <label className="block text-[11px] text-slate-400">
+                    {t('objectRoomTasks')}
+                    <input
+                      value={Array.isArray(room.tasks) ? room.tasks.join(', ') : String(room.tasks || '')}
+                      onChange={e => patchRoom(group.id, room.id, { tasks: e.target.value })}
+                      placeholder={t('objectRoomTasksHint')}
+                      className="mt-1 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {WORK_WEEKDAYS.map(day => {
+                    const on = room.days.includes(day)
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => patchRoom(group.id, room.id, {
+                          days: on && room.days.length > 1 ? room.days.filter(item => item !== day) : [...new Set([...room.days, day])].sort((a, b) => a - b),
+                        })}
+                        className={`min-h-8 rounded-lg px-2 text-[11px] font-semibold ${on ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                      >
+                        {weekdayLabel(day, language)}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => patchGroup(group.id, { rooms: group.rooms.filter(item => item.id !== room.id) })}
+                    className="ml-auto text-[11px] text-slate-400 underline"
+                  >
+                    {t('delete')}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => patchGroup(group.id, { rooms: [...group.rooms, emptyRoom(group.rooms.length + 1)] })}
+            className="text-xs font-semibold text-cyan-200"
+          >
+            {t('objectAddRoom')}
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => setGroups([...groups, emptyGroup(groups.length + 1)])}
+        className="text-xs font-semibold text-cyan-200"
+      >
+        {t('objectAddSection')}
+      </button>
+    </div>
+  )
+}
+
 export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy = false, message = '' }) {
   const turnus = parseTurnus(form.turnus)
   const textDays = WORK_WEEKDAYS.filter(day => turnus[day])
   const preview = String(form.leistung_image_url || '')
   const imagePreview = preview && !/\.pdf(\?|$)/i.test(preview)
+  const hasRooms = (form.groups || []).some(group => group.name || group.rooms?.length)
   return (
     <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
       <div>
@@ -73,8 +201,9 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
       {imagePreview ? (
         <img src={preview} alt="" className="max-h-40 rounded-xl object-cover" />
       ) : null}
-      {message ? <p className="text-[13px] leading-6 text-cyan-100">{message}</p> : null}
-      {String(form.leistung_text || '').trim() ? (
+      {message ? <p className="mt-0 text-[13px] leading-6 text-cyan-100">{message}</p> : null}
+      <GuideFields t={t} language={language} form={form} setForm={setForm} />
+      {String(form.leistung_text || '').trim() && !hasRooms ? (
         <label className="block text-xs text-slate-300">
           {t('objectGuideText')}
           <textarea
@@ -85,11 +214,11 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
           />
         </label>
       ) : null}
-      {textDays.length ? (
+      {textDays.length && !hasRooms ? (
         <ul className="space-y-2">
           {textDays.map(day => (
             <li key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
-              <p className="text-[12px] font-medium text-slate-300">{weekdayLabel(day, language, 'cccc')}</p>
+              <p className="text-[12px] font-medium text-slate-300">{planDayTitle({ fixed_hours_json: form.fixed_hours_by_day, fixed_hours: form.fixed_hours }, DateTime.now().setZone('Europe/Berlin').set({ weekday: day }).toISODate(), language)}</p>
               <textarea
                 value={turnus[day] || ''}
                 onChange={e => setForm(current => ({
@@ -105,11 +234,6 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
       ) : null}
     </div>
   )
-}
-
-function previewLine(text) {
-  const line = String(text || '').trim().split('\n').map(item => item.trim()).find(Boolean) || ''
-  return line.replace(/^[-•]\s*/, '').replace(/^\d+[.)]\s*/, '')
 }
 
 function PrettyBody({ text }) {
@@ -143,13 +267,23 @@ function PrettyBody({ text }) {
 
 export function ObjectGuidePanel({ t, language, object, date, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
-  if (!objectHasGuide(object)) return null
+  if (!objectHasGuide(object) && !groupsFromObject(object).length) return null
   const day = isoDate(date) || DateTime.now().setZone('Europe/Berlin').toISODate()
-  const todayBody = turnusForDate(object, day)
   const weekday = DateTime.fromISO(day, { zone: 'Europe/Berlin' }).weekday
+  const groups = groupsForDay(groupsFromObject(object), weekday)
+  const todayBody = turnusForDate(object, day)
   const turnus = parseTurnus(object.turnus_json)
-  const days = TURNUS_DAYS.filter(item => turnus[item] && item !== weekday)
-  const title = previewLine(todayBody) || t('objectGuideOpen')
+  const otherDays = WORK_WEEKDAYS.filter(item => {
+    if (item === weekday) return false
+    const dayGroups = groupsForDay(groupsFromObject(object), item)
+    if (dayGroups.length && groups.length) {
+      const same = JSON.stringify(dayGroups.map(group => [group.name, group.rooms.map(room => roomLine(room))]))
+        === JSON.stringify(groups.map(group => [group.name, group.rooms.map(room => roomLine(room))]))
+      if (same) return false
+    }
+    return dayGroups.length || Boolean(turnus[item])
+  })
+  const title = planDayTitle(object, day, language)
 
   return (
     <section className="rounded-2xl border border-white/15 bg-slate-800/50 px-4 py-4">
@@ -162,49 +296,31 @@ export function ObjectGuidePanel({ t, language, object, date, defaultOpen = fals
         <span>
           <span className="block text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectGuideTitle')}</span>
           <span className="mt-1 block text-[15px] font-medium text-white">{title}</span>
-          {todayBody ? (
-            <span className="mt-1 block text-[12px] text-cyan-100">
-              {t('objectGuideToday')}
-              {' · '}
-              {weekdayLabel(weekday, language, 'cccc')}
-              {objectFixedHoursLabel(object, day) ? ` · ${objectFixedHoursLabel(object, day)}` : ''}
-            </span>
-          ) : null}
         </span>
         <span className="shrink-0 text-[13px] text-slate-300">{open ? t('collapseDetails') : t('expandDetails')}</span>
       </button>
       {open && (
         <div className="mt-4 space-y-5 border-t border-white/10 pt-4">
-          {todayBody && (
-            <div className="rounded-xl bg-cyan-500/10 px-3 py-3 ring-1 ring-cyan-300/20">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-100">
-                {t('objectGuideToday')}
-                {' · '}
-                {weekdayLabel(weekday, language, 'cccc')}
-              </p>
-              <div className="mt-2">
-                <PrettyBody text={todayBody} />
+          {groups.length ? (
+            <GuideGroups groups={groups} />
+          ) : todayBody ? (
+            <PrettyBody text={todayBody} />
+          ) : null}
+          {otherDays.map(item => {
+            const iso = DateTime.fromISO(day, { zone: 'Europe/Berlin' }).set({ weekday: item }).toISODate()
+            const dayGroups = groupsForDay(groupsFromObject(object), item)
+            return (
+              <div key={item}>
+                <p className="text-[12px] font-medium text-slate-300">{planDayTitle(object, iso, language)}</p>
+                <div className="mt-1">
+                  {dayGroups.length ? <GuideGroups groups={dayGroups} /> : <PrettyBody text={turnus[item]} />}
+                </div>
               </div>
-            </div>
-          )}
-          {days.length > 0 && (
-            <ul className="space-y-2">
-              {days.map(item => (
-                <li key={item} className={`rounded-xl px-3 py-2.5 ${item === weekday ? 'bg-cyan-500/10 ring-1 ring-cyan-300/25' : 'bg-slate-950/40'}`}>
-                  <p className="text-[12px] font-medium text-slate-300">{weekdayLabel(item, language, 'cccc')}</p>
-                  <div className="mt-1">
-                    <PrettyBody text={turnus[item]} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {String(object.leistung_text || '').trim() ? (
+            )
+          })}
+          {!groups.length && String(object.leistung_text || '').trim() ? (
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-300">{t('objectGuideText')}</p>
-              <div className="mt-2">
-                <PrettyBody text={object.leistung_text} />
-              </div>
+              <PrettyBody text={object.leistung_text} />
             </div>
           ) : null}
           {object.leistung_image_url ? (

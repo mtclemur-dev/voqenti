@@ -648,6 +648,7 @@ function App() {
       .select(columns)
       .order('name', { ascending: true })
     const columns = [
+      'id, name, address, manager, phone, fixed_hours, fixed_hours_json, leistung_text, leistung_image_url, turnus_json, guide_json',
       'id, name, address, manager, phone, fixed_hours, fixed_hours_json, leistung_text, leistung_image_url, turnus_json',
       'id, name, address, manager, phone, fixed_hours, leistung_text, leistung_image_url, turnus_json',
       'id, name, address, manager, phone, fixed_hours, fixed_hours_json',
