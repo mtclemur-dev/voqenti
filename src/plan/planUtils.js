@@ -599,6 +599,23 @@ export function leaveJobsHit(jobs, workerIds, days) {
   return rows.sort((a, b) => a.date.localeCompare(b.date))
 }
 
+export function leavePersonRangesInWindow(absences, workerIds, start, end) {
+  const rows = []
+  for (const id of workerIds || []) {
+    const hits = (absences || []).filter(item => (
+      item.worker_id === id
+      && item.reason === 'vacation'
+      && leaveRangesOverlap(item.start_date, item.end_date, start, end)
+    ))
+    if (!hits.length) continue
+    const from = hits.map(item => isoDate(item.start_date)).filter(Boolean).sort()[0]
+    const to = hits.map(item => isoDate(item.end_date)).filter(Boolean).sort().at(-1)
+    if (!from || !to) continue
+    rows.push({ id, start: from, end: to })
+  }
+  return rows
+}
+
 export function leaveOverlapCount(item, absences = []) {
   if (!item || item.reason !== 'vacation') return 0
   const others = new Set()
