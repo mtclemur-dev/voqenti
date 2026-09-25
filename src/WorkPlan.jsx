@@ -340,7 +340,16 @@ function formatDisplayDate(value) {
 const pickerStyle = { colorScheme: 'light', appearance: 'auto', WebkitAppearance: 'auto' }
 const pickerClass = 'min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900'
 
-function DateField({ label, value, onChange, min, max, className = 'block text-xs text-slate-400' }) {
+function DateField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  className = 'block text-xs text-slate-400',
+  inputClassName = pickerClass,
+  inputStyle = pickerStyle,
+}) {
   return (
     <label className={className}>
       {label}
@@ -350,8 +359,8 @@ function DateField({ label, value, onChange, min, max, className = 'block text-x
         min={isoDate(min) || undefined}
         max={isoDate(max) || undefined}
         onChange={e => onChange(isoDate(e.target.value))}
-        className={`${pickerClass} mt-1`}
-        style={pickerStyle}
+        className={`${inputClassName} mt-1`}
+        style={inputStyle}
       />
     </label>
   )
