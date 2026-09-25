@@ -23,6 +23,28 @@ function parseHoursAmount(value) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
+function parseStartMap(value) {
+  if (!value) return {}
+  if (typeof value === 'string') {
+    try {
+      return parseStartMap(JSON.parse(value))
+    } catch {
+      return {}
+    }
+  }
+  const map = {}
+  const rows = Array.isArray(value)
+    ? value.map(item => [item?.weekday ?? item?.day, item?.start || item?.from])
+    : Object.entries(value)
+  for (const [key, raw] of rows) {
+    const day = Number(key)
+    const start = String(raw || '').trim().slice(0, 5)
+    if (day < 1 || day > 7 || !/^\d{2}:\d{2}$/.test(start)) continue
+    map[day] = start
+  }
+  return map
+}
+
 function parseHoursByDay(value) {
   if (!value) return {}
   if (typeof value === 'string') {
@@ -59,6 +81,7 @@ export function parseServices(value) {
       name,
       hours: item?.hours != null && item.hours !== '' ? String(item.hours) : '',
       hours_by_day: parseHoursByDay(item?.hours_by_day || item?.days),
+      start_by_day: parseStartMap(item?.start_by_day || item?.starts),
       locked: Boolean(item?.locked || item?.time_locked),
       start: String(item?.start || item?.from || '').trim(),
     })
@@ -74,11 +97,13 @@ export function serializeServices(list) {
       const amount = parseHoursAmount(raw)
       if (amount) hours_by_day[Number(day)] = amount
     }
+    const start_by_day = parseStartMap(item.start_by_day)
     return {
       id: item.id,
       name: item.name,
       ...(hours ? { hours } : {}),
       ...(Object.keys(hours_by_day).length ? { hours_by_day } : {}),
+      ...(Object.keys(start_by_day).length ? { start_by_day } : {}),
       ...(item.locked ? { locked: true } : {}),
       ...(item.start ? { start: item.start } : {}),
     }

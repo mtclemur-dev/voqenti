@@ -149,23 +149,63 @@ export function objectTimeLocked(object) {
   return Boolean(parsed && !Array.isArray(parsed) && (parsed.locked || parsed.time_locked))
 }
 
-export function objectFixedStart(object) {
+export function parseFixedStartByDay(value) {
+  const parsed = parseFixedHoursRaw(value)
+  if (!parsed) return {}
+  const map = {}
+  const days = Array.isArray(parsed) ? parsed : parsed.days
+  if (Array.isArray(days)) {
+    for (const item of days) {
+      const day = Number(item?.weekday ?? item?.day)
+      const start = formatClock(item?.start || item?.from)
+      if (day >= 1 && day <= 7 && start) map[day] = start
+    }
+  }
+  const starts = !Array.isArray(parsed) && parsed && typeof parsed.starts === 'object' ? parsed.starts : null
+  if (starts) {
+    for (const [key, raw] of Object.entries(starts)) {
+      const day = Number(key)
+      const start = formatClock(raw)
+      if (day >= 1 && day <= 7 && start) map[day] = start
+    }
+  }
+  return map
+}
+
+export function objectFixedStart(object, date) {
+  const weekday = weekdayFromDate(date)
+  const byDay = parseFixedStartByDay(object?.fixed_hours_json)
+  if (weekday && byDay[weekday]) return byDay[weekday]
   const parsed = parseFixedHoursRaw(object?.fixed_hours_json)
   if (!parsed || Array.isArray(parsed)) return ''
   return formatClock(parsed.start || parsed.from)
 }
 
-export function serializeFixedHoursByDay(map) {
+export function objectHasFixedStart(object) {
+  return Boolean(objectFixedStart(object) || Object.keys(parseFixedStartByDay(object?.fixed_hours_json)).length)
+}
+
+export function serializeFixedHoursByDay(map, startMap = {}) {
   return TURNUS_DAYS
-    .map(weekday => ({ weekday, hours: parseFixedHoursValue(map?.[weekday]) }))
-    .filter(item => item.hours)
+    .map(weekday => {
+      const hours = parseFixedHoursValue(map?.[weekday])
+      const start = formatClock(startMap?.[weekday])
+      if (!hours && !start) return null
+      return {
+        weekday,
+        ...(hours ? { hours } : {}),
+        ...(start ? { start } : {}),
+      }
+    })
+    .filter(Boolean)
 }
 
 export function serializeFixedHoursJson(map, options = {}) {
   const locked = typeof options === 'boolean' ? options : Boolean(options?.locked)
   const start = formatClock(typeof options === 'boolean' ? '' : options?.start)
-  const days = serializeFixedHoursByDay(map)
-  if (!locked && !start) return days
+  const startByDay = typeof options === 'boolean' ? {} : (options?.startByDay || {})
+  const days = serializeFixedHoursByDay(map, startByDay)
+  if (!locked && !start && !days.some(item => item.start)) return days
   return {
     days,
     ...(locked ? { locked: true } : {}),
@@ -184,9 +224,15 @@ export function objectForService(object, serviceId, fallbackName = '') {
   const service = serviceOf(object, serviceId, fallbackName)
   if (!service) return object
   const hasHours = serviceHasHours(service)
+  const startByDay = { ...parseFixedStartByDay(object.fixed_hours_json) }
+  for (const [day, raw] of Object.entries(service.start_by_day || {})) {
+    const clock = formatClock(raw)
+    if (clock) startByDay[Number(day)] = clock
+  }
   const start = formatClock(service.start) || objectFixedStart(object)
   const locked = Boolean(service.locked || objectTimeLocked(object))
-  if (!hasHours && start === objectFixedStart(object) && locked === objectTimeLocked(object)) return object
+  const hasDayStarts = Object.keys(service.start_by_day || {}).some(day => formatClock(service.start_by_day[day]))
+  if (!hasHours && !formatClock(service.start) && !hasDayStarts) return object
   const byDay = hasHours
     ? { ...(service.hours_by_day || {}) }
     : parseFixedHoursByDay(object.fixed_hours_json)
@@ -199,7 +245,7 @@ export function objectForService(object, serviceId, fallbackName = '') {
   return {
     ...object,
     fixed_hours: daily || null,
-    fixed_hours_json: serializeFixedHoursJson(byDay, { locked, start }),
+    fixed_hours_json: serializeFixedHoursJson(byDay, { locked, start, startByDay }),
   }
 }
 
@@ -232,6 +278,10 @@ export function formatObjectFixedSummary(object, language = 'de') {
   const workDays = WORK_WEEKDAYS.filter(day => map[day])
   const fallback = parseFixedHoursValue(object?.fixed_hours)
   const start = objectFixedStart(object)
+  const startByDay = parseFixedStartByDay(object?.fixed_hours_json)
+  const extras = WORK_WEEKDAYS
+    .filter(day => startByDay[day] && startByDay[day] !== start)
+    .map(day => `${weekdayLabel(day, language)} ${startByDay[day]}`)
   let hours = ''
   if (!days.length) hours = formatFixedHoursLabel(fallback)
   else {
@@ -245,8 +295,7 @@ export function formatObjectFixedSummary(object, language = 'de') {
       hours = parts.join(' · ')
     }
   }
-  if (start) return hours ? `${start} · ${hours}` : start
-  return hours
+  return [start, hours, ...extras].filter(Boolean).join(' · ')
 }
 
 export function clockPlusMinutes(start, minutes) {
@@ -258,7 +307,7 @@ export function clockPlusMinutes(start, minutes) {
 
 export function withFixedEnd(range, object, date) {
   const minutes = objectFixedMinutes(object, date)
-  const preferredStart = objectFixedStart(object)
+  const preferredStart = objectFixedStart(object, date)
   const start = preferredStart || formatClock(range?.start)
   if (!minutes) return clockRange(start || range?.start, range?.end)
   return { start, end: start ? clockPlusMinutes(start, minutes) : '' }
@@ -266,7 +315,7 @@ export function withFixedEnd(range, object, date) {
 
 export function formWithFixedTimes(current, object) {
   const date = current?.work_date
-  const preferredStart = objectFixedStart(object)
+  const preferredStart = objectFixedStart(object, date)
   if (!objectFixedMinutes(object, date) && !preferredStart) return current
   const job = withFixedEnd({ start: preferredStart || current.start_time, end: current.end_time }, object, date)
   const hours = {}
@@ -343,7 +392,7 @@ export function workerDaySlots(jobs, workerId, date, options = {}) {
       let duration = rangeDurationMinutes(range)
       if (!duration) duration = objectFixedMinutes(object, day)
       if (!duration) continue
-      const lockedStart = objectTimeLocked(object) ? objectFixedStart(object) : ''
+      const lockedStart = objectTimeLocked(object) ? objectFixedStart(object, day) : ''
       const start = lockedStart || formatClock(range.start) || '06:00'
       slots.push({
         jobId: job.id,

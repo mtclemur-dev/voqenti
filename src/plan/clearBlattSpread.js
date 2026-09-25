@@ -6,6 +6,7 @@ import {
   objectTimeLocked,
   parseFixedHoursByDay,
   parseFixedHoursValue,
+  parseFixedStartByDay,
   parseTurnus,
   rangeDurationMinutes,
   serializeFixedHoursJson,
@@ -66,6 +67,7 @@ export function stripSpreadBlatt(object) {
     fixed_hours_json: serializeFixedHoursJson(hours, {
       locked: objectTimeLocked(object),
       start: objectFixedStart(object),
+      startByDay: parseFixedStartByDay(object?.fixed_hours_json),
     }),
   }
   const changed = (

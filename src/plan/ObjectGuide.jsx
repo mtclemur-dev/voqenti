@@ -154,50 +154,66 @@ export function ObjectSheetFields({ t, language, form, setForm, onPickFile, busy
     fixed_hours_json: serializeFixedHoursJson(form.fixed_hours_by_day, {
       locked: form.time_locked,
       start: form.fixed_start,
+      startByDay: form.fixed_start_by_day,
     }),
   }
-  const previewDay = WORK_WEEKDAYS.find(day => form.fixed_hours_by_day?.[day]) || 1
-  const previewDate = DateTime.now().setZone('Europe/Berlin').set({ weekday: previewDay }).toISODate()
-  const previewStart = objectFixedStart(previewObject) || form.fixed_start
-  const previewMinutes = objectFixedMinutes(previewObject, previewDate)
-  const previewEnd = previewStart && previewMinutes ? clockPlusMinutes(previewStart, previewMinutes) : ''
-  const previewHours = objectFixedHoursLabel(previewObject, previewDate)
   return (
     <div className="sm:col-span-2 space-y-4 rounded-2xl bg-slate-950/50 px-4 py-4 ring-1 ring-white/10">
       <div>
         <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('objectFixedDays')}</p>
         {t('objectFixedDaysHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-200">{t('objectFixedDaysHint')}</p> : null}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {WORK_WEEKDAYS.map(day => (
-            <label key={day} className="block text-[11px] text-slate-400">
-              {weekdayLabel(day, language, 'cccc')}
-              <HundredthsField
-                value={form.fixed_hours_by_day?.[day] ?? ''}
-                onChange={value => setForm(current => ({
-                  ...current,
-                  fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: value },
-                }))}
-                className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-              />
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 max-w-sm">
           <TimeField
             label={t('objectTimeFrom')}
             value={form.fixed_start || ''}
             onChange={value => setForm(current => ({ ...current, fixed_start: value }))}
             className="block text-[11px] text-slate-400"
           />
-          <ComputedEnd
-            label={t('planEnd')}
-            time={previewEnd}
-            note={previewHours
-              ? t('objectFixedEnd').replace('{hours}', previewHours)
-              : t('objectTimeNeedHours')}
-          />
         </div>
         {t('objectTimeFromHint') ? <p className="mt-2 text-[13px] leading-6 text-slate-300">{t('objectTimeFromHint')}</p> : null}
+        <div className="mt-3 space-y-2">
+          {WORK_WEEKDAYS.map(day => {
+            const date = DateTime.now().setZone('Europe/Berlin').set({ weekday: day }).toISODate()
+            const start = objectFixedStart(previewObject, date)
+            const minutes = objectFixedMinutes(previewObject, date)
+            const end = start && minutes ? clockPlusMinutes(start, minutes) : ''
+            const hours = objectFixedHoursLabel(previewObject, date)
+            return (
+              <div key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
+                <p className="text-[12px] font-medium text-slate-200">{weekdayLabel(day, language, 'cccc')}</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <label className="block text-[11px] text-slate-400">
+                    {t('objectFixedHours')}
+                    <HundredthsField
+                      value={form.fixed_hours_by_day?.[day] ?? ''}
+                      onChange={value => setForm(current => ({
+                        ...current,
+                        fixed_hours_by_day: { ...current.fixed_hours_by_day, [day]: value },
+                      }))}
+                      className="mt-1 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    />
+                  </label>
+                  <TimeField
+                    label={t('objectTimeFromDay')}
+                    value={form.fixed_start_by_day?.[day] || ''}
+                    onChange={value => setForm(current => ({
+                      ...current,
+                      fixed_start_by_day: { ...current.fixed_start_by_day, [day]: value },
+                    }))}
+                    className="block text-[11px] text-slate-400"
+                  />
+                  <ComputedEnd
+                    label={t('planEnd')}
+                    time={end}
+                    note={hours
+                      ? t('objectFixedEnd').replace('{hours}', hours)
+                      : (start ? t('objectTimeFrom') + ` ${start}` : t('objectTimeNeedHours'))}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
         <label className="mt-4 flex items-start gap-3 rounded-xl bg-slate-900/80 px-3 py-3 text-sm text-slate-100">
           <input
             type="checkbox"

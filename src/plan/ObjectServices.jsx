@@ -4,43 +4,16 @@ import { parseServices, suggestedServiceNames } from './objectServices'
 import { clockPlusMinutes, formatObjectFixedSummary, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, serializeFixedHoursJson, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 import TimeField, { ComputedEnd } from './TimeField'
 
-function ServiceClock({ t, language, form, service, onStart }) {
-  const scoped = objectForService({
+function serviceScoped(form, service) {
+  return objectForService({
     services: form.services,
     fixed_hours: form.fixed_hours,
     fixed_hours_json: serializeFixedHoursJson(form.fixed_hours_by_day, {
       locked: form.time_locked,
       start: form.fixed_start,
+      startByDay: form.fixed_start_by_day,
     }),
   }, service.id)
-  const day = WORK_WEEKDAYS.find(item => service.hours_by_day?.[item]) || 1
-  const date = DateTime.now().setZone('Europe/Berlin').set({ weekday: day }).toISODate()
-  const start = objectFixedStart(scoped) || service.start || form.fixed_start || ''
-  const minutes = objectFixedMinutes(scoped, date)
-  const end = start && minutes ? clockPlusMinutes(start, minutes) : ''
-  const hours = objectFixedHoursLabel(scoped, date)
-  return (
-    <div className="mt-3 space-y-2">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TimeField
-          label={t('objectTimeFrom')}
-          value={service.start || ''}
-          onChange={onStart}
-          className="block text-[11px] text-slate-400"
-        />
-        <ComputedEnd
-          label={t('planEnd')}
-          time={end}
-          note={hours ? t('objectFixedEnd').replace('{hours}', hours) : t('objectTimeNeedHours')}
-        />
-      </div>
-      {hours || start ? (
-        <p className="text-[11px] text-cyan-200/80">
-          {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(scoped, language) || service.name)}
-        </p>
-      ) : null}
-    </div>
-  )
 }
 
 function HoursField({ value, onChange, placeholder, className }) {
@@ -72,6 +45,8 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
         name,
         hours: '',
         hours_by_day: {},
+        start: '',
+        start_by_day: {},
       }],
     }))
     setText('')
@@ -113,22 +88,60 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
                   className="mt-1 w-full max-w-[8rem] rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
                 />
               </label>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {WORK_WEEKDAYS.map(day => (
-                  <label key={day} className="block text-[11px] text-slate-400">
-                    {weekdayLabel(day, language, 'cccc')}
-                    <HoursField
-                      value={item.hours_by_day?.[day] ?? ''}
-                      onChange={value => patch(item.id, {
-                        hours_by_day: { ...item.hours_by_day, [day]: value },
-                      })}
-                      placeholder={item.hours || ''}
-                      className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                    />
-                  </label>
-                ))}
+              <div className="mt-3 max-w-sm">
+                <TimeField
+                  label={t('objectTimeFrom')}
+                  value={item.start || ''}
+                  onChange={value => patch(item.id, { start: value })}
+                  className="block text-[11px] text-slate-400"
+                />
               </div>
-              <ServiceClock t={t} language={language} form={form} service={item} onStart={value => patch(item.id, { start: value })} />
+              <div className="mt-2 space-y-2">
+                {WORK_WEEKDAYS.map(day => {
+                  const scoped = serviceScoped({ ...form, services: parseServices(form.services).map(row => (row.id === item.id ? item : row)) }, item)
+                  const date = DateTime.now().setZone('Europe/Berlin').set({ weekday: day }).toISODate()
+                  const start = objectFixedStart(scoped, date)
+                  const minutes = objectFixedMinutes(scoped, date)
+                  const end = start && minutes ? clockPlusMinutes(start, minutes) : ''
+                  const hours = objectFixedHoursLabel(scoped, date)
+                  return (
+                    <div key={day} className="rounded-xl bg-slate-900/80 px-3 py-3">
+                      <p className="text-[12px] font-medium text-slate-200">{weekdayLabel(day, language, 'cccc')}</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        <label className="block text-[11px] text-slate-400">
+                          {t('objectFixedHours')}
+                          <HoursField
+                            value={item.hours_by_day?.[day] ?? ''}
+                            onChange={value => patch(item.id, {
+                              hours_by_day: { ...item.hours_by_day, [day]: value },
+                            })}
+                            placeholder={item.hours || ''}
+                            className="mt-1 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                          />
+                        </label>
+                        <TimeField
+                          label={t('objectTimeFromDay')}
+                          value={item.start_by_day?.[day] || ''}
+                          onChange={value => patch(item.id, {
+                            start_by_day: { ...item.start_by_day, [day]: value },
+                          })}
+                          className="block text-[11px] text-slate-400"
+                        />
+                        <ComputedEnd
+                          label={t('planEnd')}
+                          time={end}
+                          note={hours ? t('objectFixedEnd').replace('{hours}', hours) : t('objectTimeNeedHours')}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {formatObjectFixedSummary(serviceScoped(form, item), language) ? (
+                <p className="mt-2 text-[11px] text-cyan-200/80">
+                  {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(serviceScoped(form, item), language))}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>
