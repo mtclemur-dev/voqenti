@@ -695,9 +695,19 @@ function App() {
   const incarcaWorkers = useCallback(async () => {
     const { data, error } = await supabase
       .from('workers')
-      .select('id, name, email, role, active')
+      .select('id, name, email, role, active, vacation_days')
       .eq('active', true)
       .order('name', { ascending: true })
+
+    if (error && /vacation_days|schema cache|column/i.test(error.message || '')) {
+      const fallback = await supabase
+        .from('workers')
+        .select('id, name, email, role, active')
+        .eq('active', true)
+        .order('name', { ascending: true })
+      if (!fallback.error) setWorkers(fallback.data ?? [])
+      return
+    }
 
     if (!error) setWorkers(data ?? [])
   }, [])

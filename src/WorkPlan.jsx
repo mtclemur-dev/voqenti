@@ -4,7 +4,8 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockRange, clockRangeLabel, datesInRange, debounce, firstName, formatClock, formatUpdatedAt, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, marksFromJobs, minutesLabel, nextWeekday, ownerWorkerIdSet, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, WORK_WEEKDAYS } from './plan/planUtils'
+import { LeavePeoplePanel } from './plan/LeaveBalance'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -560,7 +561,7 @@ export default function WorkPlan({
       const { data, error } = await supabase
         .from('work_absences')
         .select('*')
-        .gte('end_date', isAdmin ? fromDate : todayDate)
+        .gte('end_date', yearStart)
         .order('start_date', { ascending: true })
       if (error && !isMissingTable(error)) setErrorMessage(error.message)
       setAbsences(error ? [] : (data ?? []))
@@ -1719,6 +1720,15 @@ export default function WorkPlan({
     const endDate = isoDate(absenceForm.end_date)
     if (!startDate || !endDate) return
     if (endDate < startDate) return alert(t('absenceDateOrder'))
+    if (reason === 'vacation') {
+      const year = DateTime.fromISO(startDate, { zone: 'Europe/Berlin' }).year
+      const worker = workers.find(item => item.id === workerId)
+      const balance = leaveBalance(worker, absences, year, editingAbsenceId || '')
+      const days = vacationDaysInRange(startDate, endDate, year)
+      if (days > balance.left) {
+        return alert(t('leaveOverLimit').replace('{days}', String(balance.left)).replace('{year}', String(year)))
+      }
+    }
     const payload = {
       worker_id: workerId,
       start_date: startDate,
@@ -1751,6 +1761,16 @@ export default function WorkPlan({
       setAbsenceForm(emptyAbsence())
     }
     loadData(view === 'history' ? 'history' : 'live')
+  }
+
+  const handleSaveVacationLimit = async (worker, days) => {
+    if (!isAdmin || !worker?.id) return
+    const { error } = await supabase.from('workers').update({ vacation_days: days }).eq('id', worker.id)
+    if (error) {
+      alert(isMissingColumn(error) || /vacation_days/i.test(error.message || '') ? t('leaveSetup') : `${t('planSaveError')} ${error.message}`)
+      return
+    }
+    await onReloadWorkers?.()
   }
 
   const startEditAbsence = (item) => {
@@ -2063,7 +2083,6 @@ export default function WorkPlan({
       return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '')
     })
   const setupExtra = t('planSetupExtra')
-  const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today && !(hideOwnerPlan && ownerIds.has(item.worker_id)))
   const pendingInvites = inviteWorkers.filter(worker => !String(worker.email || '').trim())
 
   const renderAdminJob = (job) => {
@@ -2195,77 +2214,29 @@ export default function WorkPlan({
       )}
 
       {view === 'plan' && isAdmin && adminTab === 'people' && (
-        <form onSubmit={handleSaveAbsence} className="rounded-[1.75rem] border border-rose-300/20 bg-rose-500/10 p-5">
-          <p className="text-[11px] uppercase tracking-[0.25em] text-rose-200">{t('absenceTitle')}</p>
-          {t('absenceHint') && <p className="mt-1 text-sm text-rose-50/80">{t('absenceHint')}</p>}
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs text-rose-100/80">
-              {t('absenceWorker')}
-              <select value={absenceForm.worker_id} onChange={e => setAbsenceForm(current => ({ ...current, worker_id: e.target.value }))} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100">
-                <option value="">{t('workerSelect')}</option>
-                {activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id)).map(worker => (
-                  <option key={worker.id} value={worker.id}>{worker.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs text-rose-100/80">
-              {t('absenceReason')}
-              <select value={absenceForm.reason} onChange={e => setAbsenceForm(current => ({ ...current, reason: e.target.value }))} className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100">
-                <option value="sick">{t('absenceSick')}</option>
-                <option value="vacation">{t('absenceVacation')}</option>
-              </select>
-            </label>
-            <DateField
-              label={t('absenceFrom')}
-              className="block text-xs font-semibold text-rose-100"
-              value={absenceForm.start_date}
-              onChange={value => setAbsenceForm(current => {
-                const start = isoDate(value)
-                const end = isoDate(current.end_date)
-                return { ...current, start_date: start, end_date: end && start && end < start ? start : end }
-              })}
-            />
-            <DateField
-              label={t('absenceTo')}
-              className="block text-xs font-semibold text-rose-100"
-              value={absenceForm.end_date}
-              onChange={value => setAbsenceForm(current => {
-                const start = isoDate(current.start_date)
-                const end = isoDate(value)
-                return { ...current, start_date: start && end && end < start ? end : start, end_date: end }
-              })}
-            />
-          </div>
-          <input
-            value={absenceForm.note}
-            onChange={e => setAbsenceForm(current => ({ ...current, note: e.target.value }))}
-            placeholder={t('absenceNote')}
-            className="mt-3 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-          />
-          <button type="submit" className="mt-3 w-full rounded-xl bg-rose-500 px-4 py-3 font-semibold text-white">{editingAbsenceId ? t('absenceSave') : t('absenceSave')}</button>
-          {editingAbsenceId && (
-            <button type="button" onClick={() => { setEditingAbsenceId(null); setAbsenceForm(emptyAbsence()) }} className="mt-2 w-full rounded-xl bg-slate-800 px-4 py-3 font-semibold text-white">
-              {t('cancel')}
-            </button>
-          )}
-          {upcomingAbsences.length === 0 ? (
-            <p className="mt-3 text-center text-sm text-rose-100/70">{t('absenceEmpty')}</p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {upcomingAbsences.map(item => (
-                <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-950/50 px-3 py-2">
-                  <p className="text-sm text-white">
-                    {workerName(item.worker_id)} · {item.reason === 'vacation' ? t('absenceVacation') : t('absenceSick')} · {formatDisplayDate(item.start_date)} – {formatDisplayDate(item.end_date)}
-                  </p>
-                  <div className="flex shrink-0 gap-2">
-                    <button type="button" onClick={() => startEditAbsence(item)} className="text-xs font-semibold text-cyan-200">{t('edit')}</button>
-                    <button type="button" onClick={() => handleDeleteAbsence(item)} className="text-xs font-semibold text-rose-200">{t('delete')}</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </form>
+        <LeavePeoplePanel
+          t={t}
+          language={language}
+          year={DateTime.now().setZone('Europe/Berlin').year}
+          workers={activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id))}
+          absences={absences
+            .filter(item => !(hideOwnerPlan && ownerIds.has(item.worker_id)))
+            .slice()
+            .sort((left, right) => {
+              const leftSoon = isoDate(left.end_date) >= today ? 0 : 1
+              const rightSoon = isoDate(right.end_date) >= today ? 0 : 1
+              return leftSoon - rightSoon || isoDate(right.start_date).localeCompare(isoDate(left.start_date))
+            })}
+          form={absenceForm}
+          setForm={setAbsenceForm}
+          editingId={editingAbsenceId}
+          onSubmit={handleSaveAbsence}
+          onEdit={startEditAbsence}
+          onDelete={handleDeleteAbsence}
+          onCancelEdit={() => { setEditingAbsenceId(null); setAbsenceForm(emptyAbsence()) }}
+          onSaveLimit={handleSaveVacationLimit}
+          DateField={DateField}
+        />
       )}
 
       {view === 'plan' && isAdmin && adminTab === 'places' && (

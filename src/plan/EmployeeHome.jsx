@@ -6,6 +6,7 @@ import WeekBoard from './WeekBoard'
 import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, scheduleJobReminders } from './jobReminders'
 import { HoursRow } from './EmployeeHours'
 import SelfWorkForm from './SelfWorkForm'
+import { MyLeaveCard } from './LeaveBalance'
 import OpenPostActions from './OpenPostActions'
 import { openPostAnswer } from './openPostRespond'
 import {
@@ -464,7 +465,6 @@ export default function EmployeeHome({
     })
     return () => { cancelled = true }
   }, [])
-  const upcomingAbsences = absences.filter(item => isoDate(item.end_date) >= today && item.worker_id === currentWorker?.id)
   const sorted = useMemo(
     () => [...myPlan]
       .filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today))
@@ -651,21 +651,13 @@ export default function EmployeeHome({
         </div>
       )}
 
-      {upcomingAbsences.length > 0 && (
-        <aside className="rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3">
-          <p className="flex items-center gap-2 text-sm font-semibold text-rose-50">
-            <IconAlert className="h-4 w-4" />
-            {t('absenceOfficeMarked')}
-          </p>
-          {upcomingAbsences.map(item => (
-            <p key={item.id} className="mt-1 text-sm text-rose-100">
-              {item.reason === 'vacation' ? t('absenceVacation') : t('absenceSick')}
-              {' · '}
-              {isoDate(item.start_date) ? formatDisplayDate(item.start_date) : ''} – {isoDate(item.end_date) ? formatDisplayDate(item.end_date) : ''}
-            </p>
-          ))}
-        </aside>
-      )}
+      <MyLeaveCard
+        t={t}
+        language={language}
+        year={now.year}
+        worker={currentWorker}
+        absences={absences}
+      />
 
       {notifyPerm && notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && sorted.some(row => isAssignmentActive(row) && !row.seen_at) && (
         <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3">

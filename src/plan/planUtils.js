@@ -395,6 +395,50 @@ export function workdaysInRange(from, until, options = {}) {
   })
 }
 
+export const DEFAULT_VACATION_DAYS = 24
+
+export function vacationLimit(worker) {
+  const value = Number(worker?.vacation_days)
+  if (Number.isFinite(value) && value > 0) return Math.min(365, Math.round(value))
+  return DEFAULT_VACATION_DAYS
+}
+
+export function clipRangeToYear(start, end, year) {
+  const yearStart = DateTime.fromObject({ year }, { zone: 'Europe/Berlin' }).startOf('year')
+  const yearEnd = yearStart.endOf('year')
+  const from = DateTime.fromISO(isoDate(start), { zone: 'Europe/Berlin' }).startOf('day')
+  const to = DateTime.fromISO(isoDate(end), { zone: 'Europe/Berlin' }).startOf('day')
+  if (!from.isValid || !to.isValid || to < from) return null
+  const clippedStart = from < yearStart ? yearStart : from
+  const clippedEnd = to > yearEnd ? yearEnd : to
+  if (clippedEnd < clippedStart) return null
+  return { start: clippedStart.toISODate(), end: clippedEnd.toISODate() }
+}
+
+export function vacationDaysInRange(start, end, year) {
+  const clipped = clipRangeToYear(start, end, year)
+  if (!clipped) return 0
+  return workdaysInRange(clipped.start, clipped.end, { keepSingleWeekend: false }).length
+}
+
+export function vacationDaysUsed(absences, workerId, year, exceptId = '') {
+  if (!workerId) return 0
+  let used = 0
+  for (const item of absences || []) {
+    if (item.worker_id !== workerId || item.reason !== 'vacation') continue
+    if (exceptId && item.id === exceptId) continue
+    used += vacationDaysInRange(item.start_date, item.end_date, year)
+  }
+  return used
+}
+
+export function leaveBalance(worker, absences, year, exceptId = '') {
+  const limit = vacationLimit(worker)
+  const used = vacationDaysUsed(absences, worker?.id, year, exceptId)
+  const left = Math.max(0, limit - used)
+  return { limit, used, left, over: used > limit }
+}
+
 export function nextWeekday(value) {
   const start = isoDate(value)
   let day = (start
