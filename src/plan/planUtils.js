@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
+import { serviceHasHours, serviceOf } from './objectServices.js'
 import { DEPOT_ADDRESS, travelBetweenSync, travelMinutesSync } from './travel.js'
 
 export function firstName(fullName) {
@@ -176,6 +177,27 @@ export function weekdayFromDate(date) {
   const iso = isoDate(date)
   const dt = iso ? DateTime.fromISO(iso, { zone: 'Europe/Berlin' }) : null
   return dt?.isValid ? dt.weekday : 0
+}
+
+export function objectForService(object, serviceId, fallbackName = '') {
+  if (!object) return object
+  const service = serviceOf(object, serviceId, fallbackName)
+  if (!serviceHasHours(service)) return object
+  const byDay = { ...(service.hours_by_day || {}) }
+  const daily = parseFixedHoursValue(service.hours)
+  if (daily) {
+    for (const day of WORK_WEEKDAYS) {
+      if (!parseFixedHoursValue(byDay[day])) byDay[day] = daily
+    }
+  }
+  return {
+    ...object,
+    fixed_hours: daily || null,
+    fixed_hours_json: serializeFixedHoursJson(byDay, {
+      locked: service.locked,
+      start: service.start,
+    }),
+  }
 }
 
 export function objectFixedHours(object, date) {

@@ -11,6 +11,7 @@ import { serviceLabel } from './objectServices'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
+  objectForService,
   withChainedAssignmentRows,
   berlinWeekDays,
   berlinWeekStart,
@@ -316,7 +317,7 @@ function NextAssignmentCard({
             language={language}
             today={today}
             row={row}
-            object={object}
+            object={objectForService(object, job.service_id, job.service_name)}
             workerLabel=""
             currentWorkerId={currentWorkerId}
             onSave={onSaveHours}

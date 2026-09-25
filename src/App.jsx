@@ -2688,6 +2688,7 @@ function App() {
                   onReloadWorkers={incarcaWorkers}
                   onReloadObjects={incarcaObjects}
                   onHelpAvailable={handleHelpAvailable}
+                  onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
                 />
               </div>
             )}

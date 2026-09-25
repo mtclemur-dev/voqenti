@@ -1,7 +1,21 @@
 import { useState } from 'react'
-import { parseServices, suggestedServiceNames } from './objectServices'
+import { parseServices, serviceHasHours, suggestedServiceNames } from './objectServices'
+import { weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 
-export function ObjectServicesFields({ t, form, setForm }) {
+function HoursField({ value, onChange, placeholder, className }) {
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={className}
+    />
+  )
+}
+
+export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
   const [text, setText] = useState('')
   const services = parseServices(form.services)
   const taken = new Set(services.map(item => item.name.toLowerCase()))
@@ -12,30 +26,70 @@ export function ObjectServicesFields({ t, form, setForm }) {
     if (!name || taken.has(name.toLowerCase())) return
     setForm(current => ({
       ...current,
-      services: [...parseServices(current.services), { id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, name }],
+      services: [...parseServices(current.services), {
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        hours: '',
+        hours_by_day: {},
+      }],
     }))
     setText('')
   }
+
+  const patch = (id, next) => setForm(current => ({
+    ...current,
+    services: parseServices(current.services).map(row => (row.id === id ? { ...row, ...next } : row)),
+  }))
 
   return (
     <div className="sm:col-span-2 space-y-2">
       <p className="text-xs text-slate-400">{t('serviceLabel')}</p>
       <p className="text-[12px] leading-5 text-slate-500">{t('serviceHint')}</p>
       {services.length ? (
-        <ul className="flex flex-wrap gap-2">
+        <ul className="space-y-2">
           {services.map(item => (
-            <li key={item.id} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-3 py-1.5 text-sm text-slate-100">
-              <span>{item.name}</span>
-              <button
-                type="button"
-                onClick={() => setForm(current => ({
-                  ...current,
-                  services: parseServices(current.services).filter(row => row.id !== item.id),
-                }))}
-                className="text-xs text-slate-400 underline"
-              >
-                {t('delete')}
-              </button>
+            <li key={item.id} className="rounded-2xl bg-slate-950 px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-sm font-semibold text-white">{item.name}</p>
+                <button
+                  type="button"
+                  onClick={() => setForm(current => ({
+                    ...current,
+                    services: parseServices(current.services).filter(row => row.id !== item.id),
+                  }))}
+                  className="shrink-0 text-xs text-slate-400 underline"
+                >
+                  {t('delete')}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">{t('serviceHoursHint')}</p>
+              <label className="mt-2 block text-[11px] text-slate-400">
+                {t('serviceDailyHours')}
+                <HoursField
+                  value={item.hours}
+                  onChange={value => patch(item.id, { hours: value })}
+                  placeholder="4"
+                  className="mt-1 w-full max-w-[8rem] rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {WORK_WEEKDAYS.map(day => (
+                  <label key={day} className="block text-[11px] text-slate-400">
+                    {weekdayLabel(day, language, 'cccc')}
+                    <HoursField
+                      value={item.hours_by_day?.[day] ?? ''}
+                      onChange={value => patch(item.id, {
+                        hours_by_day: { ...item.hours_by_day, [day]: value },
+                      })}
+                      placeholder={item.hours || ''}
+                      className="mt-1 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                    />
+                  </label>
+                ))}
+              </div>
+              {serviceHasHours(item) ? (
+                <p className="mt-2 text-[11px] text-cyan-200/80">{t('objectFixedBadge').replace('{hours}', item.name)}</p>
+              ) : null}
             </li>
           ))}
         </ul>
