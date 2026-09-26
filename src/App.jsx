@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import WorkPlan from './WorkPlan'
 import CompanyBoard from './CompanyBoard'
+import ErrorBoundary from './ErrorBoundary'
 import Inbox from './Inbox'
 import { EmployeeBottomNav, EmployeeDesktopNav, EmployeeHeader, EmployeeProfilePanel } from './plan/EmployeeChrome'
 import { AdminHeader, AdminPrimaryNav } from './plan/AdminChrome'
@@ -2683,38 +2684,42 @@ function App() {
 
             {user && (
               <div className={['plan', 'openPosts', 'history', 'hours', 'mine'].includes(view) ? '' : 'hidden'} aria-hidden={!['plan', 'openPosts', 'history', 'hours', 'mine'].includes(view)}>
-                <WorkPlan
-                  t={t}
-                  language={language}
-                  view={view}
-                  isAdmin={canPlan}
-                  hideOwnerPlan={isPlanner}
-                  canGrantPlanner={isAdmin}
-                  workers={workers}
-                  objects={objects}
-                  currentWorker={currentWorker}
-                  onOpenNotices={() => setView('notices')}
-                  onOpenHours={() => setView('hours')}
-                  onReloadWorkers={incarcaWorkers}
-                  onReloadObjects={incarcaObjects}
-                  onHelpAvailable={handleHelpAvailable}
-                  onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
-                />
+                <ErrorBoundary language={language}>
+                  <WorkPlan
+                    t={t}
+                    language={language}
+                    view={view}
+                    isAdmin={canPlan}
+                    hideOwnerPlan={isPlanner}
+                    canGrantPlanner={isAdmin}
+                    workers={workers}
+                    objects={objects}
+                    currentWorker={currentWorker}
+                    onOpenNotices={() => setView('notices')}
+                    onOpenHours={() => setView('hours')}
+                    onReloadWorkers={incarcaWorkers}
+                    onReloadObjects={incarcaObjects}
+                    onHelpAvailable={handleHelpAvailable}
+                    onOpenView={(next) => { setInboxOpen(false); setProfileOpen(false); setView(next) }}
+                  />
+                </ErrorBoundary>
               </div>
             )}
             {user && (
               <div className={view === 'notices' || view === 'guides' ? '' : 'hidden'} aria-hidden={view !== 'notices' && view !== 'guides'}>
-                <CompanyBoard
-                  t={t}
-                  view={view}
-                  isAdmin={canPlan}
-                  displayName={displayName}
-                  userId={user.id}
-                  workers={workers}
-                  objects={objects}
-                  currentWorker={currentWorker}
-                  onOpenPlan={() => setView('plan')}
-                />
+                <ErrorBoundary language={language}>
+                  <CompanyBoard
+                    t={t}
+                    view={view}
+                    isAdmin={canPlan}
+                    displayName={displayName}
+                    userId={user.id}
+                    workers={workers}
+                    objects={objects}
+                    currentWorker={currentWorker}
+                    onOpenPlan={() => setView('plan')}
+                  />
+                </ErrorBoundary>
               </div>
             )}
             {view === 'pontaj' ? (

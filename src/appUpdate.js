@@ -1,27 +1,25 @@
 const BUILD = String(import.meta.env.VITE_APP_BUILD || '')
 const SEEN_KEY = 'voqenti-seen-build'
-const FRESH_PARAM = 'fresh'
+const ENTRY = '/app'
+
+export function appHref() {
+  return `${ENTRY}?t=${Date.now()}`
+}
 
 export function stripFreshParam() {
   try {
+    if (!window.location.pathname.startsWith(ENTRY)) return
     const url = new URL(window.location.href)
-    if (!url.searchParams.has(FRESH_PARAM)) return
-    url.searchParams.delete(FRESH_PARAM)
-    const next = `${url.pathname}${url.search}${url.hash}`
-    window.history.replaceState({}, '', next || '/')
+    if (!url.searchParams.has('t')) return
+    url.searchParams.delete('t')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   } catch {
     /* ignore */
   }
 }
 
 export function reloadFresh() {
-  try {
-    const url = new URL(window.location.href)
-    url.searchParams.set(FRESH_PARAM, String(Date.now()))
-    window.location.replace(`${url.pathname}${url.search}${url.hash}`)
-  } catch {
-    window.location.href = `/?${FRESH_PARAM}=${Date.now()}`
-  }
+  window.location.replace(appHref())
 }
 
 async function remoteBuild() {

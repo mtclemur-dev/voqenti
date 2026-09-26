@@ -1,5 +1,5 @@
 import { Component } from 'react'
-import { reloadFresh } from './appUpdate'
+import { appHref, reloadFresh } from './appUpdate'
 
 const messages = {
   de: {
@@ -31,6 +31,14 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error) {
     console.error(error)
+    try {
+      if (!sessionStorage.getItem('voqenti-crash-reload')) {
+        sessionStorage.setItem('voqenti-crash-reload', '1')
+        window.location.replace(appHref())
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   render() {

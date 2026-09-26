@@ -1143,6 +1143,7 @@ export default function WorkPlan({
   )
 
   const historyEntries = useMemo(() => {
+    try {
     const search = historySearch.trim().toLowerCase()
     const rows = []
     for (const job of jobs) {
@@ -1165,7 +1166,7 @@ export default function WorkPlan({
         if (historyWorkerId && row.worker_id !== historyWorkerId) continue
         if (officeIds.has(row.worker_id)) continue
         if (hideOwnerPlan && ownerIds.has(row.worker_id)) continue
-        const name = workerName(row.worker_id)
+        const name = String(workerName(row.worker_id) || '')
         if (search && !name.toLowerCase().includes(search)) continue
         rows.push({
           key: `${job.id}-${row.worker_id}`,
@@ -1177,6 +1178,9 @@ export default function WorkPlan({
       }
     }
     return rows.sort((a, b) => `${b.job.work_date}${b.job.start_time || ''}`.localeCompare(`${a.job.work_date}${a.job.start_time || ''}`))
+    } catch {
+      return []
+    }
   }, [hideOwnerPlan, historyFrom, historyObjectId, historySearch, historyServiceKey, historyTo, historyWorkerId, jobs, objects, officeIds, ownerIds, workerName])
 
   const historyServices = useMemo(() => {
