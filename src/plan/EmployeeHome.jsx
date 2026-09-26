@@ -11,6 +11,7 @@ import { serviceLabel } from './objectServices'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
+  firstName,
   objectForService,
   withChainedAssignmentRows,
   berlinWeekDays,
