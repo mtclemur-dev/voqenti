@@ -1,4 +1,4 @@
-import { WORK_WEEKDAYS } from './planUtils.js'
+const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
 
 function asText(value) {
   return String(value || '').trim()

@@ -3,6 +3,9 @@ import { DateTime } from 'luxon'
 import { serviceHasHours, serviceOf } from './objectServices.js'
 import { DEPOT_ADDRESS, travelBetweenSync, travelMinutesSync } from './travel.js'
 
+export const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
+export const TURNUS_DAYS = [1, 2, 3, 4, 5, 6, 7]
+
 export function firstName(fullName) {
   const text = String(fullName || '').trim()
   if (!text) return ''
@@ -221,31 +224,36 @@ export function weekdayFromDate(date) {
 
 export function objectForService(object, serviceId, fallbackName = '') {
   if (!object) return object
-  const service = serviceOf(object, serviceId, fallbackName)
-  if (!service) return object
-  const hasHours = serviceHasHours(service)
-  const startByDay = { ...parseFixedStartByDay(object.fixed_hours_json) }
-  for (const [day, raw] of Object.entries(service.start_by_day || {})) {
-    const clock = formatClock(raw)
-    if (clock) startByDay[Number(day)] = clock
-  }
-  const start = formatClock(service.start) || objectFixedStart(object)
-  const locked = Boolean(service.locked || objectTimeLocked(object))
-  const hasDayStarts = Object.keys(service.start_by_day || {}).some(day => formatClock(service.start_by_day[day]))
-  if (!hasHours && !formatClock(service.start) && !hasDayStarts) return object
-  const byDay = hasHours
-    ? { ...(service.hours_by_day || {}) }
-    : parseFixedHoursByDay(object.fixed_hours_json)
-  const daily = hasHours ? parseFixedHoursValue(service.hours) : parseFixedHoursValue(object.fixed_hours)
-  if (hasHours && daily) {
-    for (const day of WORK_WEEKDAYS) {
-      if (!parseFixedHoursValue(byDay[day])) byDay[day] = daily
+  try {
+    const service = serviceOf(object, serviceId, fallbackName)
+    if (!service) return object
+    const hasHours = serviceHasHours(service)
+    const startByDay = { ...parseFixedStartByDay(object.fixed_hours_json) }
+    const starts = service.start_by_day && typeof service.start_by_day === 'object' ? service.start_by_day : {}
+    for (const [day, raw] of Object.entries(starts)) {
+      const clock = formatClock(raw)
+      if (clock) startByDay[Number(day)] = clock
     }
-  }
-  return {
-    ...object,
-    fixed_hours: daily || null,
-    fixed_hours_json: serializeFixedHoursJson(byDay, { locked, start, startByDay }),
+    const start = formatClock(service.start) || objectFixedStart(object)
+    const locked = Boolean(service.locked || objectTimeLocked(object))
+    const hasDayStarts = Object.keys(starts).some(day => formatClock(starts[day]))
+    if (!hasHours && !formatClock(service.start) && !hasDayStarts) return object
+    const byDay = hasHours
+      ? { ...(service.hours_by_day && typeof service.hours_by_day === 'object' ? service.hours_by_day : {}) }
+      : parseFixedHoursByDay(object.fixed_hours_json)
+    const daily = hasHours ? parseFixedHoursValue(service.hours) : parseFixedHoursValue(object.fixed_hours)
+    if (hasHours && daily) {
+      for (const day of WORK_WEEKDAYS) {
+        if (!parseFixedHoursValue(byDay[day])) byDay[day] = daily
+      }
+    }
+    return {
+      ...object,
+      fixed_hours: daily || null,
+      fixed_hours_json: serializeFixedHoursJson(byDay, { locked, start, startByDay }),
+    }
+  } catch {
+    return object
   }
 }
 
@@ -273,29 +281,33 @@ export function objectFixedHoursLabel(object, date) {
 }
 
 export function formatObjectFixedSummary(object, language = 'de') {
-  const map = parseFixedHoursByDay(object?.fixed_hours_json)
-  const days = TURNUS_DAYS.filter(day => map[day])
-  const workDays = WORK_WEEKDAYS.filter(day => map[day])
-  const fallback = parseFixedHoursValue(object?.fixed_hours)
-  const start = objectFixedStart(object)
-  const startByDay = parseFixedStartByDay(object?.fixed_hours_json)
-  const extras = WORK_WEEKDAYS
-    .filter(day => startByDay[day] && startByDay[day] !== start)
-    .map(day => `${weekdayLabel(day, language)} ${startByDay[day]}`)
-  let hours = ''
-  if (!days.length) hours = formatFixedHoursLabel(fallback)
-  else {
-    const sameValue = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]])
-    const wholeWeek = sameValue && days.length === 7
-    const workWeek = sameValue && workDays.length === 5 && days.length === 5
-    if (wholeWeek || workWeek) hours = formatFixedHoursLabel(map[days[0]])
+  try {
+    const map = parseFixedHoursByDay(object?.fixed_hours_json)
+    const days = TURNUS_DAYS.filter(day => map[day])
+    const workDays = WORK_WEEKDAYS.filter(day => map[day])
+    const fallback = parseFixedHoursValue(object?.fixed_hours)
+    const start = objectFixedStart(object)
+    const startByDay = parseFixedStartByDay(object?.fixed_hours_json)
+    const extras = WORK_WEEKDAYS
+      .filter(day => startByDay[day] && startByDay[day] !== start)
+      .map(day => `${weekdayLabel(day, language)} ${startByDay[day]}`)
+    let hours = ''
+    if (!days.length) hours = formatFixedHoursLabel(fallback)
     else {
-      const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
-      if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
-      hours = parts.join(' · ')
+      const sameValue = days.every(day => map[day] === map[days[0]]) && (!fallback || fallback === map[days[0]])
+      const wholeWeek = sameValue && days.length === 7
+      const workWeek = sameValue && workDays.length === 5 && days.length === 5
+      if (wholeWeek || workWeek) hours = formatFixedHoursLabel(map[days[0]])
+      else {
+        const parts = days.map(day => `${weekdayLabel(day, language)} ${formatFixedHoursLabel(map[day])}`)
+        if (fallback && days.length < 7) parts.push(formatFixedHoursLabel(fallback))
+        hours = parts.join(' · ')
+      }
     }
+    return [start, hours, ...extras].filter(Boolean).join(' · ')
+  } catch {
+    return ''
   }
-  return [start, hours, ...extras].filter(Boolean).join(' · ')
 }
 
 export function clockPlusMinutes(start, minutes) {
@@ -610,49 +622,57 @@ function applyPackedJob(job, rangeByWorker) {
 }
 
 export function withChainedJobTimes(jobs, workerId, date, objects) {
-  const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
-  if (!packed.length) return jobs || []
-  const rangeByJob = new Map(packed.map(slot => [slot.jobId, slot.range]))
-  return (jobs || []).map((job) => {
-    const range = rangeByJob.get(job.id)
-    if (!range) return job
-    return {
-      ...job,
-      start_time: range.start,
-      end_time: range.end,
-      work_job_assignees: (job.work_job_assignees ?? []).map(row => (
-        row.worker_id === workerId
-          ? { ...row, planned_start: range.start, planned_end: range.end }
-          : row
-      )),
-    }
-  })
+  try {
+    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, date, { objects }))
+    if (!packed.length) return jobs || []
+    const rangeByJob = new Map(packed.map(slot => [slot.jobId, slot.range]))
+    return (jobs || []).map((job) => {
+      const range = rangeByJob.get(job.id)
+      if (!range) return job
+      return {
+        ...job,
+        start_time: range.start,
+        end_time: range.end,
+        work_job_assignees: (job.work_job_assignees ?? []).map(row => (
+          row.worker_id === workerId
+            ? { ...row, planned_start: range.start, planned_end: range.end }
+            : row
+        )),
+      }
+    })
+  } catch {
+    return jobs || []
+  }
 }
 
 export function withChainedBoardJobs(jobs, date, objects) {
-  const day = isoDate(date)
-  if (!day) return jobs || []
-  const workerIds = new Set()
-  for (const job of jobs || []) {
-    if (isoDate(job.work_date) !== day) continue
-    for (const row of job.work_job_assignees ?? []) {
-      if (row.worker_id && (!row.status || ['assigned', 'approved'].includes(row.status))) {
-        workerIds.add(row.worker_id)
+  try {
+    const day = isoDate(date)
+    if (!day) return jobs || []
+    const workerIds = new Set()
+    for (const job of jobs || []) {
+      if (isoDate(job.work_date) !== day) continue
+      for (const row of job.work_job_assignees ?? []) {
+        if (row.worker_id && (!row.status || ['assigned', 'approved'].includes(row.status))) {
+          workerIds.add(row.worker_id)
+        }
       }
     }
-  }
-  const rangesByJob = new Map()
-  for (const workerId of workerIds) {
-    const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
-    for (const slot of packed) {
-      if (!rangesByJob.has(slot.jobId)) rangesByJob.set(slot.jobId, new Map())
-      rangesByJob.get(slot.jobId).set(workerId, slot.range)
+    const rangesByJob = new Map()
+    for (const workerId of workerIds) {
+      const { packed } = packWorkerDay(workerDaySlots(jobs, workerId, day, { objects }))
+      for (const slot of packed) {
+        if (!rangesByJob.has(slot.jobId)) rangesByJob.set(slot.jobId, new Map())
+        rangesByJob.get(slot.jobId).set(workerId, slot.range)
+      }
     }
+    return (jobs || []).map((job) => {
+      const rangeByWorker = rangesByJob.get(job.id)
+      return rangeByWorker ? applyPackedJob(job, rangeByWorker) : job
+    })
+  } catch {
+    return jobs || []
   }
-  return (jobs || []).map((job) => {
-    const rangeByWorker = rangesByJob.get(job.id)
-    return rangeByWorker ? applyPackedJob(job, rangeByWorker) : job
-  })
 }
 
 export function withChainedAssignmentRows(rows, objects) {
@@ -958,9 +978,6 @@ export function isWeekend(value) {
   return dt.isValid && dt.weekday >= 6
 }
 
-export const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
-export const TURNUS_DAYS = [1, 2, 3, 4, 5, 6, 7]
-
 export function parseTurnus(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) {
@@ -1028,8 +1045,15 @@ export function turnusForDate(object, date) {
 }
 
 export function weekdayLabel(weekday, language = 'de', format = 'ccc') {
-  const dt = DateTime.fromObject({ weekday }, { zone: 'Europe/Berlin' }).setLocale(language)
-  return dt.isValid ? dt.toFormat(format) : ''
+  const locale = ['de', 'ro', 'ru'].includes(String(language || '').slice(0, 2))
+    ? String(language).slice(0, 2)
+    : 'de'
+  try {
+    const dt = DateTime.fromObject({ weekday: Number(weekday) || 1 }, { zone: 'Europe/Berlin' }).setLocale(locale)
+    return dt.isValid ? dt.toFormat(format) : ''
+  } catch {
+    return ''
+  }
 }
 
 export function objectPlanWeekdays(object) {

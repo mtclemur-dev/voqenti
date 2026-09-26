@@ -18,6 +18,15 @@ function inviteLoginEmail(workerId) {
   return id ? `w${id}@voqenti.app` : ''
 }
 
+function pickLanguage(value, fallback = 'de') {
+  const code = String(value || '').trim().slice(0, 2).toLowerCase()
+  return ['de', 'ro', 'ru'].includes(code) ? code : fallback
+}
+
+function nameKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
 function AuthPasswordField({ value, onChange, placeholder, autoComplete, show, onToggle, showLabel, hideLabel }) {
   return (
     <div className="relative">
@@ -370,11 +379,11 @@ function App() {
     ? ''
     : `${selectedWorkersForReport.slice(0, 2).map(worker => worker.name).join(', ')}${selectedWorkersForReport.length > 2 ? ` +${selectedWorkersForReport.length - 2}` : ''}`
   const selectableWorkers = canEditLockedReports ? sortedWorkers : sortedWorkers.filter(worker => worker.id !== currentWorker?.id)
-  const filteredWorkers = selectableWorkers.filter(worker => worker.name.toLowerCase().includes(workerSearch.trim().toLowerCase()))
+  const filteredWorkers = selectableWorkers.filter(worker => nameKey(worker.name).includes(nameKey(workerSearch)))
   const workSummary = selectedWorkTemplates.length === 0
     ? ''
     : `${selectedWorkTemplates.slice(0, 2).join(', ')}${selectedWorkTemplates.length > 2 ? ` +${selectedWorkTemplates.length - 2}` : ''}`
-  const currentObjectForEquipment = selectedReportObject ?? objects.find(object => object.name.toLowerCase() === reportObject.trim().toLowerCase())
+  const currentObjectForEquipment = selectedReportObject ?? objects.find(object => nameKey(object.name) === nameKey(reportObject))
 
   const getStoredSeconds = (record, minutesKey, secondsKey) => {
     const minutesValue = Number(record?.[minutesKey] ?? 0)
@@ -923,7 +932,7 @@ function App() {
       const u = data?.user ?? null
       setUser(u)
       if (u) {
-        setLanguage(u.user_metadata?.preferred_language ?? 'de')
+        setLanguage(pickLanguage(u.user_metadata?.preferred_language, 'de'))
       }
     }
     initAuth()
@@ -933,7 +942,7 @@ function App() {
       const next = session?.user ?? null
       setUser(current => (current?.id === next?.id && current?.email === next?.email ? current : next))
       if (next) {
-        const lang = next.user_metadata?.preferred_language ?? 'de'
+        const lang = pickLanguage(next.user_metadata?.preferred_language, 'de')
         setLanguage(current => current === lang ? current : lang)
       }
     })
@@ -1288,7 +1297,7 @@ function App() {
 
   const handleReportObjectChange = (value) => {
     setReportObject(value)
-    const matchedObject = objects.find(object => object.name.toLowerCase() === value.trim().toLowerCase())
+    const matchedObject = objects.find(object => nameKey(object.name) === nameKey(value))
     setSelectedObjectId(matchedObject?.id ?? '')
   }
 
@@ -1315,7 +1324,7 @@ function App() {
 
   const handleMaterialRequestObjectChange = (value) => {
     setMaterialRequestObject(value)
-    const matchedObject = objects.find(object => object.name.toLowerCase() === value.trim().toLowerCase())
+    const matchedObject = objects.find(object => nameKey(object.name) === nameKey(value))
     setMaterialRequestObjectId(matchedObject?.id ?? '')
   }
 
@@ -1603,10 +1612,11 @@ function App() {
   }, [view])
 
   const handleLanguageChange = async (nextLanguage) => {
-    setLanguage(nextLanguage)
+    const lang = pickLanguage(nextLanguage, language)
+    setLanguage(lang)
     if (user) {
       const { error } = await supabase.auth.updateUser({
-        data: { preferred_language: nextLanguage },
+        data: { preferred_language: lang },
       })
       if (error) {
         console.error('Language update error:', error)

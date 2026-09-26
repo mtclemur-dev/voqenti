@@ -955,7 +955,12 @@ export default function WorkPlan({
   const packingRef = useRef(false)
   useEffect(() => {
     if (!isAdmin || packingRef.current || !jobs.length) return undefined
-    const pairs = overlappingWorkerDays(jobs, objects, { from: today })
+    let pairs = []
+    try {
+      pairs = overlappingWorkerDays(jobs, objects, { from: today })
+    } catch {
+      return undefined
+    }
     if (!pairs.length) return undefined
     let cancelled = false
     packingRef.current = true
@@ -1147,7 +1152,7 @@ export default function WorkPlan({
         const matchId = job.object_id === historyObjectId
         const matchName = selected && (
           job.object_name === selected.name
-          || (job.location_text || '').toLowerCase().includes(selected.name.toLowerCase())
+          || (selected.name && (job.location_text || '').toLowerCase().includes(String(selected.name).toLowerCase()))
         )
         if (!matchId && !matchName) continue
       }
@@ -1180,7 +1185,7 @@ export default function WorkPlan({
       ? jobs.filter(job => {
         const object = objects.find(item => item.id === historyObjectId)
         return job.object_id === historyObjectId
-          || (object && (job.object_name === object.name || (job.location_text || '').toLowerCase().includes(object.name.toLowerCase())))
+          || (object && (job.object_name === object.name || (object.name && (job.location_text || '').toLowerCase().includes(String(object.name).toLowerCase()))))
       })
       : jobs
     return collectServiceOptions(selected, scopedJobs)
