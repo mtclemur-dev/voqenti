@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { reloadFresh } from './appUpdate'
 
 const messages = {
   de: {
@@ -45,7 +46,7 @@ export default class ErrorBoundary extends Component {
           {detail ? <p className="mt-3 break-words text-xs text-rose-100/70">{detail}</p> : null}
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => reloadFresh()}
             className="mt-5 w-full rounded-xl bg-cyan-600 px-4 py-3 font-semibold text-white"
           >
             {copy.button}
