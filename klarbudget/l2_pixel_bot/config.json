@@ -1,0 +1,202 @@
+{
+  "window_title": "Lineage II",
+  "window_titles": [
+    "Lineage II",
+    "L2",
+    "Elmortlab",
+    "Interlude",
+    "Lineage"
+  ],
+  "input_method": "foreground",
+  "input_keep_focus": true,
+  "memory": {
+    "enabled": true,
+    "required": false,
+    "process_name": "l2.exe"
+  },
+  "recovery": {
+    "sit_key": "",
+    "sit_duration_ms": 5000,
+    "recharge_key": "",
+    "recharge_delay_ms": 600
+  },
+  "serial": {
+    "port": "COM3",
+    "baudrate": 9600
+  },
+  "keys": {
+    "target_next": "f1",
+    "attack": "f2",
+    "skill1": "f3",
+    "skill2": "f4",
+    "pick_up": "f8",
+    "potion_hp": "f6",
+    "potion_mp": "f7",
+    "sweep": "f10",
+    "spoil_key": "f9"
+  },
+  "combat": {
+    "mode": "rotation",
+    "use_direct_input": true,
+    "rotation": [
+      "f2",
+      "f3",
+      "f2",
+      "f4",
+      "f2",
+      "f3"
+    ],
+    "trust_target_next": true,
+    "max_fight_seconds": 10,
+    "death_confirm_checks": 3,
+    "use_spoil": false,
+    "use_sweep": false
+  },
+  "skillbar_setup": {
+    "note": "L2 Interlude: F1-F12 citesc DOAR bara de jos (shortcut bar inferioara). Skill-urile din bara de sus NU sunt apasate de F2-F12.",
+    "bottom_bar": {
+      "f1": "Next Target (/targetnext)",
+      "f2": "Skill principal de atac (muta din bara de sus slot 1)",
+      "f3": "Skill 1 / fist",
+      "f4": "Skill 2",
+      "f8": "Pick Up"
+    }
+  },
+  "target_mobs": {
+    "enabled": true,
+    "stick_until_kill": true,
+    "names": [
+      "Stone Golem",
+      "Werewolf Chieftain"
+    ],
+    "approach_distance": 450.0,
+    "attack_distance": 200.0,
+    "max_search_distance": 2500.0,
+    "max_target_cycles": 25,
+    "loot_presses": 4
+  },
+  "pixel_settings": {
+    "target_hp_bar": {
+      "scan_x": 801,
+      "scan_y": 53,
+      "scan_width": 300,
+      "scan_height": 8,
+      "color_rgb": [
+        214,
+        23,
+        66
+      ],
+      "tolerance": 50,
+      "min_matching_pixels": 5
+    },
+    "self_hp": {
+      "x": 145,
+      "y": 90,
+      "color_rgb": [
+        0,
+        77,
+        189
+      ],
+      "tolerance": 50,
+      "enabled": false
+    },
+    "self_mp": {
+      "x": 170,
+      "y": 60,
+      "color_rgb": [
+        20,
+        80,
+        190
+      ],
+      "tolerance": 50,
+      "enabled": false
+    }
+  },
+  "farm_zone": {
+    "enabled": true,
+    "mode": "center",
+    "center_x": 0.0,
+    "center_y": 0.0,
+    "radius": 1700,
+    "x_min": -1700.0,
+    "x_max": 1700.0,
+    "y_min": -1700.0,
+    "y_max": 1700.0,
+    "grid_cols": 3,
+    "grid_rows": 3,
+    "arrival_distance": 200,
+    "target_checks_per_point": 3,
+    "waypoints": [
+      {
+        "x": -1700.0,
+        "y": -1700.0
+      },
+      {
+        "x": 0.0,
+        "y": -1700.0
+      },
+      {
+        "x": 1700.0,
+        "y": -1700.0
+      },
+      {
+        "x": 1700.0,
+        "y": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": -1700.0,
+        "y": 0.0
+      },
+      {
+        "x": -1700.0,
+        "y": 1700.0
+      },
+      {
+        "x": 0.0,
+        "y": 1700.0
+      },
+      {
+        "x": 1700.0,
+        "y": 1700.0
+      }
+    ]
+  },
+  "hunting": {
+    "enabled": false,
+    "movement_method": "keyboard",
+    "max_failed_before_hunt": 3,
+    "walk_time_ms": 3500,
+    "check_target_interval_ms": 250,
+    "target_acquire_delay_ms": 150,
+    "turn_time_ms": 450,
+    "return_home_after_walks": 8,
+    "walk_key": "w",
+    "turn_left_key": "a",
+    "turn_right_key": "d",
+    "back_key": "s"
+  },
+  "timings": {
+    "loop_delay_ms": 40,
+    "attack_delay_ms": 450,
+    "skill_delay_ms": 280,
+    "target_search_delay_ms": 400,
+    "loot_count": 3,
+    "loot_delay_ms": 250,
+    "mob_death_wait_ms": 500,
+    "key_press_duration_ms": 120,
+    "hp_potion_cooldown_ms": 5000,
+    "mp_potion_cooldown_ms": 8000
+  },
+  "safety": {
+    "pause_key": "home",
+    "stop_key": "end",
+    "emergency_stop_key": "f12",
+    "hp_threshold_pct": 40,
+    "mp_threshold_pct": 20,
+    "mp_recovery_pct": 30
+  }
+}

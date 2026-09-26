@@ -1,0 +1,7 @@
+klarbudget
+android
+.node_modules
+.git
+*.jks
+*.keystore
+l2_pixel_bot

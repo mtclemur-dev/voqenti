@@ -1,0 +1,581 @@
+import { Fragment, useMemo, useState } from 'react'
+import WeekBoard from './WeekBoard'
+import { IconAlert, IconChevron, IconUser, IconWork } from './icons'
+import WorkerShortcutRow from './WorkerShortcuts'
+import {
+  assignmentRange,
+  clockRange,
+  objectForService,
+  durationMinutes,
+  fillText,
+  formatClock,
+  jobTone,
+  longWeekdayDate,
+  isoDate,
+  minutesLabel,
+  rowWorkMinutes,
+  selfLogMinutes,
+  shortPlace,
+  turnusForDate,
+  workerInitials,
+} from './planUtils'
+import { serviceLabel } from './objectServices'
+
+const TONE = {
+  open: 'bg-cyan-400',
+  confirmed: 'bg-emerald-400',
+  attention: 'bg-amber-300',
+  problem: 'bg-rose-400',
+  idle: 'bg-slate-500',
+}
+
+const DAY_TARGET_MINUTES = 7 * 60
+
+function dayMinutesForWorker(workerId, jobs, extraMinutes = 0) {
+  let total = 0
+  let counted = false
+  for (const job of jobs) {
+    if (job?.status === 'cancelled' || job?.status === 'canceled') continue
+    const row = (job.work_job_assignees ?? []).find(item => item.worker_id === workerId && ['assigned', 'approved'].includes(item.status))
+    if (!row) continue
+    const minutes = rowWorkMinutes({ ...row, work_jobs: job })
+    if (!minutes) continue
+    total += minutes
+    counted = true
+  }
+  if (extraMinutes) {
+    total += extraMinutes
+    counted = true
+  }
+  return counted ? total : null
+}
+
+function selfLogMinutesForDay(logs, workerId, date) {
+  if (!workerId || !date) return 0
+  let total = 0
+  for (const item of logs || []) {
+    if (item.worker_id && item.worker_id !== workerId) continue
+    if (isoDate(item.work_date) !== date) continue
+    const minutes = selfLogMinutes(item)
+    if (minutes) total += minutes
+  }
+  return total
+}
+
+function plannedMinutesForDay(jobs, skipIds) {
+  let total = 0
+  let counted = false
+  for (const job of jobs) {
+    if (job?.status === 'cancelled' || job?.status === 'canceled') continue
+    const people = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
+    for (const row of people) {
+      if (skipIds?.has(row.worker_id)) continue
+      const range = assignmentRange(row, job)
+      if (!range.start || !range.end) continue
+      const minutes = durationMinutes(job.work_date, range.start, range.end)
+      if (!minutes) continue
+      total += minutes
+      counted = true
+    }
+  }
+  return counted ? total : null
+}
+
+function jobHasWorker(job, workerId) {
+  return (job.work_job_assignees ?? []).some(row => row.worker_id === workerId && ['assigned', 'approved', 'declined'].includes(row.status))
+}
+
+function jobStatusLabel(job, t) {
+  const tone = jobTone(job)
+  if (tone === 'idle') return t('planCancelled')
+  if (tone === 'problem') return t('planDeclined')
+  if (tone === 'attention') {
+    const active = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
+    const needed = Math.max(Number(job.needed_count) || 0, active.length, 1)
+    if (!active.length || active.length < needed) return t('planCoverShort')
+    return t('planUnseen')
+  }
+  if (tone === 'confirmed') return t('planSeenDone')
+  return t('planAssigned')
+}
+
+export default function AdminPlanBoard({
+  t,
+  language,
+  today,
+  liveBoardDate,
+  boardJobs,
+  boardMarks,
+  dayRoster,
+  rosterFilter,
+  onRosterFilter,
+  rosterSearch,
+  onRosterSearch,
+  focusWorkerId,
+  onFocusWorker,
+  boardOpenId,
+  onToggleJob,
+  onSelectDate,
+  onNewJob,
+  objects = [],
+  workerName,
+  renderJob,
+  jobFormOpen = false,
+  shortcutJobsFor,
+  onWorkerMessage,
+  onAddWorkerToJobs,
+  onStartJobWithWorker,
+  shortcutBusy = false,
+  hideOwnerHours = false,
+  ownerIds,
+  skipWorkerIds,
+  selfLogs = [],
+  currentWorkerId = '',
+  children,
+}) {
+  const hiddenOwnerIds = ownerIds instanceof Set ? ownerIds : new Set(ownerIds || [])
+  const skippedIds = skipWorkerIds instanceof Set ? skipWorkerIds : new Set(skipWorkerIds || [])
+  const hiddenHourIds = useMemo(() => new Set([...hiddenOwnerIds, ...skippedIds]), [hiddenOwnerIds, skippedIds])
+  const extraMinutesFor = (workerId) => (
+    workerId && workerId === currentWorkerId
+      ? selfLogMinutesForDay(selfLogs, workerId, liveBoardDate)
+      : 0
+  )
+  const [peopleOpen, setPeopleOpen] = useState(false)
+  const search = rosterSearch.trim().toLowerCase()
+  const sortedJobs = useMemo(
+    () => [...boardJobs].sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')) || String(a.id).localeCompare(String(b.id))),
+    [boardJobs],
+  )
+  const people = useMemo(() => {
+    const rows = [
+      ...dayRoster.free.map(item => ({ ...item, status: 'free' })),
+      ...dayRoster.working.map(item => ({ ...item, status: 'working' })),
+      ...dayRoster.off.map(item => ({ ...item, status: 'off' })),
+    ]
+    return rows
+      .filter(item => !rosterFilter || item.status === rosterFilter)
+      .filter(item => !search || (item.name || '').toLowerCase().includes(search))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map(item => {
+        const jobCount = sortedJobs.filter(job => jobHasWorker(job, item.id)).length
+        const hideHours = skippedIds.has(item.id) || (hideOwnerHours && hiddenOwnerIds.has(item.id))
+        const extra = extraMinutesFor(item.id)
+        const minutes = hideHours
+          ? null
+          : item.status === 'working' || extra
+            ? dayMinutesForWorker(item.id, sortedJobs, extra)
+            : (item.id === currentWorkerId ? (extra || 0) : null)
+        const shown = hideHours ? null : (minutes != null ? minutes : (item.id === currentWorkerId ? 0 : null))
+        return { ...item, jobCount, minutes: shown, short: shown != null && shown < DAY_TARGET_MINUTES }
+      })
+  }, [currentWorkerId, dayRoster, extraMinutesFor, hiddenOwnerIds, hideOwnerHours, rosterFilter, search, skippedIds, sortedJobs])
+
+  const dayMinutes = useMemo(
+    () => plannedMinutesForDay(sortedJobs, hiddenHourIds.size ? hiddenHourIds : null),
+    [hiddenHourIds, sortedJobs],
+  )
+  const shortPeople = useMemo(() => {
+    const rows = []
+    const seen = new Set()
+    const add = (item, minutes) => {
+      if (!item?.id || seen.has(item.id)) return
+      if (item.id === currentWorkerId || hiddenOwnerIds.has(item.id) || skippedIds.has(item.id)) return
+      if (minutes == null || minutes >= DAY_TARGET_MINUTES) return
+      seen.add(item.id)
+      rows.push({ ...item, minutes, short: true })
+    }
+    for (const item of dayRoster.working) {
+      add(item, dayMinutesForWorker(item.id, sortedJobs, extraMinutesFor(item.id)))
+    }
+    return rows.sort((a, b) => a.minutes - b.minutes || (a.name || '').localeCompare(b.name || ''))
+  }, [currentWorkerId, dayRoster.working, extraMinutesFor, hiddenOwnerIds, skippedIds, sortedJobs])
+  const visibleJobs = focusWorkerId
+    ? sortedJobs.filter(job => jobHasWorker(job, focusWorkerId))
+    : sortedJobs
+  const focusName = people.find(item => item.id === focusWorkerId)?.name
+    || [...dayRoster.free, ...dayRoster.working, ...dayRoster.off].find(item => item.id === focusWorkerId)?.name
+    || ''
+
+  const emptyPeople = !people.length
+    ? (search
+      ? t('adminEmptySearch')
+      : rosterFilter === 'free'
+        ? t('adminEmptyFree')
+        : rosterFilter === 'working'
+          ? t('adminEmptyWorking')
+          : rosterFilter === 'off'
+            ? t('adminEmptyOff')
+            : t('adminEmptyFree'))
+    : ''
+
+  const emptyJobs = focusWorkerId && !visibleJobs.length
+    ? t('adminJobsForWorkerEmpty')
+    : t('adminEmptyDayJobs')
+
+  const openForm = () => onNewJob?.(liveBoardDate)
+
+  return (
+    <div className="space-y-5">
+      <WeekBoard
+        t={t}
+        language={language}
+        today={today}
+        selectedDate={liveBoardDate}
+        onSelectDate={onSelectDate}
+        marks={boardMarks}
+        compact
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl font-black capitalize tracking-tight text-white sm:text-2xl">
+            {longWeekdayDate(liveBoardDate, language)}
+          </h2>
+          <p className="mt-1 text-sm text-slate-300">
+            {fillText(t('adminDayJobs'), { count: String(focusWorkerId ? visibleJobs.length : sortedJobs.length) })}
+            {dayMinutes != null ? ` · ${fillText(t('adminDayHours'), { hours: minutesLabel(dayMinutes, t) })}` : ''}
+            {' · '}
+            {fillText(t('adminDayPlanned'), { count: String(dayRoster.working.length) })}
+            {' · '}
+            {fillText(t('adminDayFree'), { count: String(dayRoster.free.length) })}
+            {' · '}
+            {fillText(t('adminDayOff'), { count: String(dayRoster.off.length) })}
+          </p>
+          {focusName && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-cyan-100">{fillText(t('adminWorkerSelected'), { name: focusName })}</p>
+              <button
+                type="button"
+                onClick={() => onFocusWorker('')}
+                className="min-h-11 rounded-xl bg-slate-800 px-3 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
+                {t('adminClearWorker')}
+              </button>
+            </div>
+          )}
+        </div>
+        {!jobFormOpen && (
+          <button
+            type="button"
+            onClick={openForm}
+            className="hidden min-h-12 shrink-0 items-center justify-center rounded-2xl bg-cyan-600 px-5 text-sm font-semibold text-white hover:bg-cyan-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 xl:inline-flex"
+          >
+            {t('adminNewJobPlus')}
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        {[
+          { id: 'free', label: t('planRosterFree'), count: dayRoster.free.length, Icon: IconUser, tone: 'emerald', filter: t('adminFilterFree') },
+          { id: 'working', label: t('planRosterBusy'), count: dayRoster.working.length, Icon: IconWork, tone: 'amber', filter: t('adminFilterBusy') },
+          { id: 'off', label: t('planRosterOff'), count: dayRoster.off.length, Icon: IconAlert, tone: 'rose', filter: t('adminFilterOff') },
+        ].map(card => {
+          const on = rosterFilter === card.id
+          return (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => onRosterFilter(on ? '' : card.id)}
+              aria-pressed={on}
+              aria-label={`${card.filter}: ${card.count}`}
+              className={`min-h-11 rounded-2xl px-2 py-3 text-left ring-1 transition hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:px-3 ${
+                on
+                  ? card.tone === 'emerald'
+                    ? 'bg-emerald-400/15 ring-emerald-300/70'
+                    : card.tone === 'amber'
+                      ? 'bg-amber-400/15 ring-amber-300/70'
+                      : 'bg-rose-400/15 ring-rose-300/70'
+                  : 'bg-slate-900/80 ring-white/10'
+              }`}
+            >
+              <card.Icon className={`h-5 w-5 ${card.tone === 'emerald' ? 'text-emerald-200' : card.tone === 'amber' ? 'text-amber-200' : 'text-rose-200'}`} />
+              <p className="mt-1 text-2xl font-black text-white">{card.count}</p>
+              <p className="text-[11px] font-semibold text-slate-200">{card.label}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      {shortPeople.length > 0 && (
+        <section className="rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-400/15 via-slate-900/80 to-slate-900/80 p-4">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-200">{t('adminUnderHoursTitle')}</p>
+              <p className="mt-1 text-sm text-amber-50/90">{t('adminUnderHoursHint')}</p>
+            </div>
+            <p className="shrink-0 text-3xl font-black tabular-nums text-white">{shortPeople.length}</p>
+          </div>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {shortPeople.map(person => {
+              const selected = focusWorkerId === person.id
+              const fill = Math.max(8, Math.round((person.minutes / DAY_TARGET_MINUTES) * 100))
+              return (
+                <li key={person.id}>
+                  <WorkerShortcutRow
+                    t={t}
+                    person={person}
+                    jobs={shortcutJobsFor?.(person.id) || []}
+                    canAssign
+                    onMessage={onWorkerMessage}
+                    onAddToJobs={onAddWorkerToJobs}
+                    onStartJob={onStartJobWithWorker}
+                    busy={shortcutBusy}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onFocusWorker(selected ? '' : person.id)}
+                      aria-pressed={selected}
+                      className={`w-full rounded-xl px-3 py-2.5 text-left ring-1 transition hover:bg-slate-950/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                        selected ? 'bg-slate-950/70 ring-cyan-300/50' : 'bg-slate-950/35 ring-amber-300/20'
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-semibold text-white">{person.name}</span>
+                        <span className="shrink-0 text-sm font-bold tabular-nums text-amber-100">{minutesLabel(person.minutes, t)}</span>
+                      </span>
+                      <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                        <span className="block h-full rounded-full bg-amber-300" style={{ width: `${fill}%` }} />
+                      </span>
+                    </button>
+                  </WorkerShortcutRow>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
+      {children}
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
+        <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-white">{t('adminPeoplePanel')}</h3>
+            <button
+              type="button"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 lg:hidden"
+              aria-expanded={peopleOpen}
+              aria-controls="admin-people-list"
+              onClick={() => setPeopleOpen(current => !current)}
+            >
+              <span className="sr-only">{peopleOpen ? t('collapseDetails') : t('expandDetails')}</span>
+              <IconChevron className={`h-5 w-5 transition-transform duration-200 motion-reduce:transition-none ${peopleOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+          <div id="admin-people-list" className={`${peopleOpen ? 'mt-3 block' : 'hidden'} lg:mt-3 lg:block`}>
+            <input
+              type="search"
+              value={rosterSearch}
+              onChange={e => onRosterSearch(e.target.value)}
+              placeholder={t('workerSearch')}
+              aria-label={t('workerSearch')}
+              className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            />
+            {emptyPeople ? (
+              <p className="mt-3 text-sm text-slate-300">{emptyPeople}</p>
+            ) : (
+              <ul className="mt-2 max-h-[28rem] space-y-1 overflow-auto">
+                {people.map(person => {
+                  const selected = focusWorkerId === person.id
+                  const statusLabel = person.status === 'off'
+                    ? t('planRosterOff')
+                    : person.status === 'working'
+                      ? t('planRosterBusy')
+                      : t('planRosterFree')
+                  return (
+                    <li key={person.id}>
+                      <WorkerShortcutRow
+                        t={t}
+                        person={person}
+                        jobs={shortcutJobsFor?.(person.id) || []}
+                        canAssign={person.status !== 'off'}
+                        onMessage={onWorkerMessage}
+                        onAddToJobs={onAddWorkerToJobs}
+                        onStartJob={onStartJobWithWorker}
+                        busy={shortcutBusy}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onFocusWorker(selected ? '' : person.id)}
+                          aria-pressed={selected}
+                          className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                            selected ? 'bg-cyan-500/15 ring-1 ring-cyan-300/40' : ''
+                          }`}
+                        >
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-cyan-100">
+                            {workerInitials(person.name)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-white">{person.name}</span>
+                            <span className="mt-0.5 block truncate text-xs text-slate-300">
+                              {person.status === 'working'
+                                ? `${fillText(t('adminJobCount'), { count: String(person.jobCount) })}${person.minutes != null ? ` · ${minutesLabel(person.minutes, t)}` : ''} · ${statusLabel}`
+                                : person.status === 'off'
+                                  ? `${person.label} · ${statusLabel}`
+                                  : statusLabel}
+                            </span>
+                          </span>
+                        </button>
+                      </WorkerShortcutRow>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-sm font-semibold text-white">
+            {focusWorkerId && focusName
+              ? fillText(t('adminJobsForWorker'), { name: focusName, count: String(visibleJobs.length) })
+              : t('adminJobsPanel')}
+          </h3>
+          {(() => {
+            if (!focusWorkerId) return null
+            const focusPerson = people.find(item => item.id === focusWorkerId)
+            const workMinutes = focusPerson?.minutes
+            const missing = workMinutes != null && workMinutes < DAY_TARGET_MINUTES
+              ? DAY_TARGET_MINUTES - workMinutes
+              : 0
+            if (!missing) return null
+            return (
+              <div className="mb-3 rounded-2xl bg-slate-950/70 px-4 py-3 ring-1 ring-white/10">
+                <p className="text-sm font-semibold tabular-nums text-amber-100">
+                  {fillText(t('travelMissing'), { time: minutesLabel(missing, t) })}
+                </p>
+              </div>
+            )
+          })()}
+          {sortedJobs.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-slate-900/80 px-5 py-8 text-center">
+              <p className="text-sm text-slate-300">{emptyJobs}</p>
+              {!jobFormOpen && (
+                <button
+                  type="button"
+                  onClick={openForm}
+                  className="mt-4 inline-flex min-h-12 items-center justify-center rounded-2xl bg-cyan-600 px-5 text-sm font-semibold text-white hover:bg-cyan-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+                >
+                  {t('adminCreateFirstJob')}
+                </button>
+              )}
+            </div>
+          ) : (
+            <ol className="relative space-y-2">
+              {focusWorkerId && !visibleJobs.length && (
+                <li className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-300">
+                  {t('adminJobsForWorkerEmpty')}
+                </li>
+              )}
+              {(focusWorkerId ? visibleJobs : sortedJobs).map((job) => {
+                const open = boardOpenId === job.id
+                const object = objectForService(objects.find(item => item.id === job.object_id), job.service_id, job.service_name)
+                const place = job.object_name || job.location_text || t('planNoPlace')
+                const area = shortPlace(job, object)
+                const focusRow = focusWorkerId
+                  ? (job.work_job_assignees ?? []).find(row => row.worker_id === focusWorkerId)
+                  : null
+                const peopleNames = focusWorkerId
+                  ? []
+                  : (job.work_job_assignees ?? [])
+                    .filter(row => ['assigned', 'approved'].includes(row.status))
+                    .map(row => workerName?.(row.worker_id))
+                    .filter(Boolean)
+                const range = focusRow
+                  ? assignmentRange(focusRow, job, object)
+                  : clockRange(job.start_time, job.end_time)
+                const start = range.start || formatClock(job.start_time)
+                const end = range.end || formatClock(job.end_time)
+                const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
+                const tone = jobTone(job)
+                const detailsId = `admin-job-${job.id}`
+                return (
+                  <Fragment key={job.id}>
+                  <li
+                    className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
+                      open ? 'relative z-20' : ''
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      aria-controls={detailsId}
+                      aria-label={`${place}${start ? ` ${start}` : ''}. ${open ? t('collapseDetails') : t('expandDetails')}`}
+                      onClick={() => onToggleJob(job.id)}
+                      className="flex min-h-12 w-full items-stretch gap-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    >
+                      <span className={`w-1 shrink-0 rounded-l-2xl ${TONE[tone]}`} aria-hidden="true" />
+                      <span className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]">
+                        <span className="text-base font-black tabular-nums leading-none text-white">
+                          {start || '—'}
+                          {end && start ? <span className="mt-1 block text-[12px] font-semibold tabular-nums text-slate-300">– {end}</span> : null}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-white">{place}</span>
+                          <span className="mt-0.5 block truncate text-xs text-slate-300">
+                            {[
+                              serviceLabel(job, object),
+                              area && area !== place ? area : '',
+                              focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
+                            ].filter(Boolean).join(' · ')}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="hidden max-w-[9rem] truncate text-xs font-semibold text-slate-200 sm:inline">{jobStatusLabel(job, t)}</span>
+                          <IconChevron className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
+                        </span>
+                      </span>
+                    </button>
+                    <div
+                      id={detailsId}
+                      className={`border-white/10 transition-[max-height,opacity] duration-200 motion-reduce:transition-none ${
+                        open ? 'max-h-none overflow-visible border-t opacity-100' : 'max-h-0 overflow-hidden opacity-0'
+                      }`}
+                    >
+                      {open && (
+                        <div className="px-3 pb-3 pt-2">
+                          <p className="mb-2 text-xs font-semibold text-slate-300 sm:hidden">{jobStatusLabel(job, t)}</p>
+                          {renderJob?.(job)}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                  </Fragment>
+                )
+              })}
+            </ol>
+          )}
+          {focusWorkerId && (
+            <button
+              type="button"
+              onClick={() => onFocusWorker('')}
+              className="mt-2 text-xs font-semibold text-cyan-200 underline"
+            >
+              {t('adminShowAllJobs')}
+            </button>
+          )}
+        </section>
+      </div>
+
+      {!jobFormOpen && (
+        <div className="pointer-events-none xl:hidden">
+          <div className="h-16" aria-hidden="true" />
+          <div
+            className="pointer-events-auto fixed inset-x-3 z-30 xl:hidden"
+            style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+          >
+            <button
+              type="button"
+              onClick={openForm}
+              className="mx-auto flex min-h-12 w-full max-w-[1680px] items-center justify-center rounded-2xl bg-cyan-600 px-4 text-sm font-semibold text-white shadow-lg shadow-slate-950/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+            >
+              {t('adminNewJobPlus')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
