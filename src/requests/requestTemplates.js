@@ -9,6 +9,9 @@ export const materialRequestTemplates = [
   'Handschuhe',
 ]
 
+export const MATERIAL_OTHER = 'other'
+export const MATERIAL_QTY_PRESETS = ['1', '2', '3', '5', '10']
+
 export const REQUEST_CATEGORIES = ['material', 'damage', 'safety', 'question', 'vehicle', 'other']
 export const REQUEST_STATUSES = ['new', 'seen', 'in_progress', 'resolved', 'rejected']
 export const OPEN_REQUEST_STATUSES = ['new', 'seen', 'in_progress']

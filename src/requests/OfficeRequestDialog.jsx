@@ -4,6 +4,8 @@ import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import OfficeRequestHistory from './OfficeRequestHistory'
 import {
+  MATERIAL_OTHER,
+  MATERIAL_QTY_PRESETS,
   REQUEST_CATEGORIES,
   REQUEST_COLUMNS,
   isMissingTable,
@@ -17,6 +19,9 @@ const EMPTY = {
   quantity: '',
   needed_by: '',
   template: '',
+  items: [],
+  otherName: '',
+  qtyCustom: '',
 }
 
 export default function OfficeRequestDialog({
@@ -208,28 +213,7 @@ export default function OfficeRequestDialog({
           </fieldset>
 
           {form.category === 'material' && (
-            <div>
-              <p className="text-xs text-slate-400">{t('requestMaterialHint')}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {materialRequestTemplates.map(item => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setForm(current => ({
-                      ...current,
-                      template: item,
-                      quantity: current.quantity || '',
-                      message: current.message || fillMaterial(t, item),
-                    }))}
-                    className={`min-h-11 rounded-xl px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                      form.template === item ? 'bg-cyan-700 text-white' : 'bg-slate-800 text-slate-100'
-                    }`}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <MaterialPicker t={t} form={form} setForm={setForm} />
           )}
 
           {form.category === 'vehicle' && (
@@ -250,7 +234,8 @@ export default function OfficeRequestDialog({
             />
           </label>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={`grid gap-3 ${form.category === 'material' ? '' : 'sm:grid-cols-2'}`}>
+            {form.category !== 'material' && (
             <label className="text-xs text-slate-400">
               {t('requestQuantity')}
               <input
@@ -259,6 +244,7 @@ export default function OfficeRequestDialog({
                 className="mt-1 min-h-11 w-full rounded-xl bg-slate-950 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
               />
             </label>
+            )}
             <label className="text-xs text-slate-400">
               {t('requestNeededBy')}
               <input
@@ -292,6 +278,171 @@ export default function OfficeRequestDialog({
   )
 }
 
-function fillMaterial(t, item) {
-  return `${t('requestCatMaterial')}: ${item}`
+function itemId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+function composeMaterials(items) {
+  const lines = (items || [])
+    .map(item => {
+      const name = String(item?.name || '').trim()
+      if (!name) return ''
+      return item.qty ? `${item.qty} ${name}` : name
+    })
+    .filter(Boolean)
+  return {
+    message: lines.join('\n'),
+    quantity: lines.join(', '),
+  }
+}
+
+function withMaterials(current, items, extra = {}) {
+  const nextItems = items || []
+  return {
+    ...current,
+    ...extra,
+    items: nextItems,
+    ...composeMaterials(nextItems),
+  }
+}
+
+function MaterialPicker({ t, form, setForm }) {
+  const active = (form.items || []).find(item => item.id === form.template)
+  const addMaterial = (name) => {
+    const label = String(name || '').trim()
+    if (!label) return
+    setForm((current) => {
+      const existing = (current.items || []).find(item => item.name.toLowerCase() === label.toLowerCase())
+      if (existing) {
+        return { ...current, template: existing.id, otherName: '' }
+      }
+      const next = { id: itemId(), name: label, qty: '' }
+      return withMaterials(current, [...(current.items || []), next], {
+        template: next.id,
+        otherName: '',
+        qtyCustom: '',
+      })
+    })
+  }
+  const setQty = (qty) => {
+    const value = String(qty || '').trim()
+    setForm((current) => {
+      const items = (current.items || []).map(item => (
+        item.id === current.template ? { ...item, qty: value } : item
+      ))
+      return withMaterials(current, items, { qtyCustom: '' })
+    })
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-slate-400">{t('requestMaterialHint')}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {materialRequestTemplates.map(item => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => addMaterial(item)}
+            className={`min-h-11 rounded-xl px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+              active?.name === item ? 'bg-cyan-700 text-white' : 'bg-slate-800 text-slate-100'
+            }`}
+          >
+            {item}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setForm(current => ({ ...current, template: MATERIAL_OTHER }))}
+          className={`min-h-11 rounded-xl px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+            form.template === MATERIAL_OTHER ? 'bg-cyan-700 text-white' : 'bg-slate-800 text-slate-100'
+          }`}
+        >
+          {t('requestMaterialOther')}
+        </button>
+      </div>
+
+      {form.template === MATERIAL_OTHER && (
+        <div className="mt-3 flex gap-2">
+          <input
+            value={form.otherName}
+            onChange={e => setForm(current => ({ ...current, otherName: e.target.value }))}
+            placeholder={t('requestMaterialOtherName')}
+            className="min-h-11 w-full rounded-xl bg-slate-950 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          />
+          <button
+            type="button"
+            onClick={() => addMaterial(form.otherName)}
+            className="min-h-11 shrink-0 rounded-xl bg-cyan-600 px-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+          >
+            {t('requestMaterialAdd')}
+          </button>
+        </div>
+      )}
+
+      {active && (
+        <div className="mt-3 rounded-2xl border border-cyan-400/20 bg-slate-950/80 px-3 py-3">
+          <p className="text-sm font-semibold text-white">{active.name}</p>
+          <p className="mt-1 text-xs text-slate-400">{t('requestPieces')}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {MATERIAL_QTY_PRESETS.map(qty => (
+              <button
+                key={qty}
+                type="button"
+                onClick={() => setQty(qty)}
+                className={`min-h-11 min-w-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                  String(active.qty) === qty ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-100'
+                }`}
+              >
+                {qty}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              inputMode="numeric"
+              value={form.qtyCustom}
+              onChange={e => setForm(current => ({ ...current, qtyCustom: e.target.value }))}
+              placeholder={t('requestQtyCustom')}
+              className="min-h-11 w-full rounded-xl bg-slate-900 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            />
+            <button
+              type="button"
+              disabled={!String(form.qtyCustom || '').trim()}
+              onClick={() => setQty(form.qtyCustom)}
+              className="min-h-11 shrink-0 rounded-xl bg-slate-800 px-3 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-50"
+            >
+              {t('requestMaterialAdd')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(form.items || []).length > 0 && (
+        <ul className="mt-3 space-y-2" aria-label={t('requestMaterialsPicked')}>
+          {form.items.map(item => (
+            <li key={item.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-950 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setForm(current => ({ ...current, template: item.id }))}
+                className="min-h-11 flex-1 text-left text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
+                {item.qty ? `${item.qty} × ${item.name}` : item.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(current => withMaterials(
+                  current,
+                  current.items.filter(row => row.id !== item.id),
+                  { template: current.template === item.id ? '' : current.template },
+                ))}
+                className="min-h-11 px-2 text-xs text-slate-400 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
+                {t('requestRemoveMaterial')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
