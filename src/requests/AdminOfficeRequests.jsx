@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import { fillText, firstName, formatDisplayDate, isoDate } from '../plan/planUtils'
@@ -38,11 +38,11 @@ export default function AdminOfficeRequests({
   const [reply, setReply] = useState('')
   const [savingId, setSavingId] = useState('')
 
-  const nameOf = (id) => workers.find(item => item.id === id)?.name || ''
-  const objectName = (id) => objects.find(item => item.id === id)?.name || ''
-  const vehiclePlate = (id) => vehicles.find(item => item.id === id)?.plate || ''
+  const nameOf = useCallback((id) => workers.find(item => item.id === id)?.name || '', [workers])
+  const objectName = useCallback((id) => objects.find(item => item.id === id)?.name || '', [objects])
+  const vehiclePlate = useCallback((id) => vehicles.find(item => item.id === id)?.plate || '', [vehicles])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     let query = supabase
       .from('office_requests')
@@ -72,18 +72,18 @@ export default function AdminOfficeRequests({
     } else {
       setVehicles([])
     }
-  }
+  }, [showClosed, t])
 
   useEffect(() => {
     load()
-  }, [showClosed])
+  }, [load])
 
   const rows = useMemo(() => items.map(item => ({
     ...item,
     workerName: nameOf(item.worker_id),
     place: objectName(item.object_id),
     plate: vehiclePlate(item.vehicle_id),
-  })), [items, objects, vehicles, workers])
+  })), [items, nameOf, objectName, vehiclePlate])
 
   const save = async (item, patch) => {
     if (!item?.id || setupNeeded) return
@@ -114,7 +114,7 @@ export default function AdminOfficeRequests({
       setMessage(error.message || t('requestSaveError'))
       return
     }
-    setMessage(t('requestSaved'))
+    setMessage(t('officeRequestSaved'))
     setItems(current => current.map(row => (row.id === item.id ? data : row)))
     if (!showClosed && !OPEN_REQUEST_STATUSES.includes(data.status)) {
       setItems(current => current.filter(row => row.id !== item.id))

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import { fillText, firstName, isoDate, minutesLabel } from './planUtils'
@@ -93,7 +93,7 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
   const monthStart = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).startOf('month').toISODate()
   const monthEnd = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).endOf('month').toISODate()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     const full = `${VEHICLE_BASE_COLUMNS}, ${VEHICLE_EXTRA_COLUMNS}`
     let { data, error } = await supabase.from('vehicles').select(full).order('plate')
@@ -120,11 +120,11 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
       active: item.active !== false,
       needs: parseNeeds(item.needs_json),
     })))
-  }
+  }, [t])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
 
   useEffect(() => {
     const homes = [...new Set(
@@ -145,9 +145,10 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
     () => [...workers].filter(item => item?.id && item.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [workers],
   )
-  const nameOf = (id) => people.find(item => item.id === id)?.name || ''
+  const nameOf = useCallback((id) => people.find(item => item.id === id)?.name || '', [people])
 
   const rows = useMemo(() => vehicles.map((item) => {
+    void travelTick
     const days = item.driver_id ? workDaysFor(jobs, item.driver_id, monthStart, monthEnd) : new Set()
     const trip = item.driver_id && item.home_address ? roundTrip(item.home_address) : { minutes: 0, meters: 0 }
     const todayOn = Boolean(item.driver_id && days.has(today))

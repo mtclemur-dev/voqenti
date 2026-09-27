@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
@@ -47,7 +47,7 @@ export default function OfficeRequestDialog({
     return `${t(requestCategoryKey(form.category))} · ${place}`
   }, [form.category, place, t])
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     if (!workerId || !objectId) {
       setHistory([])
       return
@@ -72,7 +72,7 @@ export default function OfficeRequestDialog({
     }
     setSetupNeeded(false)
     setHistory(data || [])
-  }
+  }, [objectId, t, workerId])
 
   useEffect(() => {
     if (!open) return undefined
@@ -100,7 +100,7 @@ export default function OfficeRequestDialog({
       cancelled = true
       window.removeEventListener('keydown', onKey)
     }
-  }, [jobId, objectId, open, workerId])
+  }, [jobId, loadHistory, objectId, onClose, open, workerId])
 
   if (!open) return null
 
