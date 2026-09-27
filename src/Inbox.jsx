@@ -152,7 +152,7 @@ export default function Inbox({
     await markRead([item.id])
     setIsOpen(false)
     if (item.kind === 'open_post') onOpenView('openPosts')
-    else onOpenView('plan')
+    else onOpenView('plan', item.kind === 'office_request' || item.kind === 'office_reply' ? { adminTab: 'requests' } : undefined)
   }
 
   const answerHelp = async (item, choice, event) => {

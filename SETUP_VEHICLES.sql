@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS public.vehicles (
   tuv_next date,
   notes text,
   needs_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+  odometer integer,
+  odometer_date date,
+  service_km integer,
+  active boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -24,6 +28,10 @@ ALTER TABLE public.vehicles
   ADD COLUMN IF NOT EXISTS tuv_next date,
   ADD COLUMN IF NOT EXISTS notes text,
   ADD COLUMN IF NOT EXISTS needs_json jsonb DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS odometer integer,
+  ADD COLUMN IF NOT EXISTS odometer_date date,
+  ADD COLUMN IF NOT EXISTS service_km integer,
+  ADD COLUMN IF NOT EXISTS active boolean DEFAULT true,
   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 

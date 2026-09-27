@@ -3,8 +3,19 @@ import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
 import { fillText, firstName, isoDate, minutesLabel } from './planUtils'
 import { DEPOT_ADDRESS, ensureTravel, formatKm, travelBetweenSync } from './travel'
+import FleetVehicleDialog from './FleetVehicleDialog'
+import {
+  VEHICLE_BASE_COLUMNS,
+  VEHICLE_EXTRA_COLUMNS,
+  isMissingColumn,
+  isMissingTable,
+  openNeeds,
+  parseNeeds,
+  serializeNeeds,
+} from '../requests/requestTemplates'
 
 const TUV_WARN_DAYS = 30
+const SERVICE_WARN_KM = 1500
 
 function emptyVehicle() {
   return {
@@ -12,22 +23,14 @@ function emptyVehicle() {
     name: '',
     driver_id: '',
     home_address: '',
-    tuv_last: '',
     tuv_next: '',
     notes: '',
+    odometer: '',
+    odometer_date: '',
+    service_km: '',
+    active: true,
     needs: [],
   }
-}
-
-function parseNeeds(value) {
-  const list = Array.isArray(value) ? value : []
-  return list
-    .map(item => ({
-      id: String(item?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
-      text: String(item?.text || '').trim(),
-      done: Boolean(item?.done),
-    }))
-    .filter(item => item.text)
 }
 
 function workDaysFor(jobs, workerId, from, to) {
@@ -58,6 +61,16 @@ function tuvInfo(next, today) {
   return { kind: 'ok', days }
 }
 
+function serviceInfo(item) {
+  const now = Number(item.odometer)
+  const due = Number(item.service_km)
+  if (!Number.isFinite(now) || !Number.isFinite(due) || due <= 0) return { kind: 'none', left: null }
+  const left = due - now
+  if (left <= 0) return { kind: 'over', left }
+  if (left <= SERVICE_WARN_KM) return { kind: 'soon', left }
+  return { kind: 'ok', left }
+}
+
 function roundTrip(home) {
   const out = travelBetweenSync(home, DEPOT_ADDRESS)
   const back = travelBetweenSync(DEPOT_ADDRESS, home)
@@ -67,24 +80,34 @@ function roundTrip(home) {
   }
 }
 
-export default function FleetPanel({ t, workers = [], jobs = [], today }) {
+export default function FleetPanel({ t, language = 'de', workers = [], jobs = [], today }) {
   const [vehicles, setVehicles] = useState([])
   const [form, setForm] = useState(emptyVehicle)
   const [editingId, setEditingId] = useState('')
-  const [needText, setNeedText] = useState('')
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  const [extrasReady, setExtrasReady] = useState(true)
   const [travelTick, setTravelTick] = useState(0)
   const monthStart = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).startOf('month').toISODate()
   const monthEnd = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).endOf('month').toISODate()
 
   const load = async () => {
-    const { data, error } = await supabase
-      .from('vehicles')
-      .select('id, plate, name, driver_id, home_address, tuv_last, tuv_next, notes, needs_json')
-      .order('plate')
+    setLoading(true)
+    const full = `${VEHICLE_BASE_COLUMNS}, ${VEHICLE_EXTRA_COLUMNS}`
+    let { data, error } = await supabase.from('vehicles').select(full).order('plate')
+    if (error && (isMissingColumn(error) || /odometer|service_km|active/i.test(error.message || ''))) {
+      setExtrasReady(false)
+      const fallback = await supabase.from('vehicles').select(VEHICLE_BASE_COLUMNS).order('plate')
+      data = fallback.data
+      error = fallback.error
+    } else if (!error) {
+      setExtrasReady(true)
+    }
+    setLoading(false)
     if (error) {
-      if (/schema cache|does not exist|relation|column/i.test(error.message || '')) {
+      if (isMissingTable(error)) {
         setMessage(t('fleetSetup'))
         return
       }
@@ -94,6 +117,7 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
     setMessage('')
     setVehicles((data || []).map(item => ({
       ...item,
+      active: item.active !== false,
       needs: parseNeeds(item.needs_json),
     })))
   }
@@ -127,10 +151,17 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
     const days = item.driver_id ? workDaysFor(jobs, item.driver_id, monthStart, monthEnd) : new Set()
     const trip = item.driver_id && item.home_address ? roundTrip(item.home_address) : { minutes: 0, meters: 0 }
     const todayOn = Boolean(item.driver_id && days.has(today))
+    const open = openNeeds(item.needs)
+    const tuv = tuvInfo(item.tuv_next, today)
+    const service = serviceInfo(item)
+    const repair = open.some(need => need.category === 'repair' || need.priority === 'high')
     return {
       ...item,
       driverName: firstName(nameOf(item.driver_id)) || nameOf(item.driver_id),
-      tuv: tuvInfo(item.tuv_next, today),
+      tuv,
+      service,
+      openCount: open.length,
+      repair,
       dayCount: days.size,
       todayTrip: todayOn ? trip : { minutes: 0, meters: 0 },
       monthTrip: {
@@ -142,6 +173,12 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
 
   const alerts = rows.filter(item => item.tuv.kind === 'over' || item.tuv.kind === 'soon')
 
+  const startCreate = () => {
+    setEditingId('')
+    setForm(emptyVehicle())
+    setDialogOpen(true)
+  }
+
   const startEdit = (item) => {
     setEditingId(item.id)
     setForm({
@@ -149,28 +186,21 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
       name: item.name || '',
       driver_id: item.driver_id || '',
       home_address: item.home_address || '',
-      tuv_last: isoDate(item.tuv_last),
       tuv_next: isoDate(item.tuv_next),
       notes: item.notes || '',
+      odometer: item.odometer ?? '',
+      odometer_date: isoDate(item.odometer_date),
+      service_km: item.service_km ?? '',
+      active: item.active !== false,
       needs: parseNeeds(item.needs),
     })
-    setNeedText('')
+    setDialogOpen(true)
   }
 
-  const resetForm = () => {
+  const closeDialog = () => {
+    setDialogOpen(false)
     setEditingId('')
     setForm(emptyVehicle())
-    setNeedText('')
-  }
-
-  const addNeed = () => {
-    const text = needText.trim()
-    if (!text) return
-    setForm(current => ({
-      ...current,
-      needs: [...current.needs, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text, done: false }],
-    }))
-    setNeedText('')
   }
 
   const handleSave = async (event) => {
@@ -182,25 +212,35 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
       name: form.name.trim() || null,
       driver_id: form.driver_id || null,
       home_address: form.home_address.trim() || null,
-      tuv_last: form.tuv_last || null,
       tuv_next: form.tuv_next || null,
       notes: form.notes.trim() || null,
-      needs_json: form.needs,
+      needs_json: serializeNeeds(form.needs),
       updated_at: new Date().toISOString(),
+    }
+    if (extrasReady) {
+      payload.odometer = form.odometer === '' ? null : Number(form.odometer)
+      payload.odometer_date = form.odometer_date || null
+      payload.service_km = form.service_km === '' ? null : Number(form.service_km)
+      payload.active = Boolean(form.active)
     }
     const result = editingId
       ? await supabase.from('vehicles').update(payload).eq('id', editingId)
       : await supabase.from('vehicles').insert(payload)
     setBusy(false)
     if (result.error) {
-      if (/schema cache|does not exist|relation|column/i.test(result.error.message || '')) {
+      if (isMissingTable(result.error)) {
         setMessage(t('fleetSetup'))
+        return
+      }
+      if (isMissingColumn(result.error)) {
+        setExtrasReady(false)
+        setMessage(t('fleetExtrasSetup'))
         return
       }
       setMessage(result.error.message)
       return
     }
-    resetForm()
+    closeDialog()
     await load()
   }
 
@@ -212,7 +252,7 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
       setMessage(error.message)
       return
     }
-    if (editingId === item.id) resetForm()
+    if (editingId === item.id) closeDialog()
     await load()
   }
 
@@ -220,9 +260,20 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
     <div className="space-y-5">
       <section className="rounded-[1.75rem] bg-slate-900/85 p-5 ring-1 ring-slate-700">
         <p className="text-[11px] uppercase tracking-[0.25em] text-cyan-200">{t('adminTabFleet')}</p>
-        <h2 className="mt-1 text-lg font-bold text-white">{t('fleetTitle')}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-300">{t('fleetHint')}</p>
-        {message ? <p className="mt-3 text-sm text-amber-100">{message}</p> : null}
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-white">{t('fleetTitle')}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{t('fleetHint')}</p>
+          </div>
+          <button
+            type="button"
+            onClick={startCreate}
+            className="min-h-11 rounded-2xl bg-cyan-600 px-4 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+          >
+            {t('fleetAdd')}
+          </button>
+        </div>
+        {message ? <p className="mt-3 text-sm text-amber-100" role="status">{message}</p> : null}
 
         {alerts.length > 0 && (
           <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3">
@@ -241,217 +292,97 @@ export default function FleetPanel({ t, workers = [], jobs = [], today }) {
             </ul>
           </div>
         )}
-
-        <form onSubmit={handleSave} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-slate-400">
-            {t('fleetPlate')}
-            <input
-              value={form.plate}
-              onChange={e => setForm(current => ({ ...current, plate: e.target.value }))}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              required
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            {t('fleetName')}
-            <input
-              value={form.name}
-              onChange={e => setForm(current => ({ ...current, name: e.target.value }))}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            {t('fleetDriver')}
-            <select
-              value={form.driver_id}
-              onChange={e => setForm(current => ({ ...current, driver_id: e.target.value }))}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            >
-              <option value="">{t('fleetDriverNone')}</option>
-              {people.map(person => (
-                <option key={person.id} value={person.id}>{person.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-slate-400 sm:col-span-2">
-            {t('fleetHome')}
-            <input
-              value={form.home_address}
-              onChange={e => setForm(current => ({ ...current, home_address: e.target.value }))}
-              placeholder={t('fleetHomeHint')}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            {t('fleetTuvLast')}
-            <input
-              type="date"
-              value={form.tuv_last}
-              onChange={e => setForm(current => ({ ...current, tuv_last: isoDate(e.target.value) }))}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 [color-scheme:dark]"
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            {t('fleetTuvNext')}
-            <input
-              type="date"
-              value={form.tuv_next}
-              onChange={e => setForm(current => ({ ...current, tuv_next: isoDate(e.target.value) }))}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 [color-scheme:dark]"
-            />
-          </label>
-          <label className="text-xs text-slate-400 sm:col-span-2">
-            {t('fleetNotes')}
-            <textarea
-              value={form.notes}
-              onChange={e => setForm(current => ({ ...current, notes: e.target.value }))}
-              rows={2}
-              className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <div className="sm:col-span-2">
-            <p className="text-xs text-slate-400">{t('fleetNeeds')}</p>
-            <div className="mt-2 flex gap-2">
-              <input
-                value={needText}
-                onChange={e => setNeedText(e.target.value)}
-                placeholder={t('fleetNeedPlaceholder')}
-                className="min-h-11 w-full rounded-md bg-slate-950 px-3 text-sm text-slate-100"
-              />
-              <button
-                type="button"
-                onClick={addNeed}
-                className="shrink-0 rounded-xl bg-slate-800 px-3 text-sm text-white"
-              >
-                {t('fleetNeedAdd')}
-              </button>
-            </div>
-            {form.needs.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {form.needs.map(need => (
-                  <li key={need.id} className="flex items-center gap-2 text-sm text-slate-200">
-                    <label className="flex min-h-11 flex-1 items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={need.done}
-                        onChange={() => setForm(current => ({
-                          ...current,
-                          needs: current.needs.map(item => (item.id === need.id ? { ...item, done: !item.done } : item)),
-                        }))}
-                      />
-                      <span className={need.done ? 'text-slate-500 line-through' : ''}>{need.text}</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setForm(current => ({ ...current, needs: current.needs.filter(item => item.id !== need.id) }))}
-                      className="text-xs text-slate-400 underline"
-                    >
-                      {t('delete')}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2 sm:col-span-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="min-h-11 rounded-2xl bg-cyan-600 px-5 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {editingId ? t('fleetSave') : t('fleetAdd')}
-            </button>
-            {editingId ? (
-              <button type="button" onClick={resetForm} className="min-h-11 rounded-2xl bg-slate-800 px-4 text-sm text-slate-100">
-                {t('cancel')}
-              </button>
-            ) : null}
-          </div>
-        </form>
       </section>
 
-      {!rows.length ? (
+      {loading ? (
+        <p className="px-1 text-sm text-slate-400" aria-live="polite">{t('loading')}</p>
+      ) : !rows.length ? (
         <p className="px-1 text-sm text-slate-400">{t('fleetEmpty')}</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80">
           {rows.map(item => (
-            <li key={item.id} className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white">
-                    {item.plate}
-                    {item.name ? ` · ${item.name}` : ''}
+            <li key={item.id}>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => startEdit(item)}
+                  className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                >
+                  <p className="text-sm font-semibold text-white">{item.plate}</p>
+                  {item.name ? <p className="text-sm text-slate-300">{item.name}</p> : null}
+                  <p className="mt-0.5 text-sm text-slate-300">
+                    {t('fleetDriver')}: {item.driverName || t('fleetNoDriver')}
                   </p>
-                  <p className="mt-1 text-sm text-slate-300">
-                    {item.driverName || t('fleetNoDriver')}
-                    {item.home_address ? ` · ${item.home_address}` : ` · ${t('fleetNoHome')}`}
-                  </p>
-                  <p className={`mt-1 text-sm ${
+                  <p className={`text-sm ${
                     item.tuv.kind === 'over' ? 'text-rose-100' : item.tuv.kind === 'soon' ? 'text-amber-100' : 'text-slate-400'
                   }`}>
                     {item.tuv.kind === 'over'
                       ? t('fleetTuvOver')
-                      : item.tuv.kind === 'soon'
-                        ? fillText(t('fleetTuvSoon'), { days: String(item.tuv.days) })
-                        : item.tuv.kind === 'ok'
-                          ? t('fleetTuvOk')
-                          : t('fleetTuvNone')}
-                    {item.tuv_next ? ` · ${item.tuv_next}` : ''}
+                      : item.tuv.kind === 'soon' || item.tuv.kind === 'ok'
+                        ? fillText(t('fleetTuvInDays'), { days: String(item.tuv.days) })
+                        : t('fleetTuvNone')}
                   </p>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => startEdit(item)} className="min-h-11 rounded-xl bg-slate-800 px-3 text-sm text-white">
-                    {t('edit')}
-                  </button>
-                  <button type="button" onClick={() => handleDelete(item)} className="min-h-11 rounded-xl px-3 text-sm text-slate-300 underline">
-                    {t('delete')}
-                  </button>
-                </div>
-              </div>
-
-              {item.driver_id && item.home_address ? (
-                <>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl bg-slate-950/70 px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetToday')}</p>
-                      <p className="mt-1 text-lg font-semibold tabular-nums text-white">
-                        {item.todayTrip.meters
-                          ? fillText(t('fleetKm'), { km: formatKm(item.todayTrip.meters) || '0' })
-                          : '—'}
-                      </p>
-                      {item.todayTrip.minutes ? (
-                        <p className="text-xs text-slate-400">{minutesLabel(item.todayTrip.minutes, t)}</p>
-                      ) : null}
-                    </div>
-                    <div className="rounded-xl bg-slate-950/70 px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('fleetMonth')}</p>
-                      <p className="mt-1 text-lg font-semibold tabular-nums text-white">
-                        {item.monthTrip.meters
-                          ? fillText(t('fleetKm'), { km: formatKm(item.monthTrip.meters) || '0' })
-                          : '—'}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {fillText(t('fleetDays'), { count: String(item.dayCount) })}
-                        {item.monthTrip.minutes ? ` · ${minutesLabel(item.monthTrip.minutes, t)}` : ''}
-                      </p>
-                    </div>
+                  {item.openCount > 0 ? (
+                    <p className="text-sm text-amber-100">
+                      {fillText(t('fleetOpenNeeds'), { count: String(item.openCount) })}
+                    </p>
+                  ) : null}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {item.active === false && <StatusChip label={t('fleetStatusOff')} tone="rose" />}
+                    {item.active !== false && <StatusChip label={t('fleetStatusActive')} tone="cyan" />}
+                    {!item.driver_id && <StatusChip label={t('fleetNoDriver')} tone="amber" />}
+                    {item.tuv.kind === 'soon' || item.tuv.kind === 'over' ? <StatusChip label={t('fleetStatusTuv')} tone="amber" /> : null}
+                    {item.service.kind === 'soon' || item.service.kind === 'over' ? <StatusChip label={t('fleetStatusService')} tone="amber" /> : null}
+                    {item.repair && <StatusChip label={t('fleetStatusRepair')} tone="rose" />}
+                    {!item.home_address && <StatusChip label={t('fleetNoHome')} tone="slate" />}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">{t('fleetRound')}</p>
-                </>
-              ) : item.driver_id ? (
-                <p className="mt-3 text-sm text-slate-400">{t('fleetNeedHome')}</p>
-              ) : null}
-              {item.needs?.length ? (
-                <ul className="mt-3 space-y-1 text-sm text-slate-200">
-                  {item.needs.map(need => (
-                    <li key={need.id} className={need.done ? 'text-slate-500 line-through' : ''}>{need.text}</li>
-                  ))}
-                </ul>
-              ) : null}
+                  {item.driver_id && item.home_address && item.monthTrip.meters ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t('fleetMonth')}: {fillText(t('fleetKm'), { km: formatKm(item.monthTrip.meters) || '0' })}
+                      {item.monthTrip.minutes ? ` · ${minutesLabel(item.monthTrip.minutes, t)}` : ''}
+                    </p>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(item)}
+                  className="min-h-11 px-2 text-sm text-slate-400 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                >
+                  {t('delete')}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       )}
+
+      <FleetVehicleDialog
+        t={t}
+        language={language}
+        open={dialogOpen}
+        onClose={closeDialog}
+        form={form}
+        setForm={setForm}
+        editingId={editingId}
+        people={people}
+        busy={busy}
+        onSave={handleSave}
+        extrasReady={extrasReady}
+      />
     </div>
+  )
+}
+
+function StatusChip({ label, tone }) {
+  const tones = {
+    cyan: 'bg-cyan-500/15 text-cyan-100',
+    amber: 'bg-amber-400/15 text-amber-100',
+    rose: 'bg-rose-400/15 text-rose-100',
+    slate: 'bg-slate-800 text-slate-300',
+  }
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tones[tone] || tones.slate}`}>
+      {label}
+    </span>
   )
 }

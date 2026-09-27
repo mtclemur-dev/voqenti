@@ -7,6 +7,7 @@ import { cancelJobReminders, currentNotifyPermission, requestNotifyPermission, s
 import { HoursRow } from './EmployeeHours'
 import OpenPostActions from './OpenPostActions'
 import { ObjectGuidePanel } from './ObjectGuide'
+import OfficeRequestDialog from '../requests/OfficeRequestDialog'
 import { serviceLabel } from './objectServices'
 import { openPostAnswer } from './openPostRespond'
 import {
@@ -230,6 +231,31 @@ function NoticesCard({ t, onOpen }) {
   )
 }
 
+function NotifyOfficeButton({ t, language, object, job, currentWorker }) {
+  const [open, setOpen] = useState(false)
+  if (!currentWorker?.id || !(object?.id || job?.object_id || job?.id)) return null
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="min-h-11 text-sm font-semibold text-slate-300 underline-offset-2 hover:text-cyan-100 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+      >
+        {t('requestInform')}
+      </button>
+      <OfficeRequestDialog
+        t={t}
+        language={language}
+        open={open}
+        onClose={() => setOpen(false)}
+        object={object}
+        job={job}
+        currentWorker={currentWorker}
+      />
+    </div>
+  )
+}
+
 function NextAssignmentCard({
   t,
   language,
@@ -238,6 +264,7 @@ function NextAssignmentCard({
   row,
   object,
   workers = [],
+  currentWorker,
   currentWorkerId,
   onConfirm,
   onSaveHours,
@@ -311,6 +338,16 @@ function NextAssignmentCard({
         <ObjectGuidePanel t={t} language={language} object={object} date={job.work_date} />
       </div>
 
+      {currentWorker && (
+        <NotifyOfficeButton
+          t={t}
+          language={language}
+          object={object}
+          job={job}
+          currentWorker={currentWorker}
+        />
+      )}
+
       {onSaveHours && (
         <div className="mt-4">
           <HoursRow
@@ -363,6 +400,7 @@ function ExpandableAssignment({
   row,
   object,
   workers = [],
+  currentWorker,
   currentWorkerId,
   onConfirm,
   onSaveHours,
@@ -400,7 +438,7 @@ function ExpandableAssignment({
           </span>
           <span className="mt-1 block truncate text-base font-semibold text-white">{place}</span>
           <span className="mt-1 block truncate text-sm text-slate-300">{shortPlace(job, object)}</span>
-          <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId} />
+          <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId || currentWorker?.id} />
         </span>
         <StatusBadge t={t} row={row} language={language} past={isJobPast(timedJob, now)} />
         <span className="sr-only">{detailsLabel}</span>
@@ -422,7 +460,8 @@ function ExpandableAssignment({
               row={row}
               object={object}
               workers={workers}
-              currentWorkerId={currentWorkerId}
+              currentWorker={currentWorker}
+              currentWorkerId={currentWorkerId || currentWorker?.id}
               onConfirm={onConfirm}
               onSaveHours={onSaveHours}
               confirmingId={confirmingId}
@@ -608,6 +647,7 @@ export default function EmployeeHome({
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
                 workers={workers}
+                currentWorker={currentWorker}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onSaveHours={onSaveHours}
@@ -624,6 +664,7 @@ export default function EmployeeHome({
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
                 workers={workers}
+                currentWorker={currentWorker}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onSaveHours={onSaveHours}
@@ -714,6 +755,7 @@ export default function EmployeeHome({
                 row={row}
                 object={objectById(row.work_jobs?.object_id)}
                 workers={workers}
+                currentWorker={currentWorker}
                 currentWorkerId={currentWorker?.id}
                 onConfirm={onConfirm}
                 onSaveHours={onSaveHours}

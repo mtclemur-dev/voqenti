@@ -15,6 +15,7 @@ import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, rest
 import { readTurnusFile } from './plan/readTurnusFile'
 import { LeavePeoplePanel } from './plan/LeaveBalance'
 import FleetPanel from './plan/FleetPanel'
+import AdminOfficeRequests from './requests/AdminOfficeRequests'
 import OpenPostActions from './plan/OpenPostActions'
 import { openPostAnswer, respondToOpenPost } from './plan/openPostRespond'
 import { IconMore } from './plan/icons'
@@ -2822,6 +2823,7 @@ export default function WorkPlan({
             { id: 'people', label: t('adminTabPeople') },
             { id: 'places', label: t('adminTabPlaces') },
             { id: 'fleet', label: t('adminTabFleet') },
+            { id: 'requests', label: t('adminTabRequests') },
             { id: 'invite', label: t('adminTabInvites') },
           ].map(item => (
             <button
@@ -2872,9 +2874,19 @@ export default function WorkPlan({
       {view === 'plan' && isAdmin && adminTab === 'fleet' && (
         <FleetPanel
           t={t}
+          language={language}
           workers={activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id))}
           jobs={plannedJobs}
           today={today}
+        />
+      )}
+
+      {view === 'plan' && isAdmin && adminTab === 'requests' && (
+        <AdminOfficeRequests
+          t={t}
+          language={language}
+          workers={activeWorkers}
+          objects={objects}
         />
       )}
 
