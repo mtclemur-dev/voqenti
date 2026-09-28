@@ -2820,7 +2820,7 @@ export default function WorkPlan({
         <div className="mb-1 flex flex-wrap gap-1 border-b border-white/10 pb-2" role="tablist" aria-label={t('adminPlanMenu')}>
           {[
             { id: 'board', label: t('adminNavPlan') },
-            { id: 'people', label: t('adminTabPeople') },
+            { id: 'people', label: t('absenceTitle') },
             { id: 'places', label: t('adminTabPlaces') },
             { id: 'fleet', label: t('adminTabFleet') },
             { id: 'requests', label: t('adminTabRequests') },

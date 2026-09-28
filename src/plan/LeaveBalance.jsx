@@ -1,8 +1,73 @@
+import { useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { firstName, formatDisplayDate, isoDate, leaveBalance, leaveBookingClash, leaveJobsHit, leaveOverlapCount, leaveOverlapPeriods, leavePersonRangesInWindow, vacationDaysInRange, workerInitials } from './planUtils'
 
 const softDateClass = 'min-h-11 w-full rounded-xl border-0 bg-white/[0.04] px-3 text-sm font-light text-white/85 ring-1 ring-white/10 [color-scheme:dark] focus:outline-none focus-visible:ring-white/25'
 const softDateStyle = { colorScheme: 'dark' }
+
+function DarkPersonPicker({ t, people = [], value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
+  const selected = people.find(item => item.id === value)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (event) => {
+      if (!boxRef.current?.contains(event.target)) setOpen(false)
+    }
+    const onKey = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={boxRef} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen(current => !current)}
+        className="mt-1.5 flex min-h-11 w-full items-center justify-between gap-2 rounded-xl bg-slate-950 px-3 text-left text-sm text-white ring-1 ring-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+      >
+        <span className={selected ? 'text-white' : 'text-slate-400'}>
+          {selected?.name || t('workerSelect')}
+        </span>
+        <span className="text-slate-500" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 py-1 shadow-2xl"
+        >
+          {people.map(person => (
+            <li key={person.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={person.id === value}
+                onClick={() => {
+                  onChange(person.id)
+                  setOpen(false)
+                }}
+                className={`flex min-h-11 w-full items-center px-3 text-left text-sm focus:outline-none focus-visible:bg-cyan-700 ${
+                  person.id === value ? 'bg-cyan-700 text-white' : 'text-slate-100 hover:bg-slate-800'
+                }`}
+              >
+                {person.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function daysLabel(count, t) {
   if (count === 1) return t('leaveDaysOne')
@@ -220,7 +285,139 @@ export function LeavePeoplePanel({
   const formClashNames = formClash?.others.map(id => personName(people, id, t)).filter(Boolean) || []
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      <form onSubmit={onSubmit} className="rounded-[1.75rem] border border-white/15 bg-slate-900/90 px-5 py-6">
+        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-cyan-200">{t('absenceTitle')}</p>
+        {t('absenceHint') ? <p className="mt-2 text-[14px] leading-6 text-slate-200">{t('absenceHint')}</p> : null}
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div className="text-[12px] font-light tracking-wide text-slate-300">
+            {t('absenceWorker')}
+            <DarkPersonPicker
+              t={t}
+              people={people}
+              value={form.worker_id}
+              onChange={id => setForm(current => ({ ...current, worker_id: id }))}
+            />
+          </div>
+          <fieldset className="text-[12px] font-light tracking-wide text-slate-300">
+            <legend>{t('absenceReason')}</legend>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {[
+                { id: 'sick', label: t('absenceSick') },
+                { id: 'vacation', label: t('absenceVacation') },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setForm(current => ({ ...current, reason: item.id }))}
+                  className={`min-h-11 rounded-xl px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                    form.reason === item.id ? 'bg-cyan-600 text-white' : 'bg-slate-950 text-slate-100 ring-1 ring-white/10'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <DateField
+            label={t('absenceFrom')}
+            className="block text-[12px] font-light tracking-wide text-slate-300"
+            inputClassName={softDateClass}
+            inputStyle={softDateStyle}
+            value={form.start_date}
+            onChange={value => setForm(current => {
+              const start = isoDate(value)
+              const end = isoDate(current.end_date)
+              return { ...current, start_date: start, end_date: end && start && end < start ? start : end }
+            })}
+          />
+          <DateField
+            label={t('absenceTo')}
+            className="block text-[12px] font-light tracking-wide text-slate-300"
+            inputClassName={softDateClass}
+            inputStyle={softDateStyle}
+            value={form.end_date}
+            onChange={value => setForm(current => {
+              const start = isoDate(current.start_date)
+              const end = isoDate(value)
+              return { ...current, start_date: start && end && end < start ? end : start, end_date: end }
+            })}
+          />
+        </div>
+        {selectedBalance && form.reason === 'vacation' && (
+          <p className={`mt-5 text-[14px] ${over ? 'text-rose-100' : 'text-slate-200'}`}>
+            {t('leaveThisBooking').replace('{days}', String(previewDays))}
+            {' · '}
+            {over
+              ? t('leaveOverLimit').replace('{days}', String(selectedBalance.left)).replace('{year}', String(year))
+              : t('leaveAfterBooking').replace('{days}', String(Math.max(0, after)))}
+          </p>
+        )}
+        {formClashNames.length > 0 && (
+          <p className={`mt-2 text-[14px] ${formClash.peak >= 3 ? 'text-rose-100' : 'text-amber-100'}`}>
+            {t('leaveOverlapClash').replace('{names}', formClashNames.join(', '))}
+            {formClash.peak >= 2 ? ` ${t('leaveOverlapClashPeak').replace('{count}', String(formClash.peak))}` : ''}
+          </p>
+        )}
+        <input
+          value={form.note}
+          onChange={e => setForm(current => ({ ...current, note: e.target.value }))}
+          placeholder={t('absenceNote')}
+          className="mt-5 min-h-11 w-full rounded-xl border-0 bg-slate-950 px-3 text-sm text-white ring-1 ring-white/15 placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+        />
+        <button type="submit" className="mt-5 min-h-12 w-full rounded-2xl bg-cyan-600 px-4 text-[13px] font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 hover:bg-cyan-500">
+          {t('absenceSave')}
+        </button>
+        {editingId && (
+          <button type="button" onClick={onCancelEdit} className="mt-2 min-h-11 w-full rounded-2xl bg-slate-800 px-4 text-[13px] text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+            {t('cancel')}
+          </button>
+        )}
+
+        {absences.length === 0 ? (
+          <p className="mt-8 text-center text-[14px] text-slate-400">{t('absenceEmpty')}</p>
+        ) : (
+          <ul className="mt-8">
+            {absences.map((item) => {
+              const vacation = item.reason === 'vacation'
+              const days = vacationDaysInRange(item.start_date, item.end_date, year)
+              const overlaps = leaveOverlapCount(item, absences)
+              return (
+                <li key={item.id} className="flex items-start justify-between gap-3 border-t border-white/10 py-3.5 first:border-t-0 first:pt-0">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <LeaveDot vacation={vacation} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-medium text-white">
+                        {firstName(workers.find(worker => worker.id === item.worker_id)?.name) || t('planUnknownWorker')}
+                        <span className="font-light text-slate-300">
+                          {' · '}
+                          {vacation ? t('absenceVacation') : t('absenceSick')}
+                        </span>
+                        {overlaps > 0 && (
+                          <span className="font-light text-amber-100">
+                            {' · '}
+                            {t('leaveOverlapBadge')}
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-[13px] font-light text-slate-300">
+                        {formatDisplayDate(item.start_date, language)} – {formatDisplayDate(item.end_date, language)}
+                        {' · '}
+                        {daysLabel(days, t)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-4">
+                    <button type="button" onClick={() => onEdit(item)} className="min-h-11 text-[13px] font-light text-slate-200 hover:text-white">{t('edit')}</button>
+                    <button type="button" onClick={() => onDelete(item)} className="min-h-11 text-[13px] font-light text-slate-400 hover:text-rose-100">{t('delete')}</button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </form>
+
       <section className="rounded-[1.75rem] border border-white/15 bg-slate-800/45 px-5 py-7">
         <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">
           {t('leaveYearTitle').replace('{year}', String(year))}
@@ -283,133 +480,6 @@ export function LeavePeoplePanel({
         absences={absences}
         jobs={jobs}
       />
-
-      <form onSubmit={onSubmit} className="rounded-[1.75rem] border border-white/15 bg-slate-800/40 px-5 py-7">
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-300">{t('absenceTitle')}</p>
-        {t('absenceHint') ? <p className="mt-3 text-[14px] leading-6 text-slate-200">{t('absenceHint')}</p> : null}
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="text-[12px] font-light tracking-wide text-slate-300">
-            {t('absenceWorker')}
-            <select
-              value={form.worker_id}
-              onChange={e => setForm(current => ({ ...current, worker_id: e.target.value }))}
-              className="mt-1.5 min-h-11 w-full rounded-xl border-0 bg-white/[0.04] px-3 text-sm font-light text-white/90 ring-1 ring-white/10 focus:outline-none focus-visible:ring-white/25"
-            >
-              <option value="">{t('workerSelect')}</option>
-              {people.map(worker => (
-                <option key={worker.id} value={worker.id}>{worker.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-[12px] font-light tracking-wide text-slate-300">
-            {t('absenceReason')}
-            <select
-              value={form.reason}
-              onChange={e => setForm(current => ({ ...current, reason: e.target.value }))}
-              className="mt-1.5 min-h-11 w-full rounded-xl border-0 bg-white/[0.04] px-3 text-sm font-light text-white/90 ring-1 ring-white/10 focus:outline-none focus-visible:ring-white/25"
-            >
-              <option value="sick">{t('absenceSick')}</option>
-              <option value="vacation">{t('absenceVacation')}</option>
-            </select>
-          </label>
-          <DateField
-            label={t('absenceFrom')}
-            className="block text-[12px] font-light tracking-wide text-slate-300"
-            inputClassName={softDateClass}
-            inputStyle={softDateStyle}
-            value={form.start_date}
-            onChange={value => setForm(current => {
-              const start = isoDate(value)
-              const end = isoDate(current.end_date)
-              return { ...current, start_date: start, end_date: end && start && end < start ? start : end }
-            })}
-          />
-          <DateField
-            label={t('absenceTo')}
-            className="block text-[12px] font-light tracking-wide text-slate-300"
-            inputClassName={softDateClass}
-            inputStyle={softDateStyle}
-            value={form.end_date}
-            onChange={value => setForm(current => {
-              const start = isoDate(current.start_date)
-              const end = isoDate(value)
-              return { ...current, start_date: start && end && end < start ? end : start, end_date: end }
-            })}
-          />
-        </div>
-        {selectedBalance && form.reason === 'vacation' && (
-          <p className={`mt-5 text-[14px] ${over ? 'text-rose-100' : 'text-slate-200'}`}>
-            {t('leaveThisBooking').replace('{days}', String(previewDays))}
-            {' · '}
-            {over
-              ? t('leaveOverLimit').replace('{days}', String(selectedBalance.left)).replace('{year}', String(year))
-              : t('leaveAfterBooking').replace('{days}', String(Math.max(0, after)))}
-          </p>
-        )}
-        {formClashNames.length > 0 && (
-          <p className={`mt-2 text-[14px] ${formClash.peak >= 3 ? 'text-rose-100' : 'text-amber-100'}`}>
-            {t('leaveOverlapClash').replace('{names}', formClashNames.join(', '))}
-            {formClash.peak >= 2 ? ` ${t('leaveOverlapClashPeak').replace('{count}', String(formClash.peak))}` : ''}
-          </p>
-        )}
-        <input
-          value={form.note}
-          onChange={e => setForm(current => ({ ...current, note: e.target.value }))}
-          placeholder={t('absenceNote')}
-          className="mt-5 min-h-11 w-full rounded-xl border-0 bg-white/[0.04] px-3 text-sm font-light text-white/90 ring-1 ring-white/10 placeholder:text-white/22 focus:outline-none focus-visible:ring-white/25"
-        />
-        <button type="submit" className="mt-6 min-h-12 w-full rounded-full bg-white/[0.88] px-4 text-[13px] font-medium tracking-[0.04em] text-slate-900 hover:bg-white">
-          {t('absenceSave')}
-        </button>
-        {editingId && (
-          <button type="button" onClick={onCancelEdit} className="mt-2 min-h-11 w-full rounded-full bg-transparent px-4 text-[13px] font-light text-white/45 ring-1 ring-white/10 hover:text-white/80">
-            {t('cancel')}
-          </button>
-        )}
-
-        {absences.length === 0 ? (
-          <p className="mt-8 text-center text-[14px] text-slate-300">{t('absenceEmpty')}</p>
-        ) : (
-          <ul className="mt-8">
-            {absences.map((item) => {
-              const vacation = item.reason === 'vacation'
-              const days = vacationDaysInRange(item.start_date, item.end_date, year)
-              const overlaps = leaveOverlapCount(item, absences)
-              return (
-                <li key={item.id} className="flex items-start justify-between gap-3 border-t border-white/[0.035] py-3.5 first:border-t-0 first:pt-0">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeaveDot vacation={vacation} />
-                    <div className="min-w-0">
-                      <p className="truncate text-[14px] font-medium text-white">
-                        {firstName(workers.find(worker => worker.id === item.worker_id)?.name) || t('planUnknownWorker')}
-                        <span className="font-light text-slate-300">
-                          {' · '}
-                          {vacation ? t('absenceVacation') : t('absenceSick')}
-                        </span>
-                        {overlaps > 0 && (
-                          <span className="font-light text-amber-100">
-                            {' · '}
-                            {t('leaveOverlapBadge')}
-                          </span>
-                        )}
-                      </p>
-                      <p className="mt-0.5 text-[13px] font-light text-slate-300">
-                        {formatDisplayDate(item.start_date, language)} – {formatDisplayDate(item.end_date, language)}
-                        {' · '}
-                        {daysLabel(days, t)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-4">
-                    <button type="button" onClick={() => onEdit(item)} className="min-h-11 text-[13px] font-light text-slate-200 hover:text-white">{t('edit')}</button>
-                    <button type="button" onClick={() => onDelete(item)} className="min-h-11 text-[13px] font-light text-slate-400 hover:text-rose-100">{t('delete')}</button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </form>
     </div>
   )
 }
