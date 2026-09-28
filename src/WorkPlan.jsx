@@ -4,8 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, overlappingWorkerDays, ownerWorkerIdSet, packWorkerSlots, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withChainedAssignmentRows, withChainedBoardJobs, withChainedJobTimes, withFixedEnd, withObjectPlanRange, withSavedJob, workerDaySlots, WORK_WEEKDAYS } from './plan/planUtils'
-import { ensureDayTravels } from './plan/travel'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, withSavedJob, WORK_WEEKDAYS } from './plan/planUtils'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
@@ -556,7 +555,6 @@ export default function WorkPlan({
   const [rosterFilter, setRosterFilter] = useState(() => oneOf(readUiMemory().rosterFilter, ROSTER_FILTERS, ''))
   const [rosterSearch, setRosterSearch] = useState('')
   const [focusWorkerId, setFocusWorkerId] = useState(() => stringOr(readUiMemory().focusWorkerId))
-  const [travelTick, setTravelTick] = useState(0)
   const [jobMenuId, setJobMenuId] = useState('')
   const [shortcutBusy, setShortcutBusy] = useState(false)
   const [objectForm, setObjectForm] = useState(emptyObjectForm)
@@ -770,8 +768,7 @@ export default function WorkPlan({
           .filter(row => row.worker_id === currentWorker.id && ['assigned', 'approved', 'declined'].includes(row.status))
           .map(row => ({ ...row, job_id: job.id, work_jobs: job })))
       : myRows.filter(row => ['assigned', 'approved', 'declined'].includes(row.status))
-    return withChainedAssignmentRows(rows, objects)
-      .sort((a, b) => `${isoDate(a.work_jobs?.work_date)}${assignmentRange(a).start || ''}`.localeCompare(`${isoDate(b.work_jobs?.work_date)}${assignmentRange(b).start || ''}`))
+    return rows.sort((a, b) => `${isoDate(a.work_jobs?.work_date)}${assignmentRange(a).start || ''}`.localeCompare(`${isoDate(b.work_jobs?.work_date)}${assignmentRange(b).start || ''}`))
   }, [currentWorker, isAdmin, jobs, myRows, objects])
 
   const myPending = useMemo(() => {
@@ -843,6 +840,7 @@ export default function WorkPlan({
   const overlapJobForWorker = (workerId, date, range, exceptJobId) => {
     const day = isoDate(date)
     if (!workerId || !day) return null
+    let best = null
     for (const job of jobs) {
       if (exceptJobId && job.id === exceptJobId) continue
       if (isoDate(job.work_date) !== day) continue
@@ -852,136 +850,19 @@ export default function WorkPlan({
         if (row.worker_id !== workerId) continue
         if (!['assigned', 'approved'].includes(row.status)) continue
         const existing = assignmentRange(row, job)
-        if (rangesOverlap(range, existing)) return { job, range: existing }
+        if (!rangesOverlap(range, existing)) continue
+        const until = existing.end || existing.start || ''
+        if (!best || until > (best.until || '')) best = { job, range: existing, until }
       }
     }
-    return null
+    return best
   }
   const formRangeFor = (workerId, current = form) => (
     current.worker_hours?.[workerId] || clockRange(current.start_time, current.end_time)
   )
-  const queueWorkersOnDay = async (workerIds, date, preferJobId, list = jobs, options = {}) => {
-    const day = isoDate(date)
-    const pending = [...new Set((workerIds || []).filter(Boolean))]
-    if (!day || !pending.length) return list
-    let snapshot = list
-    await ensureDayTravels(snapshot.filter(job => isoDate(job.work_date) === day), objects)
-    const now = new Date().toISOString()
-    const notices = []
-    const packed = new Set()
-    for (let round = 0; round < 8 && pending.length; round += 1) {
-      const workerId = pending.shift()
-      if (packed.has(workerId)) continue
-      packed.add(workerId)
-      const moved = packWorkerSlots(workerDaySlots(snapshot, workerId, day, { preferJobId, objects }))
-      for (const slot of moved) {
-        const job = snapshot.find(item => item.id === slot.jobId)
-        if (!job) continue
-        const assignees = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status) || !row.status)
-        const moveJob = assignees.length <= 1 || assignees.every(row => {
-          const range = assignmentRange(row, job)
-          return range.start === slot.previous.start && range.end === slot.previous.end
-        })
-        const timePatch = {
-          planned_start: slot.range.start || null,
-          planned_end: slot.range.end || null,
-          updated_at: now,
-        }
-        let { error } = slot.rowId
-          ? await supabase.from('work_job_assignees').update(timePatch).eq('id', slot.rowId)
-          : await supabase.from('work_job_assignees').update(timePatch).eq('job_id', slot.jobId).eq('worker_id', workerId)
-        if (error && isMissingColumn(error)) break
-        if (error) {
-          alert(`${t('planSaveError')} ${error.message}`)
-          return
-        }
-        const alsoMove = moveJob
-          ? assignees.filter(row => row.id !== slot.rowId && row.worker_id !== workerId)
-          : []
-        for (const row of alsoMove) {
-          if (row.id) await supabase.from('work_job_assignees').update(timePatch).eq('id', row.id)
-          if (row.worker_id && !pending.includes(row.worker_id)) pending.push(row.worker_id)
-        }
-        if (moveJob) {
-          const jobPatch = {
-            start_time: slot.range.start || null,
-            end_time: slot.range.end || null,
-            updated_at: now,
-          }
-          const jobResult = await supabase.from('work_jobs').update(jobPatch).eq('id', slot.jobId)
-          if (jobResult.error && !isMissingColumn(jobResult.error)) {
-            alert(`${t('planSaveError')} ${jobResult.error.message}`)
-            return
-          }
-        } else {
-          const nextRanges = assignees.map(row => (
-            row.worker_id === workerId || row.id === slot.rowId
-              ? slot.range
-              : assignmentRange(row, job)
-          ))
-          const spanned = spanClockRange(nextRanges, slot.range)
-          await supabase.from('work_jobs').update({
-            start_time: spanned.start || job.start_time,
-            end_time: spanned.end || job.end_time,
-            updated_at: now,
-          }).eq('id', slot.jobId)
-        }
-        snapshot = withSavedJob(snapshot, {
-          ...job,
-          start_time: moveJob ? slot.range.start : job.start_time,
-          end_time: moveJob ? slot.range.end : job.end_time,
-          work_job_assignees: assignees.map(row => (
-            row.worker_id === workerId || row.id === slot.rowId || alsoMove.some(item => item.id === row.id)
-              ? { ...row, planned_start: slot.range.start, planned_end: slot.range.end }
-              : row
-          )),
-        })
-        if (!options.silent && !skipPlanNotice(workers.find(item => item.id === workerId))) {
-          notices.push({
-            audience: 'worker',
-            worker_id: workerId,
-            title: 'notifyPlanUpdated',
-            body: [formatDisplayDate(job.work_date), jobPlaceLabel(job), clockRangeLabel(slot.range)].filter(Boolean).join(' · '),
-            kind: 'plan',
-            job_id: job.id,
-          })
-        }
-      }
-    }
-    if (notices.length) await supabase.from('work_notifications').insert(notices)
-    return snapshot
-  }
-  const queueRef = useRef(queueWorkersOnDay)
-  queueRef.current = queueWorkersOnDay
-  const packingRef = useRef(false)
-  useEffect(() => {
-    if (!isAdmin || packingRef.current || !jobs.length) return undefined
-    let pairs = []
-    try {
-      pairs = overlappingWorkerDays(jobs, objects, { from: today })
-    } catch {
-      return undefined
-    }
-    if (!pairs.length) return undefined
-    let cancelled = false
-    packingRef.current = true
-    ;(async () => {
-      let snapshot = jobs
-      for (const pair of pairs) {
-        if (cancelled) break
-        snapshot = await queueRef.current([pair.workerId], pair.date, null, snapshot, { silent: true }) || snapshot
-      }
-      if (!cancelled && snapshot !== jobs) setJobs(snapshot)
-      packingRef.current = false
-    })()
-    return () => {
-      cancelled = true
-      packingRef.current = false
-    }
-  }, [isAdmin, jobs, objects, today])
   const blattCleanRef = useRef(false)
   useEffect(() => {
-    if (!isAdmin || blattCleanRef.current || packingRef.current || !objects.length) return undefined
+    if (!isAdmin || blattCleanRef.current || !objects.length) return undefined
     const targets = objects.filter(item => isSpreadBlattObject(item, objects))
     if (!targets.length) return undefined
     blattCleanRef.current = true
@@ -1118,22 +999,7 @@ export default function WorkPlan({
     () => plannedJobs.filter(job => isoDate(job.work_date) === liveBoardDate),
     [plannedJobs, liveBoardDate],
   )
-  const displayBoardJobs = useMemo(
-    () => (
-      focusWorkerId
-        ? withChainedJobTimes(boardJobs, focusWorkerId, liveBoardDate, objects)
-        : withChainedBoardJobs(boardJobs, liveBoardDate, objects)
-    ),
-    [boardJobs, focusWorkerId, liveBoardDate, objects, travelTick],
-  )
-  useEffect(() => {
-    if (!boardJobs.length) return undefined
-    let cancelled = false
-    ensureDayTravels(boardJobs, objects).then(() => {
-      if (!cancelled) setTravelTick(current => current + 1)
-    })
-    return () => { cancelled = true }
-  }, [boardJobs, objects])
+  const displayBoardJobs = boardJobs
   const seriesJobs = useMemo(
     () => relatedSeriesJobs(jobs, jobs.find(job => job.id === editingId), today),
     [editingId, jobs, today],
@@ -1399,6 +1265,17 @@ export default function WorkPlan({
       return alert(`${t('absenceBlocked')}: ${blocked.map(workerName).join(', ')}`)
     }
     const timedForm = formWithFixedTimes({ ...form, work_date: firstDate }, formObject)
+    const clashes = form.worker_ids.map((id) => {
+      const hit = overlapJobForWorker(id, firstDate, formRangeFor(id, timedForm), editingId)
+      return hit ? { id, hit } : null
+    }).filter(Boolean)
+    if (clashes.length) {
+      const text = clashes.map(item => t('planOverlapConfirm')
+        .replace('{name}', workerName(item.id))
+        .replace('{time}', item.hit.until || clockRangeLabel(item.hit.range) || t('planBusy'))
+        .replace('{place}', jobPlaceLabel(item.hit.job) || t('planNoPlace'))).join('\n')
+      if (!window.confirm(text)) return
+    }
 
     setSaving(true)
     const hoursList = timedForm.worker_ids.map(id => formRangeFor(id, timedForm))
@@ -1520,27 +1397,6 @@ export default function WorkPlan({
       }
     }
     if (timesMissing && toAdd.length === 0) alert(t('planTimesSetup'))
-
-    const { data: savedRows } = await supabase
-      .from('work_job_assignees')
-      .select('id, worker_id, status, planned_start, planned_end')
-      .eq('job_id', jobId)
-    const savedJob = {
-      ...result.data,
-      work_date: firstDate,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      work_job_assignees: savedRows ?? form.worker_ids.map(worker_id => {
-        const range = formRangeFor(worker_id, timedForm)
-        return {
-          worker_id,
-          status: 'assigned',
-          planned_start: range.start || null,
-          planned_end: range.end || null,
-        }
-      }),
-    }
-    await queueWorkersOnDay(form.worker_ids, firstDate, jobId, withSavedJob(jobs, savedJob))
 
     if (editingId) {
       await supabase
@@ -1777,21 +1633,6 @@ export default function WorkPlan({
       if (nextNames.length) {
         await supabase.from('work_jobs').update({ crew_names: nextNames, updated_at: new Date().toISOString() }).eq('id', job.id)
       }
-      if (isAdmin) {
-        const joined = {
-          ...job,
-          work_job_assignees: [
-            ...(job.work_job_assignees ?? []).filter(row => row.worker_id !== currentWorker.id),
-            {
-              worker_id: currentWorker.id,
-              status: 'assigned',
-              planned_start: job.start_time || null,
-              planned_end: job.end_time || null,
-            },
-          ],
-        }
-        await queueWorkersOnDay([currentWorker.id], job.work_date, job.id, withSavedJob(jobs, joined))
-      }
     }
     loadData(view === 'history' ? 'history' : 'live')
   }
@@ -1813,19 +1654,6 @@ export default function WorkPlan({
     if (error) {
       alert(`${t('planSaveError')} ${error.message}`)
       return
-    }
-    if (status === 'approved' && isAdmin) {
-      const row = pendingApprovals.find(item => item.id === assigneeId)
-      if (row?.worker_id && row.job) {
-        const joined = {
-          ...row.job,
-          work_job_assignees: [
-            ...(row.job.work_job_assignees ?? []).filter(item => item.id !== assigneeId && item.worker_id !== row.worker_id),
-            { ...row, status: 'approved' },
-          ],
-        }
-        await queueWorkersOnDay([row.worker_id], row.job.work_date, row.job.id, withSavedJob(jobs, joined))
-      }
     }
     loadData(view === 'history' ? 'history' : 'live')
   }
@@ -1896,17 +1724,6 @@ export default function WorkPlan({
         alert(`${t('planSaveError')} ${assignError.message}`)
         return
       }
-      const created = {
-        ...data,
-        work_date: day,
-        start_time: copyPayload.start_time,
-        end_time: copyPayload.end_time,
-        work_job_assignees: withTimes.map(row => ({
-          ...row,
-          status: 'assigned',
-        })),
-      }
-      await queueWorkersOnDay(available.map(row => row.worker_id), day, data.id, withSavedJob(jobs, created))
     }
   }
 
@@ -2657,24 +2474,6 @@ export default function WorkPlan({
         return false
       }
     }
-    const snapshot = jobs.map(job => {
-      if (!jobIds.includes(job.id)) return job
-      const range = clockRange(job.start_time, job.end_time)
-      const others = (job.work_job_assignees ?? []).filter(row => row.worker_id !== workerId)
-      return {
-        ...job,
-        work_job_assignees: [
-          ...others,
-          {
-            worker_id: workerId,
-            status: 'assigned',
-            planned_start: range.start || null,
-            planned_end: range.end || null,
-          },
-        ],
-      }
-    })
-    await queueWorkersOnDay([workerId], liveBoardDate, jobIds[0], snapshot)
     setShortcutBusy(false)
     loadData(view === 'history' ? 'history' : 'live')
     return true
@@ -3287,9 +3086,9 @@ export default function WorkPlan({
                   const label = off
                     ? (off.reason === 'vacation' ? t('absenceVacation') : t('absenceSick'))
                     : (hit
-                      ? t('planBusyAt')
+                      ? `${t('planBusyAt')
                         .replace('{time}', clockRangeLabel(hit.range) || t('planBusy'))
-                        .replace('{place}', jobPlaceLabel(hit.job) || t('planNoPlace'))
+                        .replace('{place}', jobPlaceLabel(hit.job) || t('planNoPlace'))}${hit.until ? ` · ${t('planFreeFrom').replace('{time}', hit.until)}` : ''}`
                       : other
                         ? t('planAlsoAt').replace('{detail}', otherDetail)
                         : t('planFree'))
@@ -3343,9 +3142,10 @@ export default function WorkPlan({
                     </div>
                     {hit && (
                       <p className="mt-2 text-xs text-amber-200">
-                        {t('planOverlapQueued')
+                        {t('planOverlapHint')
                           .replace('{place}', jobPlaceLabel(hit.job) || t('planNoPlace'))
-                          .replace('{time}', hours.end || clockRangeLabel(hours) || t('planBusy'))}
+                          .replace('{busy}', clockRangeLabel(hit.range) || t('planBusy'))
+                          .replace('{time}', hit.until || clockRangeLabel(hit.range) || t('planBusy'))}
                       </p>
                     )}
                   </div>
