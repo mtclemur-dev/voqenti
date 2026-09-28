@@ -1,0 +1,47 @@
+================================================================================
+  SETUP BARA DE SKILL-URI - L2 Interlude (Elmortlab)
+================================================================================
+
+PROBLEMA:
+  F1 functiona (Next Target) dar skill-urile de atac NU se apasau.
+  Cauza: skill-ul verde principal era pe BARA DE SUS (slot 1), iar F2
+  activeaza slot 2 din BARA DE JOS - nu bara de sus!
+
+REGULA:
+  In L2 Interlude, F1-F12 mapa DOAR bara de scurtaturi INFERIOARA (jos).
+  Bara de sus NU este accesata prin F2-F12.
+
+================================================================================
+  LAYOUT RECOMANDAT - BARA DE JOS (obligatoriu)
+================================================================================
+
+  Slot F1  (jos)  -> Next Target  (/targetnext)
+  Slot F2  (jos)  -> Skill principal de atac (verde - dagger/lightning)
+  Slot F3  (jos)  -> Skill 1 / fist / al doilea atac
+  Slot F4  (jos)  -> Skill 2 (optional)
+  Slot F8  (jos)  -> Pick Up (culegere drop)
+
+================================================================================
+  PAŞI IN JOC
+================================================================================
+
+  1. Deschide bara de skill-uri (shortcut bar) in joc.
+  2. DRAG skill-ul VERDE de atac din bara de SUS slot 1
+     -> pe bara de JOS slot F2.
+  3. Verifica ca Next Target ramane pe F1 (bara de jos slot 1).
+  4. Daca ai fist / skill extra pe F3 jos, lasa-le sau muta-le pe F3/F4 jos.
+  5. Mutati Pick Up pe F8 (bara de jos slot 8).
+  6. NU lasati skill-urile de atac doar pe bara de sus!
+
+================================================================================
+  CONFIG BOT (config.json) - deja setat
+================================================================================
+
+  target_next = f1
+  attack      = f2
+  skill1      = f3
+  skill2      = f4
+  pick_up     = f8
+  rotation    = f2, f3, f2, f4, f2, f3
+
+================================================================================

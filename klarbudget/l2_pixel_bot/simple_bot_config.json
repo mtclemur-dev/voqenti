@@ -1,0 +1,43 @@
+{
+  "method": "postmsg",
+  "fight_s": "12",
+  "minimize": true,
+  "mob_name": "Stone golem",
+  "use_ram_tgt": true,
+  "f1n": "3",
+  "f1d": "0.8",
+  "skills": [
+    [
+      "f2",
+      "1.5"
+    ],
+    [
+      "f3",
+      "3.0"
+    ],
+    [
+      "f4",
+      "4.5"
+    ]
+  ],
+  "dist": "900",
+  "auto_ap": true,
+  "loot_en": true,
+  "pk_key": "f8",
+  "pk_n": "4",
+  "loot_dir": "up",
+  "loot_s": "2.5",
+  "buffs": "# tasta, minute, Nume\n# f6, 5, VampiricMist\n# f7, 30, DarkBlast",
+  "hp_en": false,
+  "hp_k": "",
+  "hp_thr": "50",
+  "mp_en": false,
+  "mp_k": "",
+  "mp_thr": "30",
+  "rec_thr": "25",
+  "rec_to": "60",
+  "pt_k": "up, right, up, left",
+  "pt_s": "2.5",
+  "pt_r": true,
+  "nk": "30"
+}

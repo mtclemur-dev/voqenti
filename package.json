@@ -17,8 +17,10 @@
     "@capacitor/push-notifications": "^8.1.1",
     "@supabase/supabase-js": "^2.106.2",
     "luxon": "^3.7.2",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
