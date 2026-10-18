@@ -4,7 +4,8 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, withSavedJob, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, confirmationDueSoon, confirmationKind, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, withSavedJob, WORK_WEEKDAYS } from './plan/planUtils'
+import ConfirmBadge from './plan/ConfirmBadge'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
@@ -404,9 +405,12 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
   const dateLabel = formatDisplayDate(job.work_date)
   const people = job.work_job_assignees ?? []
   const activePeople = people.filter(row => ['assigned', 'approved'].includes(row.status))
-  const focused = activePeople.length === 1 ? assignmentRange(activePeople[0], job) : clockRange(job.start_time, job.end_time)
-  const start = focused.start || formatClock(job.start_time)
-  const end = focused.end || formatClock(job.end_time)
+  const start = activePeople.length === 1
+    ? formatClock(activePeople[0].planned_start || job.start_time)
+    : formatClock(job.start_time)
+  const end = activePeople.length === 1
+    ? formatClock(activePeople[0].planned_end || job.end_time)
+    : formatClock(job.end_time)
   const time = [start, end].filter(Boolean).join(' – ')
   const duration = jobDurationLabel({ ...job, start_time: start, end_time: end }, t)
   const declinedPeople = people.filter(row => row.status === 'declined')
@@ -454,9 +458,13 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
         </span>
       </p>
       <p className="mt-1 text-xs text-slate-300">
-        {t('planSeenDone')}: {confirmed}
-        {' · '}
-        {t('planUnseen')}: {unseen}
+        {t('confirmSeen')}: {confirmed}
+        {unseen > 0 && (
+          <>
+            {' · '}
+            {confirmationDueSoon(job.work_date, start) ? t('confirmMissing') : t('confirmOpen')}: {unseen}
+          </>
+        )}
         {' · '}
         {t('planDeclined')}: {declinedPeople.length}
       </p>
@@ -2532,14 +2540,30 @@ export default function WorkPlan({
         service={serviceLabel(job, object)}
       >
         <div className="mt-3 space-y-1 text-sm text-slate-300">
-          {activePeople.map(row => (
-            <p key={row.id}>
-              {workerName(row.worker_id)}
-              {clockRangeLabel(assignmentRange(row, job)) ? ` · ${clockRangeLabel(assignmentRange(row, job))}` : ''}
-              {' · '}
-              {past ? t('planDone') : (row.seen_at ? t('planOpenedAt').replace('{time}', formatUpdatedAt(row.seen_at, language) || t('planSeenDone')) : t('planUnseen'))}
-            </p>
-          ))}
+          {activePeople.map(row => {
+            const saved = clockRange(row.planned_start || job.start_time, row.planned_end || job.end_time)
+            const savedLabel = clockRangeLabel(saved)
+            return (
+              <p key={row.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span>
+                  {workerName(row.worker_id)}
+                  {savedLabel ? ` · ${savedLabel}` : ''}
+                </span>
+                {past ? (
+                  <span>{t('planDone')}</span>
+                ) : (
+                  <ConfirmBadge
+                    kind={confirmationKind({
+                      seenAt: row.seen_at,
+                      workDate: job.work_date,
+                      startClock: saved.start,
+                    })}
+                    t={t}
+                  />
+                )}
+              </p>
+            )
+          })}
           {declinedPeople.map(row => (
             <p key={row.id} className="text-rose-200">
               {workerName(row.worker_id)} · {t('planDeclined')}

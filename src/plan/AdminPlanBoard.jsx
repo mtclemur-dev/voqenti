@@ -1,14 +1,17 @@
 import { Fragment, useMemo, useState } from 'react'
+import { DateTime } from 'luxon'
 import WeekBoard from './WeekBoard'
+import ConfirmBadge from './ConfirmBadge'
 import { IconAlert, IconChevron, IconUser, IconWork } from './icons'
 import WorkerShortcutRow from './WorkerShortcuts'
 import {
   assignmentRange,
-  clockRange,
   objectForService,
   durationMinutes,
+  confirmationKind,
   fillText,
   formatClock,
+  jobConfirmationKind,
   jobTone,
   longWeekdayDate,
   isoDate,
@@ -93,9 +96,9 @@ function jobStatusLabel(job, t) {
     const active = (job.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
     const needed = Math.max(Number(job.needed_count) || 0, active.length, 1)
     if (!active.length || active.length < needed) return t('planCoverShort')
-    return t('planUnseen')
+    return null
   }
-  if (tone === 'confirmed') return t('planSeenDone')
+  if (tone === 'confirmed') return null
   return t('planAssigned')
 }
 
@@ -214,6 +217,10 @@ export default function AdminPlanBoard({
     : t('adminEmptyDayJobs')
 
   const openForm = () => onNewJob?.(liveBoardDate)
+  const berlinToday = DateTime.now().setZone('Europe/Berlin').toISODate()
+  const onToday = liveBoardDate === berlinToday
+  const now = DateTime.now().setZone('Europe/Berlin')
+  const jumpToday = () => onSelectDate?.(DateTime.now().setZone('Europe/Berlin').toISODate())
 
   return (
     <div className="space-y-5">
@@ -225,13 +232,29 @@ export default function AdminPlanBoard({
         onSelectDate={onSelectDate}
         marks={boardMarks}
         compact
+        hideTodayChip
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xl font-black capitalize tracking-tight text-white sm:text-2xl">
-            {longWeekdayDate(liveBoardDate, language)}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-black capitalize tracking-tight text-white sm:text-2xl">
+              {longWeekdayDate(liveBoardDate, language)}
+            </h2>
+            {onToday ? (
+              <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100">
+                {t('adminTodayTag')}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={jumpToday}
+                className="inline-flex min-h-11 items-center rounded-full bg-cyan-400 px-3 text-sm font-bold text-slate-950 hover:bg-cyan-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+              >
+                {t('adminJumpToday')}
+              </button>
+            )}
+          </div>
           <p className="mt-1 text-sm text-slate-300">
             {fillText(t('adminDayJobs'), { count: String(focusWorkerId ? visibleJobs.length : sortedJobs.length) })}
             {dayMinutes != null ? ` · ${fillText(t('adminDayHours'), { hours: minutesLabel(dayMinutes, t) })}` : ''}
@@ -483,13 +506,14 @@ export default function AdminPlanBoard({
                     .filter(row => ['assigned', 'approved'].includes(row.status))
                     .map(row => workerName?.(row.worker_id))
                     .filter(Boolean)
-                const range = focusRow
-                  ? assignmentRange(focusRow, job, object)
-                  : clockRange(job.start_time, job.end_time)
-                const start = range.start || formatClock(job.start_time)
-                const end = range.end || formatClock(job.end_time)
+                const start = formatClock(focusRow?.planned_start || job.start_time)
+                const end = formatClock(focusRow?.planned_end || job.end_time)
+                const confirm = focusRow && ['assigned', 'approved'].includes(focusRow.status)
+                  ? confirmationKind({ seenAt: focusRow.seen_at, workDate: job.work_date, startClock: start, now })
+                  : jobConfirmationKind(job, start, now)
                 const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
+                const statusLabel = jobStatusLabel(job, t)
                 const detailsId = `admin-job-${job.id}`
                 return (
                   <Fragment key={job.id}>
@@ -502,15 +526,24 @@ export default function AdminPlanBoard({
                       type="button"
                       aria-expanded={open}
                       aria-controls={detailsId}
-                      aria-label={`${place}${start ? ` ${start}` : ''}. ${open ? t('collapseDetails') : t('expandDetails')}`}
+                      aria-label={`${place} ${start || t('adminFlexible')}. ${open ? t('collapseDetails') : t('expandDetails')}`}
                       onClick={() => onToggleJob(job.id)}
                       className="flex min-h-12 w-full items-stretch gap-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                     >
                       <span className={`w-1 shrink-0 rounded-l-2xl ${TONE[tone]}`} aria-hidden="true" />
-                      <span className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]">
-                        <span className="text-base font-black tabular-nums leading-none text-white">
-                          {start || '—'}
-                          {end && start ? <span className="mt-1 block text-[12px] font-semibold tabular-nums text-slate-300">– {end}</span> : null}
+                      <span className="grid w-full grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3">
+                        <span className="min-w-0 text-white">
+                          {start ? (
+                            <span className="block text-base font-black tabular-nums leading-none">
+                              {start}
+                              {end ? <span className="mt-1 block text-[12px] font-semibold tabular-nums text-slate-300">– {end}</span> : null}
+                            </span>
+                          ) : (
+                            <span className="block">
+                              <span className="block text-sm font-bold leading-none text-slate-100">{t('adminFlexible')}</span>
+                              <span className="mt-1 block text-[10px] font-medium leading-tight text-slate-400">{t('adminNoFixedTime')}</span>
+                            </span>
+                          )}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>
@@ -521,9 +554,20 @@ export default function AdminPlanBoard({
                               focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
                             ].filter(Boolean).join(' · ')}
                           </span>
+                          {!statusLabel && (
+                            <span className="mt-1 flex sm:hidden">
+                              <ConfirmBadge kind={confirm} t={t} />
+                            </span>
+                          )}
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="hidden max-w-[9rem] truncate text-xs font-semibold text-slate-200 sm:inline">{jobStatusLabel(job, t)}</span>
+                          {statusLabel ? (
+                            <span className="hidden max-w-[9rem] truncate text-xs font-semibold text-slate-200 sm:inline">{statusLabel}</span>
+                          ) : (
+                            <span className="hidden sm:inline-flex">
+                              <ConfirmBadge kind={confirm} t={t} />
+                            </span>
+                          )}
                           <IconChevron className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
                         </span>
                       </span>
@@ -536,7 +580,9 @@ export default function AdminPlanBoard({
                     >
                       {open && (
                         <div className="px-3 pb-3 pt-2">
-                          <p className="mb-2 text-xs font-semibold text-slate-300 sm:hidden">{jobStatusLabel(job, t)}</p>
+                          {statusLabel ? (
+                            <p className="mb-2 text-xs font-semibold text-slate-300 sm:hidden">{statusLabel}</p>
+                          ) : null}
                           {renderJob?.(job)}
                         </div>
                       )}

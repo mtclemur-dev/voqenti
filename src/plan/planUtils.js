@@ -509,6 +509,34 @@ export function jobIsOwnerPrivate(job, ownerIds) {
   return people.every(row => ownerIds.has(row.worker_id))
 }
 
+export function confirmationDueSoon(date, clock, now = DateTime.now().setZone('Europe/Berlin')) {
+  const day = isoDate(date)
+  if (!day || !now?.isValid) return false
+  const time = formatClock(clock)
+  const start = time
+    ? DateTime.fromISO(`${day}T${time}`, { zone: 'Europe/Berlin' })
+    : DateTime.fromISO(day, { zone: 'Europe/Berlin' }).startOf('day')
+  if (!start.isValid) return false
+  const hoursUntil = start.diff(now, 'hours').hours
+  return hoursUntil <= 24 && hoursUntil >= -24
+}
+
+export function confirmationKind({ seenAt, workDate, startClock, now } = {}) {
+  if (seenAt) return 'seen'
+  return confirmationDueSoon(workDate, startClock, now) ? 'missing' : 'open'
+}
+
+export function jobConfirmationKind(job, startClock, now) {
+  const active = (job?.work_job_assignees ?? []).filter(row => ['assigned', 'approved'].includes(row.status))
+  if (!active.length) return null
+  if (active.every(row => row.seen_at)) return 'seen'
+  return confirmationKind({
+    workDate: job?.work_date,
+    startClock: formatClock(startClock || job?.start_time),
+    now,
+  })
+}
+
 export function formatSeenAt(value, language = 'de') {
   if (!value) return ''
   const dt = DateTime.fromISO(value, { zone: 'Europe/Berlin' }).setLocale(language)

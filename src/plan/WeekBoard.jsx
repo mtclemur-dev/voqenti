@@ -56,6 +56,7 @@ export default function WeekBoard({
   marks,
   compact = false,
   hidePast = false,
+  hideTodayChip = false,
 }) {
   const weekStart = berlinWeekStart(selectedDate || today)
   const days = berlinWeekDays(weekStart)
@@ -93,17 +94,19 @@ export default function WeekBoard({
             <p className={`truncate font-semibold capitalize tracking-tight text-white ${compact ? 'text-xs' : 'text-sm'}`}>
               {monthTitle(selected, language)}
             </p>
-            <button
-              type="button"
-              onClick={() => jump(today)}
-              className={`${compact ? 'mt-0.5 min-h-8 px-2.5' : 'mt-1 min-h-9 px-3'} rounded-full text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                selected === today
-                  ? 'bg-cyan-400 text-slate-950'
-                  : 'bg-white/10 text-slate-200 hover:bg-white/15'
-              }`}
-            >
-              {t('planToday')}
-            </button>
+            {!hideTodayChip && (
+              <button
+                type="button"
+                onClick={() => jump(today)}
+                className={`${compact ? 'mt-0.5 min-h-8 px-2.5' : 'mt-1 min-h-9 px-3'} rounded-full text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                  selected === today
+                    ? 'bg-cyan-400 text-slate-950'
+                    : 'bg-white/10 text-slate-200 hover:bg-white/15'
+                }`}
+              >
+                {t('planToday')}
+              </button>
+            )}
           </div>
           <button
             type="button"
