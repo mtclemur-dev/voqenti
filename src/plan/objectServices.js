@@ -114,6 +114,27 @@ export function serializeServices(list) {
   })
 }
 
+export const HOURLY_SERVICE_NAME = 'Sonderreinigung nach Stunde'
+export const HOURLY_SERVICE_ID = 'hourly-sonderreinigung'
+
+export function planServiceChoices(object) {
+  const list = parseServices(object?.services_json ?? object?.services)
+  const hasHourly = list.some(item => (
+    item.id === HOURLY_SERVICE_ID
+    || item.name.trim().toLowerCase() === HOURLY_SERVICE_NAME.toLowerCase()
+  ))
+  if (hasHourly) return list
+  return [...list, {
+    id: HOURLY_SERVICE_ID,
+    name: HOURLY_SERVICE_NAME,
+    hourly: true,
+    hours: '',
+    hours_by_day: {},
+    start: '',
+    start_by_day: {},
+  }]
+}
+
 export function suggestedServiceNames() {
   return [
     'Unterhaltsreinigung',
@@ -127,9 +148,14 @@ export function suggestedServiceNames() {
 
 export function serviceOf(object, serviceId, fallbackName = '') {
   const list = parseServices(object?.services_json ?? object?.services)
-  return list.find(item => item.id === serviceId)
-    || list.find(item => item.name === fallbackName)
-    || (fallbackName ? { id: serviceId || '', name: fallbackName } : null)
+  const found = list.find(item => item.id === serviceId)
+    || (fallbackName ? list.find(item => item.name === fallbackName) : null)
+  if (found) return found
+  if (serviceId === HOURLY_SERVICE_ID) {
+    return { id: HOURLY_SERVICE_ID, name: HOURLY_SERVICE_NAME, hourly: true }
+  }
+  if (!fallbackName) return null
+  return { id: serviceId || '', name: fallbackName, hourly: nameMeansHourly(fallbackName) }
 }
 
 export function serviceLabel(job, object) {

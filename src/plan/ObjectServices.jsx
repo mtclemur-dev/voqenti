@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { nameMeansHourly, parseServices, serviceIsHourly, suggestedServiceNames } from './objectServices'
+import { nameMeansHourly, parseServices, planServiceChoices, serviceIsHourly, suggestedServiceNames } from './objectServices'
 import { clockPlusMinutes, formatObjectFixedSummary, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, serializeFixedHoursJson, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 import TimeField, { ComputedEnd } from './TimeField'
 
@@ -223,41 +223,45 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
 }
 
 export function JobServiceField({ t, language = 'de', object, value, onChange, className = 'mt-3 block text-xs text-slate-400' }) {
-  const services = parseServices(object?.services_json ?? object?.services)
-  if (!services.length) return null
+  if (!object) return null
+  const services = planServiceChoices(object)
   const selected = services.find(item => item.id === value)
-  const hours = selected
+  const hours = selected && !serviceIsHourly(selected)
     ? formatObjectFixedSummary(objectForService(object, selected.id), language)
     : ''
   return (
-    <label className={className}>
-      {t('serviceLabel')}
-      <select
-        value={value || ''}
-        onChange={e => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
-      >
-        <option value="">{t('serviceSelect')}</option>
+    <div className={className}>
+      <p>{t('serviceLabel')}</p>
+      <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={t('serviceLabel')}>
         {services.map(item => {
-          const summary = serviceIsHourly(item)
-            ? t('serviceHourlyBadge')
-            : formatObjectFixedSummary(objectForService(object, item.id), language)
+          const on = item.id === value
+          const hourly = serviceIsHourly(item)
           return (
-            <option key={item.id} value={item.id}>
-              {summary ? `${item.name} · ${summary}` : item.name}
-            </option>
+            <button
+              key={item.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(on ? '' : item.id)}
+              className={`min-h-11 rounded-full px-3 text-left text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                on
+                  ? hourly ? 'bg-amber-400 text-slate-950' : 'bg-cyan-600 text-white'
+                  : 'bg-slate-800 text-slate-100 hover:bg-slate-700'
+              }`}
+            >
+              {item.name}
+            </button>
           )
         })}
-      </select>
+      </div>
       {serviceIsHourly(selected) ? (
-        <span className="mt-1 block text-[12px] text-amber-100">{t('serviceJobHourly')}</span>
+        <p className="mt-2 text-[12px] leading-5 text-amber-100">{t('serviceJobHourly')}</p>
       ) : hours ? (
-        <span className="mt-1 block text-[12px] text-cyan-100">
+        <p className="mt-2 text-[12px] text-cyan-100">
           {t('serviceJobHours').replace('{hours}', hours)}
-        </span>
+        </p>
       ) : selected ? (
-        <span className="mt-1 block text-[12px] text-slate-500">{t('serviceJobHoursEmpty')}</span>
+        <p className="mt-2 text-[12px] text-slate-500">{t('serviceJobHoursEmpty')}</p>
       ) : null}
-    </label>
+    </div>
   )
 }

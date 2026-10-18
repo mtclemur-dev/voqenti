@@ -768,7 +768,11 @@ export default function WorkPlan({
   }
   const setNeedField = (key, value) => setNeedForm(current => {
     const next = { ...current, [key]: value }
-    const object = objectForService(objects.find(item => item.id === next.object_id), next.service_id)
+    const rawObject = objects.find(item => item.id === next.object_id)
+    if (key === 'service_id' && serviceIsHourly(serviceOf(rawObject, next.service_id))) {
+      return { ...next, start_time: '', end_time: '' }
+    }
+    const object = objectForService(rawObject, next.service_id)
     if (key !== 'start_time' && key !== 'work_date' && key !== 'service_id') return next
     const timed = withFixedEnd({ start: next.start_time, end: next.end_time }, object, next.work_date)
     return { ...next, start_time: timed.start, end_time: timed.end }
