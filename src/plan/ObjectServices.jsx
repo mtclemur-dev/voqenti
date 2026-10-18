@@ -225,6 +225,8 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
 export function JobServiceField({ t, language = 'de', object, value, onChange, className = 'mt-3 block text-xs text-slate-400' }) {
   if (!object) return null
   const services = planServiceChoices(object)
+  const hourly = services.filter(serviceIsHourly)
+  const fixed = services.filter(item => !serviceIsHourly(item))
   const selected = services.find(item => item.id === value)
   const hours = selected && !serviceIsHourly(selected)
     ? formatObjectFixedSummary(objectForService(object, selected.id), language)
@@ -232,20 +234,17 @@ export function JobServiceField({ t, language = 'de', object, value, onChange, c
   return (
     <div className={className}>
       <p>{t('serviceLabel')}</p>
-      <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={t('serviceLabel')}>
-        {services.map(item => {
+      <div className="mt-2 flex flex-wrap gap-2">
+        {hourly.map(item => {
           const on = item.id === value
-          const hourly = serviceIsHourly(item)
           return (
             <button
               key={item.id}
               type="button"
               aria-pressed={on}
               onClick={() => onChange(on ? '' : item.id)}
-              className={`min-h-11 rounded-full px-3 text-left text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
-                on
-                  ? hourly ? 'bg-amber-400 text-slate-950' : 'bg-cyan-600 text-white'
-                  : 'bg-slate-800 text-slate-100 hover:bg-slate-700'
+              className={`min-h-11 rounded-full px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 ${
+                on ? 'bg-amber-400 text-slate-950' : 'bg-amber-400/15 text-amber-100 ring-1 ring-amber-300/50'
               }`}
             >
               {item.name}
@@ -253,6 +252,25 @@ export function JobServiceField({ t, language = 'de', object, value, onChange, c
           )
         })}
       </div>
+      <select
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        aria-label={t('serviceLabel')}
+        className="mt-2 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
+      >
+        <option value="">{t('serviceSelect')}</option>
+        {hourly.map(item => (
+          <option key={item.id} value={item.id}>{item.name}</option>
+        ))}
+        {fixed.map(item => {
+          const summary = formatObjectFixedSummary(objectForService(object, item.id), language)
+          return (
+            <option key={item.id} value={item.id}>
+              {summary ? `${item.name} · ${summary}` : item.name}
+            </option>
+          )
+        })}
+      </select>
       {serviceIsHourly(selected) ? (
         <p className="mt-2 text-[12px] leading-5 text-amber-100">{t('serviceJobHourly')}</p>
       ) : hours ? (
