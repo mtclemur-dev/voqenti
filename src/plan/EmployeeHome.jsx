@@ -14,7 +14,6 @@ import {
   assignmentRange,
   firstName,
   objectForService,
-  withChainedAssignmentRows,
   berlinWeekDays,
   berlinWeekStart,
   crewAssignees,
@@ -515,11 +514,10 @@ export default function EmployeeHome({
     return () => { cancelled = true }
   }, [])
   const sorted = useMemo(
-    () => withChainedAssignmentRows(
-      [...myPlan].filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today)),
-      objects,
-    ).sort(sortPlanRows),
-    [allowPastHours, myPlan, objects, today],
+    () => [...myPlan]
+      .filter(row => !isJobCancelled(row.work_jobs) && (allowPastHours || isoDate(row.work_jobs?.work_date) >= today))
+      .sort(sortPlanRows),
+    [allowPastHours, myPlan, today],
   )
   useEffect(() => {
     if (notifyPerm !== 'granted') return undefined

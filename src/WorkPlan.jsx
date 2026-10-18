@@ -2675,7 +2675,6 @@ export default function WorkPlan({
           t={t}
           language={language}
           workers={activeWorkers.filter(worker => !hideOwnerPlan || !ownerIds.has(worker.id))}
-          jobs={plannedJobs}
           today={today}
         />
       )}

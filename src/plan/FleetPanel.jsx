@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DateTime } from 'luxon'
 import { supabase } from '../supabaseClient'
-import { fillText, firstName, isoDate, minutesLabel } from './planUtils'
-import { DEPOT_ADDRESS, ensureTravel, formatKm, travelBetweenSync } from './travel'
+import { fillText, firstName, formatDisplayDate, isoDate } from './planUtils'
 import FleetVehicleDialog from './FleetVehicleDialog'
 import {
   VEHICLE_BASE_COLUMNS,
@@ -33,21 +32,6 @@ function emptyVehicle() {
   }
 }
 
-function workDaysFor(jobs, workerId, from, to) {
-  const days = new Set()
-  if (!workerId) return days
-  for (const job of jobs || []) {
-    const day = isoDate(job.work_date)
-    if (!day || day < from || day > to) continue
-    if (job.status === 'cancelled' || job.status === 'canceled') continue
-    const assigned = (job.work_job_assignees ?? []).some(row => (
-      row.worker_id === workerId && (!row.status || ['assigned', 'approved'].includes(row.status))
-    ))
-    if (assigned) days.add(day)
-  }
-  return days
-}
-
 function tuvInfo(next, today) {
   const due = isoDate(next)
   if (!due) return { kind: 'none', days: null }
@@ -71,16 +55,7 @@ function serviceInfo(item) {
   return { kind: 'ok', left }
 }
 
-function roundTrip(home) {
-  const out = travelBetweenSync(home, DEPOT_ADDRESS)
-  const back = travelBetweenSync(DEPOT_ADDRESS, home)
-  return {
-    minutes: (out.minutes || 0) + (back.minutes || 0),
-    meters: (out.meters || 0) + (back.meters || 0),
-  }
-}
-
-export default function FleetPanel({ t, language = 'de', workers = [], jobs = [], today }) {
+export default function FleetPanel({ t, language = 'de', workers = [], today }) {
   const [vehicles, setVehicles] = useState([])
   const [form, setForm] = useState(emptyVehicle)
   const [editingId, setEditingId] = useState('')
@@ -89,9 +64,6 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [extrasReady, setExtrasReady] = useState(true)
-  const [travelTick, setTravelTick] = useState(0)
-  const monthStart = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).startOf('month').toISODate()
-  const monthEnd = DateTime.fromISO(today, { zone: 'Europe/Berlin' }).endOf('month').toISODate()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -126,21 +98,6 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
     load()
   }, [load])
 
-  useEffect(() => {
-    const homes = [...new Set(
-      vehicles
-        .filter(item => item.driver_id && String(item.home_address || '').trim())
-        .map(item => String(item.home_address).trim()),
-    )]
-    if (!homes.length) return undefined
-    let cancelled = false
-    Promise.all(homes.flatMap(home => [ensureTravel(home, DEPOT_ADDRESS), ensureTravel(DEPOT_ADDRESS, home)]))
-      .then(() => {
-        if (!cancelled) setTravelTick(current => current + 1)
-      })
-    return () => { cancelled = true }
-  }, [vehicles])
-
   const people = useMemo(
     () => [...workers].filter(item => item?.id && item.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [workers],
@@ -148,10 +105,6 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
   const nameOf = useCallback((id) => people.find(item => item.id === id)?.name || '', [people])
 
   const rows = useMemo(() => vehicles.map((item) => {
-    void travelTick
-    const days = item.driver_id ? workDaysFor(jobs, item.driver_id, monthStart, monthEnd) : new Set()
-    const trip = item.driver_id && item.home_address ? roundTrip(item.home_address) : { minutes: 0, meters: 0 }
-    const todayOn = Boolean(item.driver_id && days.has(today))
     const open = openNeeds(item.needs)
     const tuv = tuvInfo(item.tuv_next, today)
     const service = serviceInfo(item)
@@ -163,14 +116,8 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
       service,
       openCount: open.length,
       repair,
-      dayCount: days.size,
-      todayTrip: todayOn ? trip : { minutes: 0, meters: 0 },
-      monthTrip: {
-        minutes: trip.minutes * days.size,
-        meters: trip.meters * days.size,
-      },
     }
-  }), [jobs, monthEnd, monthStart, nameOf, today, travelTick, vehicles])
+  }), [nameOf, today, vehicles])
 
   const alerts = rows.filter(item => item.tuv.kind === 'over' || item.tuv.kind === 'soon')
 
@@ -328,6 +275,17 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
                       {fillText(t('fleetOpenNeeds'), { count: String(item.openCount) })}
                     </p>
                   ) : null}
+                  {item.odometer != null && item.odometer !== '' ? (
+                    <p className="text-sm text-slate-300">
+                      {item.odometer} km
+                      {item.odometer_date ? ` · ${t('fleetOdometerDate')} ${formatDisplayDate(item.odometer_date, language)}` : ''}
+                    </p>
+                  ) : null}
+                  {item.service_km ? (
+                    <p className="text-sm text-slate-400">
+                      {t('fleetServiceKm')} {item.service_km} km
+                    </p>
+                  ) : null}
                   <div className="mt-1 flex flex-wrap gap-1">
                     {item.active === false && <StatusChip label={t('fleetStatusOff')} tone="rose" />}
                     {item.active !== false && <StatusChip label={t('fleetStatusActive')} tone="cyan" />}
@@ -337,12 +295,6 @@ export default function FleetPanel({ t, language = 'de', workers = [], jobs = []
                     {item.repair && <StatusChip label={t('fleetStatusRepair')} tone="rose" />}
                     {!item.home_address && <StatusChip label={t('fleetNoHome')} tone="slate" />}
                   </div>
-                  {item.driver_id && item.home_address && item.monthTrip.meters ? (
-                    <p className="mt-1 text-xs text-slate-500">
-                      {t('fleetMonth')}: {fillText(t('fleetKm'), { km: formatKm(item.monthTrip.meters) || '0' })}
-                      {item.monthTrip.minutes ? ` · ${minutesLabel(item.monthTrip.minutes, t)}` : ''}
-                    </p>
-                  ) : null}
                 </button>
                 <button
                   type="button"
