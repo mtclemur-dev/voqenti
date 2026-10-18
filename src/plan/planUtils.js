@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DateTime } from 'luxon'
-import { serviceHasHours, serviceOf } from './objectServices.js'
+import { serviceHasHours, serviceIsHourly, serviceOf } from './objectServices.js'
 
 export const WORK_WEEKDAYS = [1, 2, 3, 4, 5]
 export const TURNUS_DAYS = [1, 2, 3, 4, 5, 6, 7]
@@ -226,6 +226,9 @@ export function objectForService(object, serviceId, fallbackName = '') {
   try {
     const service = serviceOf(object, serviceId, fallbackName)
     if (!service) return object
+    if (serviceIsHourly(service)) {
+      return { ...object, fixed_hours: null, fixed_hours_json: [] }
+    }
     const hasHours = serviceHasHours(service)
     const startByDay = { ...parseFixedStartByDay(object.fixed_hours_json) }
     const starts = service.start_by_day && typeof service.start_by_day === 'object' ? service.start_by_day : {}

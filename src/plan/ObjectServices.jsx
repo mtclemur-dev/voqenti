@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { parseServices, suggestedServiceNames } from './objectServices'
+import { nameMeansHourly, parseServices, serviceIsHourly, suggestedServiceNames } from './objectServices'
 import { clockPlusMinutes, formatObjectFixedSummary, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, serializeFixedHoursJson, weekdayLabel, WORK_WEEKDAYS } from './planUtils'
 import TimeField, { ComputedEnd } from './TimeField'
 
@@ -47,6 +47,7 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
         hours_by_day: {},
         start: '',
         start_by_day: {},
+        hourly: nameMeansHourly(name),
       }],
     }))
     setText('')
@@ -78,6 +79,38 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
                   {t('delete')}
                 </button>
               </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  aria-pressed={!serviceIsHourly(item)}
+                  onClick={() => patch(item.id, { hourly: false })}
+                  className={`min-h-11 rounded-full px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                    serviceIsHourly(item) ? 'bg-slate-800 text-slate-300' : 'bg-cyan-600 text-white'
+                  }`}
+                >
+                  {t('serviceModeFixed')}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={serviceIsHourly(item)}
+                  onClick={() => patch(item.id, {
+                    hourly: true,
+                    hours: '',
+                    hours_by_day: {},
+                    start: '',
+                    start_by_day: {},
+                  })}
+                  className={`min-h-11 rounded-full px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                    serviceIsHourly(item) ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {t('serviceModeHourly')}
+                </button>
+              </div>
+              {serviceIsHourly(item) ? (
+                <p className="mt-2 text-[12px] leading-5 text-amber-100/80">{t('serviceHourlyHint')}</p>
+              ) : (
+              <>
               <p className="mt-2 text-[11px] leading-5 text-slate-500">{t('serviceHoursHint')}</p>
               <label className="mt-2 block text-[11px] text-slate-400">
                 {t('serviceDailyHours')}
@@ -142,6 +175,8 @@ export function ObjectServicesFields({ t, language = 'de', form, setForm }) {
                   {t('objectFixedBadge').replace('{hours}', formatObjectFixedSummary(serviceScoped(form, item), language))}
                 </p>
               ) : null}
+              </>
+              )}
             </li>
           ))}
         </ul>
@@ -204,7 +239,9 @@ export function JobServiceField({ t, language = 'de', object, value, onChange, c
       >
         <option value="">{t('serviceSelect')}</option>
         {services.map(item => {
-          const summary = formatObjectFixedSummary(objectForService(object, item.id), language)
+          const summary = serviceIsHourly(item)
+            ? t('serviceHourlyBadge')
+            : formatObjectFixedSummary(objectForService(object, item.id), language)
           return (
             <option key={item.id} value={item.id}>
               {summary ? `${item.name} · ${summary}` : item.name}
@@ -212,7 +249,9 @@ export function JobServiceField({ t, language = 'de', object, value, onChange, c
           )
         })}
       </select>
-      {hours ? (
+      {serviceIsHourly(selected) ? (
+        <span className="mt-1 block text-[12px] text-amber-100">{t('serviceJobHourly')}</span>
+      ) : hours ? (
         <span className="mt-1 block text-[12px] text-cyan-100">
           {t('serviceJobHours').replace('{hours}', hours)}
         </span>

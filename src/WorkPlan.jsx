@@ -9,7 +9,7 @@ import ConfirmBadge from './plan/ConfirmBadge'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
-import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceFilterKey, serviceLabel, serviceOf } from './plan/objectServices'
+import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceFilterKey, serviceIsHourly, serviceLabel, serviceOf } from './plan/objectServices'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, restoreMinutesForObject, stripSpreadBlatt } from './plan/clearBlattSpread'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -737,7 +737,17 @@ export default function WorkPlan({
 
   const setField = (key, value) => setForm(current => {
     const next = { ...current, [key]: value }
-    const object = objectForService(objects.find(item => item.id === next.object_id), next.service_id)
+    const rawObject = objects.find(item => item.id === next.object_id)
+    const object = objectForService(rawObject, next.service_id)
+    if (key === 'service_id' && serviceIsHourly(serviceOf(rawObject, next.service_id))) {
+      return editingId || duplicating ? next : {
+        ...next,
+        start_time: '',
+        end_time: '',
+        until_date: next.work_date,
+        worker_hours: Object.fromEntries(Object.keys(next.worker_hours || {}).map(id => [id, { start: '', end: '' }])),
+      }
+    }
     if (key === 'service_id') {
       return formWithFixedTimes(
         editingId || duplicating ? next : withObjectPlanRange(next, object, { force: true }),
@@ -2791,7 +2801,9 @@ export default function WorkPlan({
                     {parseServices(item.services_json).length ? (
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {parseServices(item.services_json).map(row => {
-                          const hours = formatObjectFixedSummary(objectForService(item, row.id), language)
+                          const hourly = serviceIsHourly(row)
+                          const hours = hourly ? '' : formatObjectFixedSummary(objectForService(item, row.id), language)
+                          const detail = hourly ? t('serviceHourlyBadge') : hours
                           return (
                           <button
                             key={row.id}
@@ -2802,9 +2814,11 @@ export default function WorkPlan({
                               setHistoryTab('worked')
                               onOpenView?.('history')
                             }}
-                            className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-100"
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              hourly ? 'bg-amber-400/15 text-amber-100' : 'bg-cyan-500/10 text-cyan-100'
+                            }`}
                           >
-                            {hours ? `${row.name} · ${hours}` : row.name}
+                            {detail ? `${row.name} · ${detail}` : row.name}
                           </button>
                           )
                         })}

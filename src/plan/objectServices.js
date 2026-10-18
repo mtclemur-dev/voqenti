@@ -84,6 +84,7 @@ export function parseServices(value) {
       start_by_day: parseStartMap(item?.start_by_day || item?.starts),
       locked: Boolean(item?.locked || item?.time_locked),
       start: String(item?.start || item?.from || '').trim(),
+      hourly: item?.hourly === false ? false : Boolean(item?.hourly) || /nach\s*stunde/i.test(name),
     })
   }
   return list
@@ -91,21 +92,24 @@ export function parseServices(value) {
 
 export function serializeServices(list) {
   return parseServices(list).map(item => {
-    const hours = parseHoursAmount(item.hours)
+    const hours = item.hourly ? 0 : parseHoursAmount(item.hours)
     const hours_by_day = {}
-    for (const [day, raw] of Object.entries(item.hours_by_day || {})) {
-      const amount = parseHoursAmount(raw)
-      if (amount) hours_by_day[Number(day)] = amount
+    if (!item.hourly) {
+      for (const [day, raw] of Object.entries(item.hours_by_day || {})) {
+        const amount = parseHoursAmount(raw)
+        if (amount) hours_by_day[Number(day)] = amount
+      }
     }
-    const start_by_day = parseStartMap(item.start_by_day)
+    const start_by_day = item.hourly ? {} : parseStartMap(item.start_by_day)
     return {
       id: item.id,
       name: item.name,
       ...(hours ? { hours } : {}),
       ...(Object.keys(hours_by_day).length ? { hours_by_day } : {}),
       ...(Object.keys(start_by_day).length ? { start_by_day } : {}),
-      ...(item.locked ? { locked: true } : {}),
-      ...(item.start ? { start: item.start } : {}),
+      ...(item.hourly ? { hourly: true } : nameMeansHourly(item.name) ? { hourly: false } : {}),
+      ...(!item.hourly && item.locked ? { locked: true } : {}),
+      ...(!item.hourly && item.start ? { start: item.start } : {}),
     }
   })
 }
@@ -115,6 +119,7 @@ export function suggestedServiceNames() {
     'Unterhaltsreinigung',
     'Glas- und Rahmenreinigung',
     'Sonderreinigung',
+    'Sonderreinigung nach Stunde',
     'Grundreinigung',
     'Industriereinigung',
   ]
@@ -139,8 +144,19 @@ export function serviceFilterKey(service) {
   return String(service?.id || service?.name || '').trim().toLowerCase()
 }
 
-export function serviceHasHours(service) {
+export function nameMeansHourly(name) {
+  return /nach\s*stunde/i.test(String(name || ''))
+}
+
+export function serviceIsHourly(service) {
   if (!service) return false
+  if (service.hourly === false) return false
+  if (service.hourly === true) return true
+  return nameMeansHourly(service.name)
+}
+
+export function serviceHasHours(service) {
+  if (!service || serviceIsHourly(service)) return false
   if (parseHoursAmount(service.hours)) return true
   return Object.values(service.hours_by_day || {}).some(value => parseHoursAmount(value))
 }

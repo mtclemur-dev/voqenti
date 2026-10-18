@@ -22,7 +22,7 @@ import {
   turnusForDate,
   workerInitials,
 } from './planUtils'
-import { serviceLabel } from './objectServices'
+import { serviceIsHourly, serviceLabel, serviceOf } from './objectServices'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -511,6 +511,10 @@ export default function AdminPlanBoard({
                 const confirm = focusRow && ['assigned', 'approved'].includes(focusRow.status)
                   ? confirmationKind({ seenAt: focusRow.seen_at, workDate: job.work_date, startClock: start, now })
                   : jobConfirmationKind(job, start, now)
+                const serviceName = serviceLabel(job, object)
+                const serviceText = serviceName && serviceIsHourly(serviceOf(object, job.service_id, job.service_name))
+                  ? `${serviceName} · ${t('serviceHourlyBadge')}`
+                  : serviceName
                 const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const statusLabel = jobStatusLabel(job, t)
@@ -549,7 +553,7 @@ export default function AdminPlanBoard({
                           <span className="block truncate text-sm font-semibold text-white">{place}</span>
                           <span className="mt-0.5 block truncate text-xs text-slate-300">
                             {[
-                              serviceLabel(job, object),
+                              serviceText,
                               area && area !== place ? area : '',
                               focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
                             ].filter(Boolean).join(' · ')}
