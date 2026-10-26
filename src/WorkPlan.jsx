@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import EmployeeHome from './plan/EmployeeHome'
 import EmployeeHours from './plan/EmployeeHours'
 import AdminPlanBoard from './plan/AdminPlanBoard'
-import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, confirmationDueSoon, confirmationKind, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, withSavedJob, WORK_WEEKDAYS } from './plan/planUtils'
+import { assignmentRange, clockPlusMinutes, clockRange, clockRangeLabel, confirmationDueSoon, confirmationKind, datesInRange, debounce, expandPlanDays, firstName, formatClock, formatObjectFixedSummary, formatUpdatedAt, formWithFixedTimes, isOfficePlanner, isOwnerWorker, isPlannerRole, jobAuthorLine, jobDurationLabel, jobIsOwnerPrivate, leaveBalance, leaveBookingClash, marksFromJobs, minutesLabel, nextWeekday, objectFixedHoursLabel, objectFixedMinutes, objectFixedStart, objectForService, objectHasFixedHours, objectHasFixedStart, objectHasGuide, objectPlanWeekdays, objectTimeLocked, ownerWorkerIdSet, parseFixedHoursByDay, parseFixedHoursValue, parseFixedStartByDay, parseTurnus, PLANNER_INVITE_ROLE, rangesOverlap, rowWorkMinutes, serializeFixedHoursJson, serializeTurnus, skipPlanNotice, spanClockRange, vacationDaysInRange, weekdayLabel, withFixedEnd, withObjectPlanRange, withSavedJob, WORK_WEEKDAYS } from './plan/planUtils'
 import ConfirmBadge from './plan/ConfirmBadge'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
@@ -91,7 +91,37 @@ function isMissingColumn(error) {
     || message.includes('service_name')
     || message.includes('hours_changed')
     || message.includes('crew_names')
+    || message.includes('created_by_')
+    || message.includes('updated_by_')
     || message.includes('schema cache')
+}
+
+function authorStamp(worker, kind) {
+  const name = String(worker?.name || '').trim() || null
+  const id = worker?.id || null
+  if (!name && !id) return {}
+  if (kind === 'create') return { created_by_worker: id, created_by_name: name }
+  return { updated_by_worker: id, updated_by_name: name }
+}
+
+function stripAuthor(payload) {
+  const next = { ...payload }
+  delete next.created_by_worker
+  delete next.created_by_name
+  delete next.updated_by_worker
+  delete next.updated_by_name
+  return next
+}
+
+function authorColumnMissing(error) {
+  return /created_by_|updated_by_/i.test(error?.message || '')
+}
+
+let authorSetupNoted = false
+function warnAuthorSetup(t, error) {
+  if (authorSetupNoted || !authorColumnMissing(error)) return
+  authorSetupNoted = true
+  alert(t('jobAuthorSetup'))
 }
 
 async function loadCrewNamesForJobs(jobIds) {
@@ -503,6 +533,9 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{hourlyNote.notes}</p>
         </div>
       )}
+      {jobAuthorLine(job, t) ? (
+        <p className="mt-3 text-xs font-semibold text-slate-300">{jobAuthorLine(job, t)}</p>
+      ) : null}
       {job.updated_at && (
         <p className="mt-3 text-xs text-slate-400">{t('lastUpdated')}: {formatUpdatedAt(job.updated_at, language)}</p>
       )}
@@ -1336,13 +1369,21 @@ export default function WorkPlan({
       status: 'active',
       updated_at: new Date().toISOString(),
       crew_names: crewNamesFor(form.worker_ids, workers),
+      ...authorStamp(currentWorker, editingId ? 'update' : 'create'),
     }
 
-    let result = editingId
-      ? await supabase.from('work_jobs').update(payload).eq('id', editingId).select().single()
-      : await supabase.from('work_jobs').insert([payload]).select().single()
+    const writeJob = (body) => (editingId
+      ? supabase.from('work_jobs').update(body).eq('id', editingId).select().single()
+      : supabase.from('work_jobs').insert([body]).select().single())
+    let saveBody = payload
+    let result = await writeJob(saveBody)
+    if (result.error && authorColumnMissing(result.error)) {
+      warnAuthorSetup(t, result.error)
+      saveBody = stripAuthor(saveBody)
+      result = await writeJob(saveBody)
+    }
     if (result.error && isMissingColumn(result.error)) {
-      const basic = { ...payload }
+      const basic = { ...saveBody }
       delete basic.crew_names
       if (/service_id|service_name/i.test(result.error.message || '')) {
         delete basic.service_id
@@ -1459,14 +1500,17 @@ export default function WorkPlan({
         let seriesError = null
         for (const job of series) {
           const timed = withFixedEnd({ start: payload.start_time, end: payload.end_time }, formObject, job.work_date)
-          const result = await supabase
-            .from('work_jobs')
-            .update({
-              start_time: timed.start || payload.start_time,
-              end_time: timed.end || payload.end_time,
-              updated_at: payload.updated_at,
-            })
-            .eq('id', job.id)
+          const seriesBody = {
+            start_time: timed.start || payload.start_time,
+            end_time: timed.end || payload.end_time,
+            updated_at: payload.updated_at,
+            ...authorStamp(currentWorker, 'update'),
+          }
+          let result = await supabase.from('work_jobs').update(seriesBody).eq('id', job.id)
+          if (result.error && authorColumnMissing(result.error)) {
+            warnAuthorSetup(t, result.error)
+            result = await supabase.from('work_jobs').update(stripAuthor(seriesBody)).eq('id', job.id)
+          }
           if (result.error) {
             seriesError = result.error
             break
@@ -1540,6 +1584,7 @@ export default function WorkPlan({
       needed_count: Math.max(1, Number(needForm.needed_count) || 1),
       status: 'active',
       updated_at: now.toISO(),
+      ...authorStamp(currentWorker, editingNeedId ? 'update' : 'create'),
     }
     if (!editingNeedId) {
       const hasEarly = hours > 0 && threshold != null
@@ -1548,11 +1593,18 @@ export default function WorkPlan({
       payload.early_min_count = hasEarly ? threshold : 0
     }
 
-    let result = editingNeedId
-      ? await supabase.from('work_jobs').update(payload).eq('id', editingNeedId).select().single()
-      : await supabase.from('work_jobs').insert([payload]).select().single()
+    const writeNeed = (body) => (editingNeedId
+      ? supabase.from('work_jobs').update(body).eq('id', editingNeedId).select().single()
+      : supabase.from('work_jobs').insert([body]).select().single())
+    let needBody = payload
+    let result = await writeNeed(needBody)
+    if (result.error && authorColumnMissing(result.error)) {
+      warnAuthorSetup(t, result.error)
+      needBody = stripAuthor(needBody)
+      result = await writeNeed(needBody)
+    }
     if (result.error && /service_id|service_name|released_at|public_at|early_min_count|schema cache/i.test(result.error.message)) {
-      const basic = { ...payload }
+      const basic = { ...needBody }
       delete basic.released_at
       delete basic.public_at
       delete basic.early_min_count
@@ -1722,10 +1774,19 @@ export default function WorkPlan({
         status: 'active',
         updated_at: new Date().toISOString(),
         crew_names: crewNamesFor(available.map(row => row.worker_id), workers),
+        ...authorStamp(currentWorker, 'create'),
       }
-      let { data, error } = await supabase.from('work_jobs').insert([copyPayload]).select().single()
+      let copyBody = copyPayload
+      let { data, error } = await supabase.from('work_jobs').insert([copyBody]).select().single()
+      if (error && authorColumnMissing(error)) {
+        warnAuthorSetup(t, error)
+        copyBody = stripAuthor(copyBody)
+        const retry = await supabase.from('work_jobs').insert([copyBody]).select().single()
+        data = retry.data
+        error = retry.error
+      }
       if (error && isMissingColumn(error)) {
-        const basic = { ...copyPayload }
+        const basic = { ...copyBody }
         delete basic.crew_names
         delete basic.service_id
         delete basic.service_name
@@ -1887,10 +1948,17 @@ export default function WorkPlan({
 
   const handleCancelJob = async (job) => {
     if (!confirm(t('planCancelConfirm'))) return
-    const { error } = await supabase
-      .from('work_jobs')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('id', job.id)
+    const cancelBody = {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+      ...authorStamp(currentWorker, 'update'),
+    }
+    let { error } = await supabase.from('work_jobs').update(cancelBody).eq('id', job.id)
+    if (error && authorColumnMissing(error)) {
+      warnAuthorSetup(t, error)
+      const retry = await supabase.from('work_jobs').update(stripAuthor(cancelBody)).eq('id', job.id)
+      error = retry.error
+    }
     if (error) {
       alert(`${t('planSaveError')} ${error.message}`)
       return
@@ -2141,11 +2209,17 @@ export default function WorkPlan({
           || (jobTimed.end && formatClock(job.end_time) !== jobTimed.end)
         )
       ) {
-        await supabase.from('work_jobs').update({
+        const fixedBody = {
           start_time: jobTimed.start || job.start_time,
           end_time: jobTimed.end || job.end_time,
           updated_at: now,
-        }).eq('id', job.id)
+          ...authorStamp(currentWorker, 'update'),
+        }
+        const fixedResult = await supabase.from('work_jobs').update(fixedBody).eq('id', job.id)
+        if (fixedResult.error && authorColumnMissing(fixedResult.error)) {
+          warnAuthorSetup(t, fixedResult.error)
+          await supabase.from('work_jobs').update(stripAuthor(fixedBody)).eq('id', job.id)
+        }
         touched += 1
       }
       for (const row of byJob.get(job.id) || []) {
@@ -3732,6 +3806,9 @@ export default function WorkPlan({
                   {row.job.task_text && (
                     <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">{row.job.task_text}</p>
                   )}
+                  {jobAuthorLine(row.job, t) ? (
+                    <p className="mt-3 text-xs font-semibold text-slate-300">{jobAuthorLine(row.job, t)}</p>
+                  ) : null}
                 </article>
                 )
               })}
