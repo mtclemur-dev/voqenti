@@ -9,7 +9,7 @@ import ConfirmBadge from './plan/ConfirmBadge'
 import { groupsFromObject, serializeGroups } from './plan/objectRooms'
 import { ObjectSheetFields } from './plan/ObjectGuide'
 import { JobServiceField, ObjectServicesFields } from './plan/ObjectServices'
-import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, nextServiceIdForObject, parseServices, serializeServices, serviceFilterKey, serviceIsHourly, serviceLabel, serviceOf } from './plan/objectServices'
+import { collectServiceOptions, jobMatchesServiceKey, jobServiceKey, joinHourlyNote, nameMeansHourly, nextServiceIdForObject, parseServices, serializeServices, serviceFilterKey, serviceIsHourly, serviceLabel, serviceOf, splitHourlyNote } from './plan/objectServices'
 import { applyTurnusSheet } from './plan/turnusSheet'
 import { isSpreadBlattObject, jobsStretchedBySheet, objectPayloadFromStrip, restoreMinutesForObject, stripSpreadBlatt } from './plan/clearBlattSpread'
 import { readTurnusFile } from './plan/readTurnusFile'
@@ -35,6 +35,7 @@ const emptyForm = () => {
     bring_text: '',
     remember_text: '',
     notes_text: '',
+    planned_hours: '',
     service_id: '',
     worker_ids: [],
     until_date: today,
@@ -162,7 +163,8 @@ function restoreJobForm(saved) {
     task_text: stringOr(saved.task_text),
     bring_text: stringOr(saved.bring_text),
     remember_text: stringOr(saved.remember_text),
-    notes_text: stringOr(saved.notes_text),
+    notes_text: splitHourlyNote(saved.notes_text).notes,
+    planned_hours: stringOr(saved.planned_hours) || splitHourlyNote(saved.notes_text).hours,
     service_id: stringOr(saved.service_id),
     worker_ids: Array.isArray(saved.worker_ids) ? saved.worker_ids.filter(id => typeof id === 'string') : [],
     until_date: isoDateOr(saved.until_date, isoDateOr(saved.work_date, base.until_date)),
@@ -399,7 +401,7 @@ function dayStamp(date, today, t) {
   return null
 }
 
-function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '', language = 'de', embedded = false }) {
+function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '', hourly = false, language = 'de', embedded = false }) {
   const place = job.location_text || job.object_name || t('planNoPlace')
   const stamp = badge
   const dateLabel = formatDisplayDate(job.work_date)
@@ -413,6 +415,8 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
     : formatClock(job.end_time)
   const time = [start, end].filter(Boolean).join(' – ')
   const duration = jobDurationLabel({ ...job, start_time: start, end_time: end }, t)
+  const hourlyNote = splitHourlyNote(job.notes_text)
+  const hourlyJob = hourly || nameMeansHourly(service) || nameMeansHourly(job.service_name)
   const declinedPeople = people.filter(row => row.status === 'declined')
   const needed = Math.max(Number(job.needed_count) || 0, activePeople.length, 1)
   const filled = activePeople.length
@@ -429,10 +433,14 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
                 {stamp}
               </span>
             )}
-            <p className="text-sm font-semibold text-slate-200">{dateLabel}{time ? ` · ${time}` : ''}{duration ? ` · ${duration}` : ''}</p>
+            <p className="text-sm font-semibold text-slate-200">{dateLabel}{time ? ` · ${time}` : hourlyNote.hours ? ` · ${hourlyNote.hours} h` : ''}{duration ? ` · ${duration}` : ''}</p>
           </div>
           <h3 className="mt-1 text-lg font-bold text-white">{place}</h3>
-          {service ? (
+          {hourlyJob ? (
+            <span className="mt-1 inline-flex max-w-full truncate rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-950">
+              {service || t('serviceModeHourly')}
+            </span>
+          ) : service ? (
             <p className="mt-0.5 text-sm text-cyan-200">{service}</p>
           ) : null}
           {objectAddress && objectAddress !== place && (
@@ -468,9 +476,12 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
         {' · '}
         {t('planDeclined')}: {declinedPeople.length}
       </p>
+      {hourlyNote.hours && time && (
+        <p className="mt-3 text-sm font-semibold text-amber-200">{hourlyNote.hours} h · {t('serviceHourlyBadge')}</p>
+      )}
       {job.task_text && (
-        <div className="mt-3 border-l-2 border-cyan-400/70 pl-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-cyan-200">{t('planTask')}</p>
+        <div className={`mt-3 border-l-2 pl-3 ${hourlyJob ? 'border-amber-300/70' : 'border-cyan-400/70'}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-wide ${hourlyJob ? 'text-amber-200' : 'text-cyan-200'}`}>{hourlyJob ? t('hourlyWhy') : t('planTask')}</p>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{job.task_text}</p>
         </div>
       )}
@@ -486,10 +497,10 @@ function JobCard({ job, t, mapsHref, badge, children, objectAddress, service = '
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{job.remember_text}</p>
         </div>
       )}
-      {job.notes_text && (
+      {hourlyNote.notes && (
         <div className="mt-3 border-l-2 border-slate-400/70 pl-3">
           <p className="text-[10px] font-bold uppercase tracking-wide text-slate-300">{t('planNotes')}</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{job.notes_text}</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{hourlyNote.notes}</p>
         </div>
       )}
       {job.updated_at && (
@@ -1191,7 +1202,8 @@ export default function WorkPlan({
       task_text: job.task_text ?? '',
       bring_text: job.bring_text ?? '',
       remember_text: job.remember_text ?? '',
-      notes_text: job.notes_text ?? '',
+      notes_text: splitHourlyNote(job.notes_text).notes,
+      planned_hours: splitHourlyNote(job.notes_text).hours,
       service_id: serviceId,
       worker_ids: (job.work_job_assignees ?? [])
         .filter(row => ['assigned', 'approved'].includes(row.status))
@@ -1312,7 +1324,7 @@ export default function WorkPlan({
       task_text: form.task_text.trim() || null,
       bring_text: form.bring_text.trim() || null,
       remember_text: form.remember_text.trim() || null,
-      notes_text: form.notes_text.trim() || null,
+      notes_text: joinHourlyNote(form.notes_text, serviceIsHourly(serviceOf(selectedObject, form.service_id)) ? form.planned_hours : '') || null,
       service_id: form.service_id || null,
       service_name: serviceOf(selectedObject, form.service_id)?.name || null,
       kind: jobs.find(item => item.id === editingId)?.kind === 'open_post' ? 'open_post' : 'assigned',
@@ -2552,6 +2564,7 @@ export default function WorkPlan({
         badge={dayStamp(job.work_date, today, t) || (past ? t('planDone') : null)}
         objectAddress={object?.address || ''}
         service={serviceLabel(job, object)}
+        hourly={serviceIsHourly(serviceOf(object, job.service_id, job.service_name))}
       >
         <div className="mt-3 space-y-1 text-sm text-slate-300">
           {activePeople.map(row => {
@@ -3055,6 +3068,29 @@ export default function WorkPlan({
             value={form.service_id}
             onChange={value => setField('service_id', value)}
           />
+          {serviceIsHourly(serviceOf(selectedObject, form.service_id)) && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
+              <label className="block text-xs text-amber-100">
+                {t('hourlyHours')}
+                <input
+                  inputMode="decimal"
+                  value={form.planned_hours}
+                  onChange={e => setField('planned_hours', e.target.value.replace(/[^\d.,]/g, '').slice(0, 5))}
+                  placeholder="3"
+                  className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 ring-1 ring-amber-300/40"
+                />
+              </label>
+              <label className="block text-xs text-amber-100">
+                {t('hourlyWhy')}
+                <input
+                  value={form.task_text}
+                  onChange={e => setField('task_text', e.target.value)}
+                  placeholder={t('hourlyWhyPlaceholder')}
+                  className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100 ring-1 ring-amber-300/40"
+                />
+              </label>
+            </div>
+          )}
 
           <label className="mt-3 block text-xs text-slate-400">
             {t('planPlace')}
@@ -3066,6 +3102,7 @@ export default function WorkPlan({
             />
           </label>
 
+          {!serviceIsHourly(serviceOf(selectedObject, form.service_id)) && (
           <label className="mt-3 block text-xs text-slate-400">
             {t('planTask')}
             <textarea
@@ -3076,6 +3113,7 @@ export default function WorkPlan({
               className="mt-1 w-full rounded-md bg-slate-950 px-3 py-2 text-sm text-slate-100"
             />
           </label>
+          )}
           <label className="mt-3 block text-xs text-slate-400">
             {t('planBring')}
             <textarea

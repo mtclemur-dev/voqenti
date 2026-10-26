@@ -22,7 +22,7 @@ import {
   turnusForDate,
   workerInitials,
 } from './planUtils'
-import { serviceIsHourly, serviceLabel, serviceOf } from './objectServices'
+import { serviceIsHourly, serviceLabel, serviceOf, splitHourlyNote } from './objectServices'
 
 const TONE = {
   open: 'bg-cyan-400',
@@ -512,25 +512,26 @@ export default function AdminPlanBoard({
                   ? confirmationKind({ seenAt: focusRow.seen_at, workDate: job.work_date, startClock: start, now })
                   : jobConfirmationKind(job, start, now)
                 const serviceName = serviceLabel(job, object)
-                const serviceText = serviceName && serviceIsHourly(serviceOf(object, job.service_id, job.service_name))
-                  ? `${serviceName} · ${t('serviceHourlyBadge')}`
-                  : serviceName
-                const work = String(job.task_text || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
+                const hourly = serviceIsHourly(serviceOf(object, job.service_id, job.service_name))
+                const plannedHours = hourly ? splitHourlyNote(job.notes_text).hours : ''
+                const serviceText = hourly ? '' : serviceName
+                const why = String(job.task_text || '').replace(/\s+/g, ' ').trim()
+                const work = hourly ? why : String(why || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const statusLabel = jobStatusLabel(job, t)
                 const detailsId = `admin-job-${job.id}`
                 return (
                   <Fragment key={job.id}>
                   <li
-                    className={`rounded-2xl border border-white/10 bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
-                      open ? 'relative z-20' : ''
-                    }`}
+                    className={`rounded-2xl border bg-slate-900/80 transition duration-200 motion-reduce:transition-none ${
+                      hourly ? 'border-amber-300/40' : 'border-white/10'
+                    } ${open ? 'relative z-20' : ''}`}
                   >
                     <button
                       type="button"
                       aria-expanded={open}
                       aria-controls={detailsId}
-                      aria-label={`${place} ${start || t('adminFlexible')}. ${open ? t('collapseDetails') : t('expandDetails')}`}
+                      aria-label={`${place} ${hourly ? (serviceName || t('serviceModeHourly')) : ''} ${start || (plannedHours ? `${plannedHours} h` : t('adminFlexible'))}. ${open ? t('collapseDetails') : t('expandDetails')}`}
                       onClick={() => onToggleJob(job.id)}
                       className="flex min-h-12 w-full items-stretch gap-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                     >
@@ -538,24 +539,38 @@ export default function AdminPlanBoard({
                       <span className="grid w-full grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3">
                         <span className="min-w-0 text-white">
                           {start ? (
-                            <span className="block text-base font-black tabular-nums leading-none">
+                            <span className={`block text-base font-black tabular-nums leading-none ${hourly ? 'text-amber-100' : ''}`}>
                               {start}
                               {end ? <span className="mt-1 block text-[12px] font-semibold tabular-nums text-slate-300">– {end}</span> : null}
                             </span>
+                          ) : plannedHours ? (
+                            <span className="block">
+                              <span className="block text-base font-black leading-none text-amber-200">{plannedHours} h</span>
+                              <span className="mt-1 block text-[10px] font-semibold leading-tight text-amber-100/80">{t('serviceHourlyBadge')}</span>
+                            </span>
                           ) : (
                             <span className="block">
-                              <span className="block text-sm font-bold leading-none text-slate-100">{t('adminFlexible')}</span>
+                              <span className={`block text-sm font-bold leading-none ${hourly ? 'text-amber-100' : 'text-slate-100'}`}>{t('adminFlexible')}</span>
                               <span className="mt-1 block text-[10px] font-medium leading-tight text-slate-400">{t('adminNoFixedTime')}</span>
                             </span>
                           )}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold text-white">{place}</span>
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold text-white">{place}</span>
+                            {hourly && (
+                              <span className="inline-flex max-w-full truncate rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-950">
+                                {serviceName || t('serviceModeHourly')}
+                              </span>
+                            )}
+                          </span>
                           <span className="mt-0.5 block truncate text-xs text-slate-300">
                             {[
                               serviceText,
                               area && area !== place ? area : '',
-                              focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned')),
+                              hourly
+                                ? [why, focusWorkerId ? focusName : (peopleNames.join(', ') || t('adminJobUnassigned'))].filter(Boolean).join(' · ')
+                                : (focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned'))),
                             ].filter(Boolean).join(' · ')}
                           </span>
                           {!statusLabel && (

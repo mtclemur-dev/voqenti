@@ -8,7 +8,7 @@ import { HoursRow } from './EmployeeHours'
 import OpenPostActions from './OpenPostActions'
 import { ObjectGuidePanel } from './ObjectGuide'
 import OfficeRequestDialog from '../requests/OfficeRequestDialog'
-import { serviceLabel } from './objectServices'
+import { serviceIsHourly, serviceLabel, serviceOf, splitHourlyNote } from './objectServices'
 import { openPostAnswer } from './openPostRespond'
 import {
   assignmentRange,
@@ -139,12 +139,15 @@ function InstructionBlock({ label, tone, icon: Icon, children }) {
 }
 
 function AssignmentDetails({ t, job }) {
+  const notes = splitHourlyNote(job.notes_text)
   return (
     <div className="grid gap-2 md:grid-cols-2">
       <InstructionBlock label={t('planTask')} tone="cyan" icon={IconWork}>{job.task_text}</InstructionBlock>
       <InstructionBlock label={t('planBring')} tone="blue" icon={IconBag}>{job.bring_text}</InstructionBlock>
       <InstructionBlock label={t('planRemember')} tone="orange" icon={IconAlert}>{job.remember_text}</InstructionBlock>
-      <InstructionBlock label={t('planNotes')} tone="gray" icon={IconNote}>{job.notes_text}</InstructionBlock>
+      {(notes.notes || !notes.hours) && (
+        <InstructionBlock label={t('planNotes')} tone="gray" icon={IconNote}>{notes.notes}</InstructionBlock>
+      )}
     </div>
   )
 }
@@ -275,6 +278,8 @@ function NextAssignmentCard({
   const job = row.work_jobs
   const range = assignmentRange(row, job)
   const timedJob = { ...job, start_time: range.start || job.start_time, end_time: range.end || job.end_time }
+  const hourly = serviceIsHourly(serviceOf(object, job.service_id, job.service_name))
+  const plannedHours = hourly ? splitHourlyNote(job.notes_text).hours : ''
   const inactive = isAssignmentInactive(row)
   const past = isJobPast(timedJob, now)
   const canAct = !inactive && !past
@@ -301,16 +306,24 @@ function NextAssignmentCard({
             <StatusBadge t={t} row={row} language={language} past={past} />
           </div>
           <p className="text-sm text-slate-300">{formatDisplayDate(job.work_date, language)}</p>
-          {timeLabel && (
-            <p className="text-xl font-bold tracking-tight text-white md:text-2xl">{timeLabel}</p>
-          )}
+          {timeLabel ? (
+            <p className={`text-xl font-bold tracking-tight md:text-2xl ${hourly ? 'text-amber-100' : 'text-white'}`}>{timeLabel}</p>
+          ) : plannedHours ? (
+            <p className="text-xl font-bold tracking-tight text-amber-200 md:text-2xl">{plannedHours} h</p>
+          ) : hourly ? (
+            <p className="text-sm font-bold text-amber-100">{t('adminFlexible')}</p>
+          ) : null}
           {duration && (
             <p className="text-sm font-semibold text-cyan-100">{duration}</p>
           )}
         </div>
         <div className="space-y-2">
           <h2 className="break-words text-xl font-bold text-white md:text-2xl">{place}</h2>
-          {serviceLabel(job, object) ? (
+          {hourly ? (
+            <span className="inline-flex max-w-full truncate rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-950">
+              {serviceLabel(job, object) || t('serviceModeHourly')}
+            </span>
+          ) : serviceLabel(job, object) ? (
             <p className="text-sm font-semibold text-cyan-200">{serviceLabel(job, object)}</p>
           ) : null}
           {address && <p className="break-words text-sm leading-5 text-slate-200">{address}</p>}
@@ -412,6 +425,8 @@ function ExpandableAssignment({
   const job = row.work_jobs
   const range = assignmentRange(row, job)
   const timedJob = { ...job, start_time: range.start || job.start_time, end_time: range.end || job.end_time }
+  const hourly = serviceIsHourly(serviceOf(object, job.service_id, job.service_name))
+  const plannedHours = hourly ? splitHourlyNote(job.notes_text).hours : ''
   const start = range.start
   const place = object?.name || job.object_name || t('planNoPlace')
   const detailsLabel = open ? t('collapseDetails') : t('expandDetails')
@@ -419,7 +434,7 @@ function ExpandableAssignment({
   const cardRef = useMarkSeenWhenVisible(row, onConfirm, canMark)
 
   return (
-    <article ref={cardRef} className={`rounded-2xl border p-3 ${alert ? 'border-rose-400/25 bg-rose-500/10' : 'border-slate-800 bg-slate-900/70'}`}>
+    <article ref={cardRef} className={`rounded-2xl border p-3 ${alert ? 'border-rose-400/25 bg-rose-500/10' : hourly ? 'border-amber-300/40 bg-slate-900/70' : 'border-slate-800 bg-slate-900/70'}`}>
       <button
         type="button"
         onClick={() => setOpen(current => {
@@ -433,9 +448,16 @@ function ExpandableAssignment({
         <span className="min-w-0 flex-1">
           <span className="block text-xs text-slate-400">
             {formatDisplayDate(job.work_date, language)}
-            {start ? ` · ${start}` : ''}
+            {start ? ` · ${start}` : plannedHours ? ` · ${plannedHours} h` : hourly ? ` · ${t('adminFlexible')}` : ''}
           </span>
-          <span className="mt-1 block truncate text-base font-semibold text-white">{place}</span>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-base font-semibold text-white">{place}</span>
+            {hourly && (
+              <span className="inline-flex max-w-full truncate rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-950">
+                {serviceLabel(job, object) || t('serviceModeHourly')}
+              </span>
+            )}
+          </span>
           <span className="mt-1 block truncate text-sm text-slate-300">{shortPlace(job, object)}</span>
           <CrewLine t={t} job={job} workers={workers} currentWorkerId={currentWorkerId || currentWorker?.id} />
         </span>

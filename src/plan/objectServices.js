@@ -174,6 +174,25 @@ export function nameMeansHourly(name) {
   return /nach\s*stunde/i.test(String(name || ''))
 }
 
+const HOURLY_HOURS_MARK = /(?:^|\n)§h:(\d+(?:[.,]\d{1,2})?)\s*$/
+
+export function splitHourlyNote(value) {
+  const text = String(value || '')
+  const match = text.match(HOURLY_HOURS_MARK)
+  if (!match) return { notes: text.trim(), hours: '' }
+  return {
+    notes: text.slice(0, match.index).trim(),
+    hours: match[1].replace(',', '.'),
+  }
+}
+
+export function joinHourlyNote(notes, hours) {
+  const clean = splitHourlyNote(notes).notes
+  const amount = String(hours || '').trim().replace(',', '.')
+  if (!amount || !/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) return clean
+  return clean ? `${clean}\n§h:${amount}` : `§h:${amount}`
+}
+
 export function serviceIsHourly(service) {
   if (!service) return false
   if (service.hourly === false) return false
