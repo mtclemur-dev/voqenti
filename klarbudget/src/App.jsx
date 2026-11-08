@@ -18,7 +18,7 @@ import { SmartShopping } from './components/SmartShopping'
 import { inferOfferCategory, normalizeOfferPayload, normalizeProduct } from './lib/shoppingHelpers'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
-import { applyAutomaticDebtPayments } from './lib/debtAutoPay'
+import { applyAutomaticDebtPayments, buildManualDebtPaymentPatch, countPendingDebtInstallments } from './lib/debtAutoPay'
 import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
@@ -39,7 +39,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26b — loading fix'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26c — plăți datorii'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -390,6 +390,30 @@ function App() {
       setNotice(t('deletedSuccess'))
       loadData()
     }
+  }
+
+  const recordDebtPayment = async (debt, amount, { countAsMonthlyInstallment = false } = {}) => {
+    const patch = buildManualDebtPaymentPatch(debt, amount, { countAsMonthlyInstallment })
+    if (!patch) {
+      setNotice(t('debtPaymentNothingToApply'))
+      return
+    }
+    const { error } = await supabase
+      .from('kb_debts')
+      .update(patch)
+      .eq('id', debt.id)
+      .eq('user_id', dbUserId)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    const payLocale = language === 'de' ? 'de-DE' : 'ro-RO'
+    setNotice(
+      (t('debtPaymentRecorded') || 'Plată înregistrată: {amount}')
+        .replace('{amount}', formatMoney(Math.min(toNumber(amount), debtRemainingTotal(debt)), currency, payLocale)),
+    )
+    loadData()
   }
 
   const saveAccount = async (payload, currentItem = null) => {
@@ -1429,10 +1453,26 @@ function App() {
               emptyText={t('noData')}
               editText={t('edit')}
               deleteText={t('delete')}
+              renderMainAmount={(item) => formatMoney(debtRemainingTotal(item), currency, locale)}
+              renderSubAmount={(item) => {
+                if (item.status !== 'active') return null
+                const pending = countPendingDebtInstallments(item)
+                const parts = []
+                if (toNumber(item.final_payment) > 0) {
+                  parts.push(`${t('remainingBalance')}: ${formatMoney(item.remaining_balance, currency, locale)}`)
+                }
+                if (pending > 0) {
+                  parts.push((t('debtPendingInstallments') || '{count} rate de recuperat').replace('{count}', String(pending)))
+                }
+                if (item.last_auto_payment_date) {
+                  parts.push(`${t('debtLastInstallment')}: ${item.last_auto_payment_date}`)
+                }
+                return parts.length ? parts.join(' · ') : null
+              }}
               renderMeta={(item) => {
                 const category = debtCategories.find(([value]) => value === item.debt_category)?.[1] ?? item.debt_category ?? '-'
                 const paidPercent = toNumber(item.initial_amount) > 0 ? Math.round(((toNumber(item.initial_amount) - toNumber(item.remaining_balance)) / toNumber(item.initial_amount)) * 100) : 0
-                const finalPaymentText = toNumber(item.final_payment) > 0 ? ` - ${t('finalPayment')}: ${formatMoney(item.final_payment, currency, locale)} - ${t('totalToPay')}: ${formatMoney(debtRemainingTotal(item), currency, locale)}` : ''
+                const finalPaymentText = toNumber(item.final_payment) > 0 ? ` - ${t('finalPayment')}: ${formatMoney(item.final_payment, currency, locale)}` : ''
                 const dueDayText = item.payment_due_day ? ` - ${t('debtMonthlyDueDayShort')} ${item.payment_due_day}` : ''
                 return `${category} - ${t(item.status)} - ${item.interest_rate || 0}% - ${t('monthlyPayment')}: ${item.monthly_payment || 0}${dueDayText}${finalPaymentText} - ${Math.max(0, paidPercent)}%`
               }}
@@ -1441,7 +1481,39 @@ function App() {
                 setFormOpen((current) => ({ ...current, debts: true }))
               }}
               onDelete={(item) => deleteRow('kb_debts', item)}
-              renderActions={(item) => toNumber(item.monthly_payment) <= 0 ? <span className="badge danger">{t('noMonthlyPayment')}</span> : null}
+              renderActions={(item) => {
+                if (item.status !== 'active') return null
+                const monthly = toNumber(item.monthly_payment)
+                const totalLeft = debtRemainingTotal(item)
+                if (totalLeft <= 0.005) return null
+                return (
+                  <div className="debt-pay-actions">
+                    {monthly > 0 && (
+                      <button
+                        type="button"
+                        className="secondary small"
+                        onClick={() => recordDebtPayment(item, monthly, { countAsMonthlyInstallment: true })}
+                      >
+                        {(t('debtRecordMonthlyPayment') || 'Înregistrează rata').replace('{amount}', formatMoney(monthly, currency, locale))}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="ghost small"
+                      onClick={() => {
+                        const raw = window.prompt(t('debtRecordPaymentPrompt') || 'Suma plătită (EUR):', monthly > 0 ? String(monthly) : '')
+                        if (raw === null || raw === '') return
+                        const extra = toNumber(String(raw).replace(',', '.'))
+                        if (extra <= 0) return
+                        const asMonthly = monthly > 0 && Math.abs(extra - monthly) < 0.02
+                        recordDebtPayment(item, extra, { countAsMonthlyInstallment: asMonthly })
+                      }}
+                    >
+                      {t('debtRecordPaymentCustom')}
+                    </button>
+                  </div>
+                )
+              }}
             />
           </>
         )}

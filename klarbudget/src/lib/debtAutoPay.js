@@ -161,3 +161,45 @@ export async function applyAutomaticDebtPayments(supabase, debts = [], userId) {
     schemaMissing: false,
   }
 }
+
+/** Pending monthly installments not yet applied (for UI badge). */
+export function countPendingDebtInstallments(debt, today = new Date()) {
+  return planDebtAutoPayments(debt, today).length
+}
+
+/**
+ * Mark which due month was covered (manual monthly pay or auto).
+ * Pays early: marks this month's due so auto does not double-charge after due day.
+ */
+export function installmentMonthMarker(debt, today = new Date()) {
+  const dueDay = toNumber(debt.payment_due_day)
+  if (dueDay < 1 || dueDay > 31) return {}
+
+  const plans = planDebtAutoPayments(debt, today)
+  if (plans.length > 0) {
+    return { last_auto_payment_date: plans[0].dueDateIso }
+  }
+
+  const dueThisMonth = dueDateInMonth(today.getFullYear(), today.getMonth(), dueDay)
+  const last = debt.last_auto_payment_date
+  if (!last || isoDate(dueThisMonth) > last) {
+    return { last_auto_payment_date: isoDate(dueThisMonth) }
+  }
+  return {}
+}
+
+/** Apply a manual payment; optionally treat as one monthly installment (updates last_auto_payment_date). */
+export function buildManualDebtPaymentPatch(debt, amount, options = {}) {
+  const installment = Math.max(0, toNumber(amount))
+  if (installment <= 0) return null
+
+  const totalLeft = toNumber(debt.remaining_balance) + toNumber(debt.final_payment)
+  const applied = Math.min(installment, totalLeft)
+  if (applied <= 0) return null
+
+  const patch = {
+    ...applyDebtInstallment(debt, applied),
+    ...(options.countAsMonthlyInstallment ? installmentMonthMarker(debt) : {}),
+  }
+  return patch
+}

@@ -1,6 +1,6 @@
 import { formatMoney } from '../lib/finance'
 
-export function EntityList({ title, items, currency, language, emptyText, editText = 'Editeaza', deleteText = 'Sterge', renderMeta, renderActions, onEdit, onDelete }) {
+export function EntityList({ title, items, currency, language, emptyText, editText = 'Editeaza', deleteText = 'Sterge', renderMeta, renderActions, onEdit, onDelete, renderMainAmount, renderSubAmount }) {
   const locale = language === 'de' ? 'de-DE' : 'ro-RO'
   return (
     <section className="section">
@@ -15,11 +15,14 @@ export function EntityList({ title, items, currency, language, emptyText, editTe
               <span>{renderMeta(item)}</span>
             </div>
             <div className="list-value">
-              {(item.amount !== undefined && item.amount !== null) ? (
+              {renderMainAmount ? (
+                <b>{renderMainAmount(item)}</b>
+              ) : (item.amount !== undefined && item.amount !== null) ? (
                 <b>{formatMoney(item.amount, currency, locale)}</b>
               ) : (item.remaining_balance !== undefined || item.current_balance !== undefined) ? (
                 <b>{formatMoney(item.remaining_balance ?? item.current_balance, currency, locale)}</b>
               ) : null}
+              {renderSubAmount?.(item) ? <small className="muted">{renderSubAmount(item)}</small> : null}
               <div className="row-actions">
                 {renderActions?.(item)}
                 <button type="button" className="ghost" onClick={() => onEdit(item)}>{editText}</button>
