@@ -9,35 +9,41 @@ export function debtPlanStartDate(debt) {
 
 const MAX_MONTHS = 120
 
+/** Zi scadență: întotdeauna din data primei rate (evită dezacord cu payment_due_day vechi). */
 export function debtDueDay(debt) {
+  const start = debtPlanStartDate(debt)
+  if (start) return start.getDate()
   const explicit = toNumber(debt.payment_due_day)
   if (explicit >= 1 && explicit <= 31) return explicit
-  const start = debtPlanStartDate(debt)
-  return start ? start.getDate() : 0
+  return 0
 }
 
-/** Scadențe lunare de la prima rată până azi (inclusiv dacă ziua a trecut luna asta). */
+export function effectiveStartingTotal(debt) {
+  const explicit = toNumber(debt.starting_total)
+  if (explicit > 0) return explicit
+  const fromParts = toNumber(debt.initial_amount) + toNumber(debt.final_payment)
+  if (fromParts > 0) return fromParts
+  const initFinal = toNumber(debt.initial_final_payment)
+  return toNumber(debt.initial_amount) + initFinal
+}
+
+/** Scadențe lunare: prima dată = first_payment_date, apoi aceeași zi în fiecare lună. */
 export function dueDatesUpToToday(debt, today = new Date()) {
   const firstDue = debtPlanStartDate(debt)
-  const dueDay = debtDueDay(debt)
   const monthly = toNumber(debt.monthly_payment)
-  if (!firstDue || dueDay < 1 || monthly <= 0) return []
+  if (!firstDue || monthly <= 0) return []
 
   const end = startOfDay(today)
+  const dueDay = firstDue.getDate()
   const dates = []
-  let cursor = new Date(firstDue.getFullYear(), firstDue.getMonth(), 1)
+  let due = startOfDay(firstDue)
   let guard = 0
 
   while (guard < MAX_MONTHS) {
-    const due = dueDateInMonth(cursor.getFullYear(), cursor.getMonth(), dueDay)
-    if (due < startOfDay(firstDue)) {
-      cursor.setMonth(cursor.getMonth() + 1)
-      guard += 1
-      continue
-    }
     if (due > end) break
     dates.push(isoDate(due))
-    cursor.setMonth(cursor.getMonth() + 1)
+    const nextMonth = new Date(due.getFullYear(), due.getMonth() + 1, 1)
+    due = dueDateInMonth(nextMonth.getFullYear(), nextMonth.getMonth(), dueDay)
     guard += 1
   }
   return dates
@@ -120,8 +126,8 @@ export function mergeScheduleWithLog(debt, paymentRows = [], today = new Date())
 }
 
 export function computeRemainingFromSchedule(debt, paymentRows = [], today = new Date()) {
-  const starting = toNumber(debt.starting_total)
-  if (starting <= 0) return null
+  const starting = effectiveStartingTotal(debt)
+  if (starting <= 0 || !debtPlanStartDate(debt)) return null
 
   const merged = mergeScheduleWithLog(debt, paymentRows, today)
   const schluss = toNumber(debt.final_payment)
@@ -143,15 +149,17 @@ export function computeRemainingFromSchedule(debt, paymentRows = [], today = new
 
 export function prepareDebtSaveFields(values) {
   const result = { ...values }
-  const starting = toNumber(result.starting_total)
   const monthly = toNumber(result.monthly_payment)
 
   if (result.first_payment_date) {
     const d = parseLocalDate(result.first_payment_date)
-    if (d && !toNumber(result.payment_due_day)) {
-      result.payment_due_day = d.getDate()
-    }
+    if (d) result.payment_due_day = d.getDate()
   }
+
+  if (!toNumber(result.starting_total)) {
+    result.starting_total = effectiveStartingTotal(result)
+  }
+  const starting = toNumber(result.starting_total)
 
   if (starting > 0) {
     result.initial_amount = starting - toNumber(result.final_payment)

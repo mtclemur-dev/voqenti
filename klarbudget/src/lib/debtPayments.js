@@ -1,5 +1,5 @@
 import { applyDebtInstallment } from './debtAutoPay'
-import { computeRemainingFromSchedule } from './debtSchedule'
+import { computeRemainingFromSchedule, effectiveStartingTotal } from './debtSchedule'
 import { debtRemainingTotal, formatMoney, isoDate, toNumber } from './finance'
 
 export { debtPlanStartDate } from './debtSchedule'
@@ -37,6 +37,8 @@ export function debtOpeningBalances(debt) {
 
 /** Total contract: starting_total sau initial + plăți + sold curent. */
 export function debtStartingTotal(debt, payments = []) {
+  const fromSchedule = effectiveStartingTotal(debt)
+  if (fromSchedule > 0) return fromSchedule
   const explicit = toNumber(debt.starting_total)
   if (explicit > 0) return explicit
   const paid = sumDebtPayments(payments, debt.id)
@@ -50,7 +52,7 @@ export function debtStartingTotal(debt, payments = []) {
 
 export function debtUsesSchedule(debt) {
   return (
-    toNumber(debt.starting_total) > 0
+    effectiveStartingTotal(debt) > 0
     && toNumber(debt.monthly_payment) > 0
     && Boolean(debt.first_payment_date)
   )

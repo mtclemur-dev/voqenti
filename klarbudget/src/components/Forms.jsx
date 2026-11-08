@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { accountTypes, categories, debtCategories } from '../i18n'
 import { isoDate, formatMoney, parseLocalDate, toNumber } from '../lib/finance'
-import { computeRemainingFromSchedule, prepareDebtSaveFields } from '../lib/debtSchedule'
+import { computeRemainingFromSchedule, effectiveStartingTotal, prepareDebtSaveFields } from '../lib/debtSchedule'
 
 const frequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly', 'once']
 const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly']
@@ -83,12 +83,24 @@ export function DebtForm({ t, initialItem, paymentLog = [], currency = 'EUR', lo
 }
 
 function DebtFormFields({ t, initialItem, paymentLog, currency, locale, values, update, setValues }) {
-  const [showDetails, setShowDetails] = useState(false)
-  const previewDebt = useMemo(() => ({ ...values, id: initialItem?.id || 'preview' }), [values, initialItem?.id])
-  const preview = useMemo(
-    () => computeRemainingFromSchedule(previewDebt, paymentLog, new Date()),
-    [previewDebt, paymentLog],
-  )
+  const [showDetails, setShowDetails] = useState(Boolean(toNumber(values.final_payment)))
+  const previewDebt = useMemo(() => {
+    const debtId = initialItem?.id
+    const log = debtId ? paymentLog.filter((row) => row.debt_id === debtId) : []
+    return {
+      ...values,
+      starting_total: effectiveStartingTotal(values),
+      id: debtId || 'preview',
+      __scheduleLog: log,
+    }
+  }, [values, initialItem?.id, paymentLog])
+
+  const preview = useMemo(() => {
+    if (!previewDebt.first_payment_date || !toNumber(previewDebt.monthly_payment)) return null
+    const log = previewDebt.__scheduleLog || []
+    const { __scheduleLog, ...debt } = previewDebt
+    return computeRemainingFromSchedule(debt, log, new Date())
+  }, [previewDebt])
 
   useEffect(() => {
     if (!values.first_payment_date) return
@@ -109,9 +121,12 @@ function DebtFormFields({ t, initialItem, paymentLog, currency, locale, values, 
       <MoneyInput name="monthly_payment" label={t('monthlyPayment')} value={values.monthly_payment} onChange={update} required />
       <TextInput name="first_payment_date" label={t('debtFirstPaymentDate')} type="date" value={values.first_payment_date} onChange={update} required />
       <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtFormScheduleHint')}</p>
-      {preview && (
+      {preview ? (
         <div className="full-span debt-form-preview">
           <p>
+            <strong>{t('debtFormPaidSoFar') || 'Plătit până azi'}:</strong>{' '}
+            {formatMoney(preview.paidTotal, currency, locale)}
+            {' · '}
             <strong>{t('remainingBalance')}:</strong>{' '}
             {formatMoney(preview.leftTotal, currency, locale)}
             {preview.installmentCount > 0 && (
@@ -121,7 +136,18 @@ function DebtFormFields({ t, initialItem, paymentLog, currency, locale, values, 
               </span>
             )}
           </p>
+          {toNumber(values.final_payment) > 0 && (
+            <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+              {t('remainingBalance')}: {formatMoney(preview.remaining_balance, currency, locale)}
+              {' · '}
+              {t('finalPayment')}: {formatMoney(preview.final_payment, currency, locale)}
+            </p>
+          )}
         </div>
+      ) : (
+        <p className="muted full-span" style={{ margin: 0, fontSize: '0.85rem' }}>
+          {t('debtFormPreviewMissing')}
+        </p>
       )}
       <div className="full-span">
         <button type="button" className="ghost small" onClick={() => setShowDetails((open) => !open)}>
@@ -316,6 +342,11 @@ function normalizeInitial(defaults, item) {
     if (item.frequency === 'once') normalized.expense_kind = 'one_time_expense'
     else if (item.payment_mode === 'variable_tracking' || item.expense_type === 'variable') normalized.expense_kind = 'variable_budget'
     else normalized.expense_kind = 'fixed_payment'
+  }
+  if ('starting_total' in defaults && item) {
+    if (!toNumber(normalized.starting_total)) {
+      normalized.starting_total = toNumber(normalized.initial_amount) + toNumber(normalized.final_payment)
+    }
   }
   return normalizeSubmit(normalized)
 }

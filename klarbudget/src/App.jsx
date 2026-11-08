@@ -58,7 +58,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-09-15 — rate lunare automate'
+const BUILD_LABEL = 'KlarBudget build 2026-11-08 — calcul automat datorii'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
