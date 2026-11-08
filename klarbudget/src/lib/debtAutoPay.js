@@ -1,4 +1,23 @@
-import { isoDate, parseLocalDate, toNumber } from './finance'
+import { isoDate, parseLocalDate, startOfDay, toNumber } from './finance'
+
+/** Ignore last_auto dates in the future (bad data from early manual mark). */
+export function effectiveLastAutoPaymentDate(debt, today = new Date()) {
+  const last = debt.last_auto_payment_date
+  if (!last) return null
+  const parsed = parseLocalDate(last)
+  if (!parsed || parsed > startOfDay(today)) return null
+  return last
+}
+
+/** Next due date on/after today (this month if still upcoming, else next month). */
+export function nextUpcomingDueDate(debt, today = new Date()) {
+  const dueDay = toNumber(debt.payment_due_day)
+  if (dueDay < 1 || dueDay > 31) return null
+  const dueThisMonth = dueDateInMonth(today.getFullYear(), today.getMonth(), dueDay)
+  if (startOfDay(dueThisMonth) >= startOfDay(today)) return dueThisMonth
+  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+  return dueDateInMonth(nextMonth.getFullYear(), nextMonth.getMonth(), dueDay)
+}
 
 const MAX_CATCHUP_MONTHS = 60
 
@@ -66,7 +85,7 @@ export function planDebtAutoPayments(debt, today = new Date()) {
 
   const working = { ...debt }
   const plans = []
-  let lastAuto = debt.last_auto_payment_date || null
+  let lastAuto = effectiveLastAutoPaymentDate(debt, today)
   let guard = 0
 
   while (guard < MAX_CATCHUP_MONTHS) {
@@ -75,7 +94,7 @@ export function planDebtAutoPayments(debt, today = new Date()) {
 
     const nextDue = lastAuto
       ? nextDueAfter(lastAuto, dueDay, today)
-      : firstEligibleDueDate(debt, dueDay, today)
+      : firstEligibleDueDate(working, dueDay, today)
 
     if (!nextDue) break
 
@@ -167,6 +186,16 @@ export function countPendingDebtInstallments(debt, today = new Date()) {
   return planDebtAutoPayments(debt, today).length
 }
 
+export function sumPendingDebtInstallments(debts = [], today = new Date()) {
+  return debts.reduce((sum, debt) => sum + countPendingDebtInstallments(debt, today), 0)
+}
+
+export function formatDebtDate(dateIso, locale = 'ro-RO') {
+  const parsed = parseLocalDate(dateIso)
+  if (!parsed) return dateIso || ''
+  return parsed.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 /**
  * Mark which due month was covered (manual monthly pay or auto).
  * Pays early: marks this month's due so auto does not double-charge after due day.
@@ -175,15 +204,29 @@ export function installmentMonthMarker(debt, today = new Date()) {
   const dueDay = toNumber(debt.payment_due_day)
   if (dueDay < 1 || dueDay > 31) return {}
 
-  const plans = planDebtAutoPayments(debt, today)
+  const debtForPlan = {
+    ...debt,
+    last_auto_payment_date: effectiveLastAutoPaymentDate(debt, today),
+  }
+  const plans = planDebtAutoPayments(debtForPlan, today)
   if (plans.length > 0) {
     return { last_auto_payment_date: plans[0].dueDateIso }
   }
 
   const dueThisMonth = dueDateInMonth(today.getFullYear(), today.getMonth(), dueDay)
-  const last = debt.last_auto_payment_date
-  if (!last || isoDate(dueThisMonth) > last) {
-    return { last_auto_payment_date: isoDate(dueThisMonth) }
+  if (startOfDay(today) >= startOfDay(dueThisMonth)) {
+    const last = effectiveLastAutoPaymentDate(debt, today)
+    if (!last || dueThisMonth > parseLocalDate(last)) {
+      return { last_auto_payment_date: isoDate(dueThisMonth) }
+    }
+    return {}
+  }
+
+  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  const duePrev = dueDateInMonth(prevMonth.getFullYear(), prevMonth.getMonth(), dueDay)
+  const last = effectiveLastAutoPaymentDate(debt, today)
+  if (!last || duePrev > parseLocalDate(last)) {
+    return { last_auto_payment_date: isoDate(duePrev) }
   }
   return {}
 }

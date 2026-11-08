@@ -19,7 +19,15 @@ import { SmartShopping } from './components/SmartShopping'
 import { inferOfferCategory, normalizeOfferPayload, normalizeProduct } from './lib/shoppingHelpers'
 import { categories, debtCategories, dictionary, languages, makeTranslator } from './i18n'
 import { calculateSummary, debtRemainingTotal, expenseKind, formatMoney, isoDate, toNumber, variableBudgetStats } from './lib/finance'
-import { applyAutomaticDebtPayments, buildManualDebtPaymentPatch, countPendingDebtInstallments } from './lib/debtAutoPay'
+import {
+  applyAutomaticDebtPayments,
+  buildManualDebtPaymentPatch,
+  countPendingDebtInstallments,
+  formatDebtDate,
+  nextUpcomingDueDate,
+  sumPendingDebtInstallments,
+  effectiveLastAutoPaymentDate,
+} from './lib/debtAutoPay'
 import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
@@ -40,7 +48,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26d — plăți UI'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26e — auto rată fix'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -96,6 +104,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [expenseFilters, setExpenseFilters] = useState({ search: '', category: 'all', type: 'all', sort: 'date' })
   const [debtSort, setDebtSort] = useState('priority')
+  const [debtAutoSchemaMissing, setDebtAutoSchemaMissing] = useState(false)
   const [shoppingTab, setShoppingTab] = useState('import')
   const [offerPreview, setOfferPreview] = useState([])
   // eslint-disable-next-line no-unused-vars
@@ -247,6 +256,7 @@ function App() {
 
     let debtsData = debtsRes.data || []
     const autoPay = await applyAutomaticDebtPayments(supabase, debtsData, familyOwnerId)
+    setDebtAutoSchemaMissing(Boolean(autoPay.schemaMissing))
     if (autoPay.schemaMissing) {
       console.warn('Debt auto-pay: run KB_MIGRATION_DEBT_AUTO_PAY.sql in Supabase')
     } else if (autoPay.updated) {
@@ -415,6 +425,24 @@ function App() {
         .replace('{amount}', formatMoney(Math.min(toNumber(amount), debtRemainingTotal(debt)), currency, payLocale)),
     )
     loadData()
+  }
+
+  const applyPendingDebtPayments = async () => {
+    const autoPay = await applyAutomaticDebtPayments(supabase, debts, dbUserId)
+    setDebtAutoSchemaMissing(Boolean(autoPay.schemaMissing))
+    if (autoPay.schemaMissing) {
+      setNotice(t('debtAutoSchemaMissing'))
+      return
+    }
+    if (!autoPay.updated) {
+      setNotice(t('debtNoPendingApply'))
+      return
+    }
+    setDebts(autoPay.debts)
+    const count = autoPay.appliedCount
+    setNotice(count === 1
+      ? t('debtAutoPayAppliedOne')
+      : t('debtAutoPayApplied').replace('{count}', String(count)))
   }
 
   const saveAccount = async (payload, currentItem = null) => {
@@ -843,6 +871,8 @@ function App() {
       if (expenseFilters.sort === 'name') return String(a.name).localeCompare(String(b.name), language)
       return String(a.due_date || '').localeCompare(String(b.due_date || ''))
     })
+  const pendingDebtInstallments = useMemo(() => sumPendingDebtInstallments(debts), [debts])
+
   const sortedDebts = [...debts].sort((a, b) => {
     if (debtSort === 'balance') return toNumber(a.remaining_balance) - toNumber(b.remaining_balance)
     if (debtSort === 'interest') return toNumber(b.interest_rate) - toNumber(a.interest_rate)
@@ -1422,6 +1452,17 @@ function App() {
         )}
         {view === 'debts' && (
           <>
+            {debtAutoSchemaMissing && (
+              <div className="notice danger">{t('debtAutoSchemaMissing')}</div>
+            )}
+            {pendingDebtInstallments > 0 && (
+              <div className="notice">
+                {(t('debtPendingBanner') || '{count} rate restante').replace('{count}', String(pendingDebtInstallments))}
+                <button type="button" className="secondary small" style={{ marginLeft: '0.6rem' }} onClick={applyPendingDebtPayments}>
+                  {t('debtApplyPending')}
+                </button>
+              </div>
+            )}
             <section className="section">
               <div className="section-title">
                 <h2>{t('debts')}</h2>
@@ -1459,14 +1500,27 @@ function App() {
                 if (item.status !== 'active') return null
                 const pending = countPendingDebtInstallments(item)
                 const parts = []
+                const totalLeft = debtRemainingTotal(item)
+                const monthly = toNumber(item.monthly_payment)
                 if (toNumber(item.final_payment) > 0) {
                   parts.push(`${t('remainingBalance')}: ${formatMoney(item.remaining_balance, currency, locale)}`)
                 }
                 if (pending > 0) {
-                  parts.push((t('debtPendingInstallments') || '{count} rate de recuperat').replace('{count}', String(pending)))
-                }
-                if (item.last_auto_payment_date) {
-                  parts.push(`${t('debtLastInstallment')}: ${item.last_auto_payment_date}`)
+                  const deduct = Math.min(monthly * pending, totalLeft)
+                  parts.push(
+                    (t('debtPendingPreview') || 'După {count} rate: ~{amount}')
+                      .replace('{count}', String(pending))
+                      .replace('{amount}', formatMoney(Math.max(0, totalLeft - deduct), currency, locale)),
+                  )
+                } else {
+                  const nextDue = nextUpcomingDueDate(item)
+                  if (nextDue) {
+                    parts.push(`${t('debtNextDue')}: ${formatDebtDate(isoDate(nextDue), locale)}`)
+                  }
+                  const last = effectiveLastAutoPaymentDate(item)
+                  if (last) {
+                    parts.push(`${t('debtLastInstallment')}: ${formatDebtDate(last, locale)}`)
+                  }
                 }
                 return parts.length ? parts.join(' · ') : null
               }}
