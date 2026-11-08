@@ -28,6 +28,12 @@ import {
   sumPendingDebtInstallments,
   effectiveLastAutoPaymentDate,
 } from './lib/debtAutoPay'
+import {
+  autoPaymentRowsFromSteps,
+  buildDebtPaymentRow,
+  formatDebtProgressLine,
+  syncDebtBalancesFromPayments,
+} from './lib/debtPayments'
 import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
@@ -48,7 +54,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26e — auto rată fix'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26f — istoric plăți'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -83,6 +89,7 @@ function App() {
   const [accounts, setAccounts] = useState([])
   const [accountSnapshots, setAccountSnapshots] = useState([])
   const [paymentStatuses, setPaymentStatuses] = useState([])
+  const [debtPaymentLog, setDebtPaymentLog] = useState([])
   const [journalEntries, setJournalEntries] = useState([])
   const [dailyClosures, setDailyClosures] = useState([])
   const [journalSchemaReady, setJournalSchemaReady] = useState(true)
@@ -196,12 +203,13 @@ function App() {
     setLoading(true)
 
     try {
-    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes, pantryRes] = await Promise.all([
+    const [profileRes, incomesRes, expensesRes, debtsRes, paymentsRes, debtPayLogRes, settingsRes, accountsRes, snapshotsRes, journalRes, closuresRes, workAbsencesRes, shoppingListRes, offersRes, storesRes, sourcesRes, priceHistoryRes, receiptsRes, receiptItemsRes, utilityReadingsRes, pantryRes] = await Promise.all([
       supabase.from('kb_profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase.from('kb_incomes').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
       supabase.from('kb_expenses').select('*').eq('user_id', familyOwnerId).order('created_at', { ascending: false }),
       supabase.from('kb_debts').select('*').eq('user_id', familyOwnerId).order('priority', { ascending: true }),
       supabase.from('kb_payment_status').select('*').eq('user_id', familyOwnerId).order('due_date', { ascending: true }),
+      supabase.from('kb_payments').select('*').eq('user_id', familyOwnerId).eq('payment_type', 'debt').order('payment_date', { ascending: false }),
       supabase.from('kb_settings').select('*').eq('user_id', familyOwnerId).maybeSingle(),
       supabase.from('kb_accounts').select('*').eq('user_id', familyOwnerId).order('updated_at', { ascending: false }),
       supabase.from('kb_account_snapshots').select('*').eq('user_id', familyOwnerId).order('snapshot_date', { ascending: false }),
@@ -265,6 +273,22 @@ function App() {
       setNotice(count === 1
         ? dictionary[language]?.debtAutoPayAppliedOne || 'S-a aplicat 1 rată automat la datorii.'
         : (dictionary[language]?.debtAutoPayApplied || 'S-au aplicat {count} rate automat la datorii.').replace('{count}', String(count)))
+      if (autoPay.payments?.length) {
+        const rows = autoPaymentRowsFromSteps(autoPay.payments, familyOwnerId)
+        const { error: logError } = await supabase.from('kb_payments').insert(rows)
+        if (logError) console.warn('debt payment log insert failed', logError.message)
+      }
+    }
+
+    let debtLogData = debtPayLogRes.data || []
+    if (autoPay.updated && autoPay.payments?.length) {
+      const refreshedLog = await supabase
+        .from('kb_payments')
+        .select('*')
+        .eq('user_id', familyOwnerId)
+        .eq('payment_type', 'debt')
+        .order('payment_date', { ascending: false })
+      if (!refreshedLog.error) debtLogData = refreshedLog.data || debtLogData
     }
 
     setIncomes(incomesRes.data || [])
@@ -289,6 +313,7 @@ function App() {
     setUtilityReadings(utilityReadingsRes.data || [])
     setUtilitySchemaReady(!utilityReadingsRes.error)
     setPantryItems(pantryRes?.data || [])
+    setDebtPaymentLog(debtLogData)
     } catch (error) {
       console.error('loadData failed', error)
       setNotice(dictionary[language]?.loadDataFailed || 'Nu s-au putut încărca datele. Reîncarcă pagina.')
@@ -374,6 +399,9 @@ function App() {
 
   const saveRow = async (table, payload, currentItem = null) => {
     const prepared = preparePayload(payload)
+    if (table === 'kb_debts' && !currentItem) {
+      prepared.initial_final_payment = prepared.final_payment ?? 0
+    }
     const query = currentItem
       ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
       : supabase.from(table).insert({ ...prepared, user_id: dbUserId })
@@ -419,12 +447,75 @@ function App() {
       window.alert(error.message)
       return
     }
+    const paymentDate = patch.last_auto_payment_date || isoDate(new Date())
+    const appliedAmount = Math.min(toNumber(amount), debtRemainingTotal(debt))
+    const logRow = buildDebtPaymentRow(debt, appliedAmount, paymentDate, dbUserId, countAsMonthlyInstallment ? 'manual-month' : 'manual')
+    await supabase.from('kb_payments').insert(logRow)
+
     const payLocale = language === 'de' ? 'de-DE' : 'ro-RO'
     setNotice(
       (t('debtPaymentRecorded') || 'Plată înregistrată: {amount}')
-        .replace('{amount}', formatMoney(Math.min(toNumber(amount), debtRemainingTotal(debt)), currency, payLocale)),
+        .replace('{amount}', formatMoney(appliedAmount, currency, payLocale)),
     )
     loadData()
+  }
+
+  const resyncDebtFromLog = async (debt) => {
+    const { data: rows, error: fetchError } = await supabase
+      .from('kb_payments')
+      .select('*')
+      .eq('user_id', dbUserId)
+      .eq('debt_id', debt.id)
+      .eq('payment_type', 'debt')
+    if (fetchError) {
+      setNotice(t('saveError'))
+      window.alert(fetchError.message)
+      return
+    }
+    const patch = syncDebtBalancesFromPayments(debt, rows || [])
+    const { error } = await supabase.from('kb_debts').update(patch).eq('id', debt.id).eq('user_id', dbUserId)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    setNotice(t('debtPaymentResyncDone'))
+    loadData()
+  }
+
+  const addDebtPaymentLogEntry = async (debt, amount, paymentDate) => {
+    const row = buildDebtPaymentRow(debt, amount, paymentDate, dbUserId, 'manual-edit')
+    const { error } = await supabase.from('kb_payments').insert(row)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    await resyncDebtFromLog(debt)
+  }
+
+  const updateDebtPaymentLogEntry = async (row, changes) => {
+    const { error } = await supabase.from('kb_payments').update(changes).eq('id', row.id).eq('user_id', dbUserId)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    const debt = debts.find((item) => item.id === row.debt_id)
+    if (debt) await resyncDebtFromLog(debt)
+    else loadData()
+  }
+
+  const deleteDebtPaymentLogEntry = async (row) => {
+    const { error } = await supabase.from('kb_payments').delete().eq('id', row.id).eq('user_id', dbUserId)
+    if (error) {
+      setNotice(t('saveError'))
+      window.alert(error.message)
+      return
+    }
+    const debt = debts.find((item) => item.id === row.debt_id)
+    if (debt) await resyncDebtFromLog(debt)
+    else loadData()
   }
 
   const applyPendingDebtPayments = async () => {
@@ -438,11 +529,16 @@ function App() {
       setNotice(t('debtNoPendingApply'))
       return
     }
+    if (autoPay.payments?.length) {
+      const rows = autoPaymentRowsFromSteps(autoPay.payments, dbUserId)
+      await supabase.from('kb_payments').insert(rows)
+    }
     setDebts(autoPay.debts)
     const count = autoPay.appliedCount
     setNotice(count === 1
       ? t('debtAutoPayAppliedOne')
       : t('debtAutoPayApplied').replace('{count}', String(count)))
+    loadData()
   }
 
   const saveAccount = async (payload, currentItem = null) => {
@@ -1497,9 +1593,8 @@ function App() {
               deleteText={t('delete')}
               renderMainAmount={(item) => formatMoney(debtRemainingTotal(item), currency, locale)}
               renderSubAmount={(item) => {
-                if (item.status !== 'active') return null
-                const pending = countPendingDebtInstallments(item)
-                const parts = []
+                const pending = item.status === 'active' ? countPendingDebtInstallments(item) : 0
+                const parts = [formatDebtProgressLine(item, debtPaymentLog, currency, locale, t)]
                 const totalLeft = debtRemainingTotal(item)
                 const monthly = toNumber(item.monthly_payment)
                 if (toNumber(item.final_payment) > 0) {
@@ -1543,7 +1638,12 @@ function App() {
                     t={t}
                     currency={currency}
                     locale={locale}
+                    payments={debtPaymentLog}
                     onPay={recordDebtPayment}
+                    onAddPaymentLog={addDebtPaymentLogEntry}
+                    onUpdatePaymentLog={updateDebtPaymentLogEntry}
+                    onDeletePaymentLog={deleteDebtPaymentLogEntry}
+                    onResyncPaymentLog={resyncDebtFromLog}
                   />
                 ) : null
               )}

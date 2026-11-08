@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { DebtPaymentHistory } from './DebtPaymentHistory'
 import { buildManualDebtPaymentPatch } from '../lib/debtAutoPay'
 import { debtRemainingTotal, formatMoney, toNumber } from '../lib/finance'
 
-export function DebtPaymentControls({ item, t, currency, locale, onPay }) {
+export function DebtPaymentControls({
+  item, t, currency, locale, payments, onPay,
+  onAddPaymentLog, onUpdatePaymentLog, onDeletePaymentLog, onResyncPaymentLog,
+}) {
   const monthly = toNumber(item.monthly_payment)
   const totalLeft = debtRemainingTotal(item)
   const [customOpen, setCustomOpen] = useState(false)
@@ -88,6 +92,17 @@ export function DebtPaymentControls({ item, t, currency, locale, onPay }) {
           </button>
         </div>
       )}
+      <DebtPaymentHistory
+        debt={item}
+        payments={payments}
+        currency={currency}
+        locale={locale}
+        t={t}
+        onAdd={onAddPaymentLog}
+        onUpdate={onUpdatePaymentLog}
+        onDelete={onDeletePaymentLog}
+        onResync={onResyncPaymentLog}
+      />
     </div>
   )
 }
