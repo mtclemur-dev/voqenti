@@ -1,5 +1,8 @@
 import { applyDebtInstallment } from './debtAutoPay'
-import { debtRemainingTotal, formatMoney, isoDate, parseLocalDate, startOfDay, toNumber } from './finance'
+import { computeRemainingFromSchedule } from './debtSchedule'
+import { debtRemainingTotal, formatMoney, isoDate, toNumber } from './finance'
+
+export { debtPlanStartDate } from './debtSchedule'
 
 export function debtPaymentsForId(payments = [], debtId) {
   return payments
@@ -45,8 +48,26 @@ export function debtStartingTotal(debt, payments = []) {
   return left
 }
 
+export function debtUsesSchedule(debt) {
+  return (
+    toNumber(debt.starting_total) > 0
+    && toNumber(debt.monthly_payment) > 0
+    && Boolean(debt.first_payment_date)
+  )
+}
+
 export function debtPaidSummary(debt, payments = []) {
   const total = debtStartingTotal(debt, payments)
+  if (debtUsesSchedule(debt)) {
+    const schedule = computeRemainingFromSchedule(debt, payments, new Date())
+    if (schedule) {
+      const paid = Math.min(schedule.paidTotal, total)
+      const left = Math.min(schedule.leftTotal, total)
+      const percent = total > 0 ? Math.round((paid / total) * 100) : 0
+      return { paid, total, left, percent, paidFromLog: paid }
+    }
+  }
+
   const paidFromLog = sumDebtPayments(payments, debt.id)
   const leftStored = debtRemainingTotal(debt)
   let paid = paidFromLog
@@ -78,6 +99,19 @@ export function balancesAfterPayments(debt, paymentRows = []) {
 }
 
 export function syncDebtBalancesFromPayments(debt, paymentRows = []) {
+  if (debtUsesSchedule(debt)) {
+    const computed = computeRemainingFromSchedule(debt, paymentRows, new Date())
+    if (computed) {
+      const totalLeft = computed.leftTotal
+      const status = totalLeft <= 0.005 ? 'paid' : debt.status === 'paused' ? 'paused' : 'active'
+      return {
+        remaining_balance: computed.remaining_balance,
+        final_payment: computed.final_payment,
+        status,
+      }
+    }
+  }
+
   const working = balancesAfterPayments(debt, paymentRows)
   const totalLeft = toNumber(working.remaining_balance) + toNumber(working.final_payment)
   const status = totalLeft <= 0.005 ? 'paid' : debt.status === 'paused' ? 'paused' : 'active'
@@ -90,6 +124,15 @@ export function syncDebtBalancesFromPayments(debt, paymentRows = []) {
 
 /** Verifică dacă soldul din DB diferă de istoricul plăților. */
 export function debtBalanceMismatch(debt, payments = []) {
+  if (debtUsesSchedule(debt)) {
+    const expected = computeRemainingFromSchedule(debt, payments, new Date())
+    if (expected) {
+      const diffPrincipal = Math.abs(toNumber(debt.remaining_balance) - toNumber(expected.remaining_balance))
+      const diffFinal = Math.abs(toNumber(debt.final_payment) - toNumber(expected.final_payment))
+      return diffPrincipal > 0.02 || diffFinal > 0.02
+    }
+  }
+
   const expected = balancesAfterPayments(debt, payments)
   const diffPrincipal = Math.abs(toNumber(debt.remaining_balance) - toNumber(expected.remaining_balance))
   const diffFinal = Math.abs(toNumber(debt.final_payment) - toNumber(expected.final_payment))
@@ -128,8 +171,3 @@ export function autoPaymentRowsFromSteps(steps = [], userId) {
   }))
 }
 
-export function debtPlanStartDate(debt) {
-  if (debt.first_payment_date) return parseLocalDate(debt.first_payment_date)
-  if (debt.created_at) return startOfDay(new Date(debt.created_at))
-  return null
-}

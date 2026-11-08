@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DebtPaymentHistory } from './DebtPaymentHistory'
+import { DebtMonthlySchedule } from './DebtMonthlySchedule'
 import { buildManualDebtPaymentPatch } from '../lib/debtAutoPay'
 import { debtPaidSummary } from '../lib/debtPayments'
 import { debtRemainingTotal, formatMoney, toNumber } from '../lib/finance'
 
 export function DebtPaymentControls({
   item, t, currency, locale, payments, onPay,
-  onAddPaymentLog, onUpdatePaymentLog, onDeletePaymentLog, onResyncPaymentLog,
+  onSaveScheduleMonth, onDeletePaymentLog, onSyncSchedule,
 }) {
   const monthly = toNumber(item.monthly_payment)
   const totalLeft = debtPaidSummary(item, payments).left
@@ -93,17 +93,18 @@ export function DebtPaymentControls({
           </button>
         </div>
       )}
-      <DebtPaymentHistory
-        debt={item}
-        payments={payments}
-        currency={currency}
-        locale={locale}
-        t={t}
-        onAdd={onAddPaymentLog}
-        onUpdate={onUpdatePaymentLog}
-        onDelete={onDeletePaymentLog}
-        onResync={onResyncPaymentLog}
-      />
+      {toNumber(item.starting_total) > 0 && item.first_payment_date && (
+        <DebtMonthlySchedule
+          debt={item}
+          payments={payments}
+          currency={currency}
+          locale={locale}
+          t={t}
+          onSaveMonth={onSaveScheduleMonth}
+          onDeleteMonth={onDeletePaymentLog}
+          onSyncSchedule={onSyncSchedule}
+        />
+      )}
     </div>
   )
 }

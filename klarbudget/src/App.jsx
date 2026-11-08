@@ -35,7 +35,9 @@ import {
   debtPaidSummary,
   formatDebtProgressLine,
   syncDebtBalancesFromPayments,
+  debtUsesSchedule,
 } from './lib/debtPayments'
+import { missingSchedulePaymentSlots, prepareDebtSaveFields } from './lib/debtSchedule'
 import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
@@ -56,7 +58,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-27 — total + prima rată'
+const BUILD_LABEL = 'KlarBudget build 2026-09-15 — rate lunare automate'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -295,7 +297,6 @@ function App() {
 
     setIncomes(incomesRes.data || [])
     setExpenses(expensesRes.data || [])
-    setDebts(debtsData)
     setPaymentStatuses(paymentsRes.data || [])
     setAccounts(accountsRes.data || [])
     setAccountSnapshots(snapshotsRes.data || [])
@@ -315,6 +316,14 @@ function App() {
     setUtilityReadings(utilityReadingsRes.data || [])
     setUtilitySchemaReady(!utilityReadingsRes.error)
     setPantryItems(pantryRes?.data || [])
+    await syncDebtScheduleForAll(debtsData, debtLogData)
+    const [debtsRefresh, logRefresh] = await Promise.all([
+      supabase.from('kb_debts').select('*').eq('user_id', familyOwnerId).order('priority', { ascending: true }),
+      supabase.from('kb_payments').select('*').eq('user_id', familyOwnerId).eq('payment_type', 'debt').order('payment_date', { ascending: false }),
+    ])
+    if (!debtsRefresh.error && debtsRefresh.data) debtsData = debtsRefresh.data
+    if (!logRefresh.error && logRefresh.data) debtLogData = logRefresh.data
+    setDebts(debtsData)
     setDebtPaymentLog(debtLogData)
     } catch (error) {
       console.error('loadData failed', error)
@@ -399,9 +408,42 @@ function App() {
     if (error) setAuthError(error.message)
   }
 
+  const syncDebtScheduleForDebt = async (debt, logRows = debtPaymentLog) => {
+    if (!debt?.id || !debtUsesSchedule(debt)) return
+    const rows = logRows.filter((row) => row.debt_id === debt.id)
+    const missing = missingSchedulePaymentSlots(debt, rows, new Date())
+    if (missing.length) {
+      const inserts = missing.map((slot) => buildDebtPaymentRow(debt, slot.amount, slot.payment_date, dbUserId, 'schedule'))
+      const { error: insertError } = await supabase.from('kb_payments').insert(inserts)
+      if (insertError) {
+        console.warn('debt schedule insert failed', insertError.message)
+        return
+      }
+    }
+    const { data: freshRows, error: fetchError } = await supabase
+      .from('kb_payments')
+      .select('*')
+      .eq('user_id', dbUserId)
+      .eq('debt_id', debt.id)
+      .eq('payment_type', 'debt')
+    if (fetchError) {
+      setNotice(t('saveError'))
+      window.alert(fetchError.message)
+      return
+    }
+    const patch = syncDebtBalancesFromPayments(debt, freshRows || [])
+    await supabase.from('kb_debts').update(patch).eq('id', debt.id).eq('user_id', dbUserId)
+  }
+
+  const syncDebtScheduleForAll = async (debtsList, logRows) => {
+    const active = (debtsList || []).filter((debt) => debt.status === 'active' && debtUsesSchedule(debt))
+    await Promise.all(active.map((debt) => syncDebtScheduleForDebt(debt, logRows)))
+  }
+
   const saveRow = async (table, payload, currentItem = null) => {
-    const prepared = preparePayload(payload)
+    let prepared = preparePayload(payload)
     if (table === 'kb_debts') {
+      prepared = prepareDebtSaveFields(prepared)
       if (!currentItem) {
         prepared.initial_final_payment = prepared.final_payment ?? 0
       }
@@ -413,13 +455,16 @@ function App() {
       }
     }
     const query = currentItem
-      ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
-      : supabase.from(table).insert({ ...prepared, user_id: dbUserId })
-    const { error } = await query
+      ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId).select().single()
+      : supabase.from(table).insert({ ...prepared, user_id: dbUserId }).select().single()
+    const { data: saved, error } = await query
     if (error) {
       setNotice(t('saveError'))
       window.alert(error.message)
       return
+    }
+    if (table === 'kb_debts' && saved) {
+      await syncDebtScheduleForDebt(saved)
     }
     setEditing({ incomes: null, expenses: null, debts: null, accounts: null })
     setFormOpen({ incomes: false, expenses: false, debts: false, accounts: false })
@@ -468,6 +513,20 @@ function App() {
         .replace('{amount}', formatMoney(appliedAmount, currency, payLocale)),
     )
     loadData()
+  }
+
+  const syncDebtSchedule = async (debt) => {
+    await syncDebtScheduleForDebt(debt)
+    setNotice(t('debtPaymentResyncDone'))
+    loadData()
+  }
+
+  const saveDebtScheduleMonth = async (debt, row, amount) => {
+    if (row.persisted && row.id) {
+      await updateDebtPaymentLogEntry({ id: row.id, debt_id: debt.id }, { amount })
+      return
+    }
+    await addDebtPaymentLogEntry(debt, amount, row.payment_date)
   }
 
   const resyncDebtFromLog = async (debt) => {
@@ -1586,6 +1645,9 @@ function App() {
               <DebtForm
                 t={t}
                 initialItem={editing.debts}
+                paymentLog={editing.debts ? debtPaymentLog : []}
+                currency={currency}
+                locale={locale}
                 onCancel={() => {
                   setEditing((current) => ({ ...current, debts: null }))
                   setFormOpen((current) => ({ ...current, debts: false }))
@@ -1657,10 +1719,9 @@ function App() {
                     locale={locale}
                     payments={debtPaymentLog}
                     onPay={recordDebtPayment}
-                    onAddPaymentLog={addDebtPaymentLogEntry}
-                    onUpdatePaymentLog={updateDebtPaymentLogEntry}
+                    onSaveScheduleMonth={saveDebtScheduleMonth}
                     onDeletePaymentLog={deleteDebtPaymentLogEntry}
-                    onResyncPaymentLog={resyncDebtFromLog}
+                    onSyncSchedule={syncDebtSchedule}
                   />
                 ) : null
               )}

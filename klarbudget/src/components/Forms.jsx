@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { accountTypes, categories, debtCategories } from '../i18n'
-import { isoDate } from '../lib/finance'
+import { isoDate, formatMoney, parseLocalDate, toNumber } from '../lib/finance'
+import { computeRemainingFromSchedule, prepareDebtSaveFields } from '../lib/debtSchedule'
 
 const frequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly', 'once']
 const recurringFrequencyOptions = ['monthly', 'quarterly', 'semiannual', 'yearly']
@@ -56,18 +57,79 @@ export function ExpenseForm({ t, initialItem, onSubmit, onCancel }) {
   )
 }
 
-export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
+export function DebtForm({ t, initialItem, paymentLog = [], currency = 'EUR', locale = 'ro-RO', onSubmit, onCancel }) {
   return (
-    <FormShell title={t('debts')} defaults={debtDefaults} initialItem={initialItem} submitLabel={initialItem ? t('save') : t('addDebt')} cancelLabel={t('cancel')} onSubmit={onSubmit} onCancel={onCancel}>
-      {({ values, update }) => (
+    <FormShell
+      title={t('debts')}
+      defaults={debtDefaults}
+      initialItem={initialItem}
+      submitLabel={initialItem ? t('save') : t('addDebt')}
+      cancelLabel={t('cancel')}
+      onSubmit={(values) => onSubmit(prepareDebtSaveFields({ ...values, id: initialItem?.id || 'new' }))}
+      onCancel={onCancel}
+    >
+      {(shell) => (
+        <DebtFormFields
+          t={t}
+          initialItem={initialItem}
+          paymentLog={paymentLog}
+          currency={currency}
+          locale={locale}
+          {...shell}
+        />
+      )}
+    </FormShell>
+  )
+}
+
+function DebtFormFields({ t, initialItem, paymentLog, currency, locale, values, update, setValues }) {
+  const [showDetails, setShowDetails] = useState(false)
+  const previewDebt = useMemo(() => ({ ...values, id: initialItem?.id || 'preview' }), [values, initialItem?.id])
+  const preview = useMemo(
+    () => computeRemainingFromSchedule(previewDebt, paymentLog, new Date()),
+    [previewDebt, paymentLog],
+  )
+
+  useEffect(() => {
+    if (!values.first_payment_date) return
+    const parsed = parseLocalDate(values.first_payment_date)
+    if (!parsed) return
+    const day = parsed.getDate()
+    if (toNumber(values.payment_due_day) !== day) {
+      setValues((current) => ({ ...current, payment_due_day: day }))
+    }
+  }, [values.first_payment_date, values.payment_due_day, setValues])
+
+  return (
+    <>
+      <TextInput name="name" label={t('name')} value={values.name} onChange={update} required />
+      <SelectInput name="debt_category" label={t('debtCategory')} value={values.debt_category} onChange={update} options={debtCategories} />
+      <MoneyInput name="starting_total" label={t('debtStartingTotal')} value={values.starting_total} onChange={update} required />
+      <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtStartingTotalHint')}</p>
+      <MoneyInput name="monthly_payment" label={t('monthlyPayment')} value={values.monthly_payment} onChange={update} required />
+      <TextInput name="first_payment_date" label={t('debtFirstPaymentDate')} type="date" value={values.first_payment_date} onChange={update} required />
+      <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtFormScheduleHint')}</p>
+      {preview && (
+        <div className="full-span debt-form-preview">
+          <p>
+            <strong>{t('remainingBalance')}:</strong>{' '}
+            {formatMoney(preview.leftTotal, currency, locale)}
+            {preview.installmentCount > 0 && (
+              <span className="muted">
+                {' '}
+                ({(t('debtComputedRemainingCount') || '{count} rate până azi').replace('{count}', String(preview.installmentCount))})
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+      <div className="full-span">
+        <button type="button" className="ghost small" onClick={() => setShowDetails((open) => !open)}>
+          {showDetails ? t('debtFormHideDetails') : t('debtFormShowDetails')}
+        </button>
+      </div>
+      {showDetails && (
         <>
-          <TextInput name="name" label={t('name')} value={values.name} onChange={update} required />
-          <SelectInput name="debt_category" label={t('debtCategory')} value={values.debt_category} onChange={update} options={debtCategories} />
-          <MoneyInput name="starting_total" label={t('debtStartingTotal')} value={values.starting_total} onChange={update} />
-          <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtStartingTotalHint')}</p>
-          <MoneyInput name="remaining_balance" label={t('remainingBalance')} value={values.remaining_balance} onChange={update} />
-          <MoneyInput name="monthly_payment" label={t('monthlyPayment')} value={values.monthly_payment} onChange={update} />
-          <TextInput name="first_payment_date" label={t('debtFirstPaymentDate')} type="date" value={values.first_payment_date} onChange={update} />
           <TextInput
             name="payment_due_day"
             label={t('debtMonthlyDueDay')}
@@ -79,8 +141,6 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
             value={values.payment_due_day ?? ''}
             onChange={update}
           />
-          <p className="muted full-span" style={{ margin: '-0.2rem 0 0', fontSize: '0.82rem', lineHeight: 1.45 }}>{t('debtMonthlyDueDayHint')}</p>
-          <MoneyInput name="initial_amount" label={t('initialAmountOptional')} value={values.initial_amount} onChange={update} />
           <TextInput name="final_payment" label={t('finalPayment')} type="number" min="0" step="0.01" value={values.final_payment} onChange={update} />
           <TextInput name="interest_rate" label={t('interestRate')} type="number" step="0.001" value={values.interest_rate} onChange={update} />
           <TextInput name="estimated_end_date" label={t('estimatedEndDate')} type="date" value={values.estimated_end_date} onChange={update} />
@@ -88,7 +148,7 @@ export function DebtForm({ t, initialItem, onSubmit, onCancel }) {
           <TextInput name="priority" label={t('priority')} type="number" value={values.priority} onChange={update} />
         </>
       )}
-    </FormShell>
+    </>
   )
 }
 
@@ -197,7 +257,7 @@ function FormShell({ title, defaults, initialItem, isEditing = Boolean(initialIt
         {isEditing && <span>{submitLabel}</span>}
       </div>
       <form onSubmit={handleSubmit} className="form-grid">
-        {children({ values, update })}
+        {children({ values, update, setValues })}
         <div className="form-actions">
           {isEditing && <button type="button" className="secondary" onClick={onCancel}>{cancelLabel}</button>}
           <button type="submit">{submitLabel}</button>
