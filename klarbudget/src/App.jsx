@@ -10,6 +10,7 @@ import { PaymentCalendar } from './components/PaymentCalendar'
 import { Insights } from './components/Insights'
 import { AIActionPanel } from './components/AIActionPanel'
 import { KidsZone } from './components/KidsZone'
+import { DebtPaymentControls } from './components/DebtPaymentControls'
 import { DashboardFamily } from './components/DashboardFamily'
 import { FamilyPayments } from './components/FamilyPayments'
 import { FamilyFood } from './components/FamilyFood'
@@ -39,7 +40,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26c — plăți datorii'
+const BUILD_LABEL = 'KlarBudget build 2026-06-26d — plăți UI'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -1481,39 +1482,17 @@ function App() {
                 setFormOpen((current) => ({ ...current, debts: true }))
               }}
               onDelete={(item) => deleteRow('kb_debts', item)}
-              renderActions={(item) => {
-                if (item.status !== 'active') return null
-                const monthly = toNumber(item.monthly_payment)
-                const totalLeft = debtRemainingTotal(item)
-                if (totalLeft <= 0.005) return null
-                return (
-                  <div className="debt-pay-actions">
-                    {monthly > 0 && (
-                      <button
-                        type="button"
-                        className="secondary small"
-                        onClick={() => recordDebtPayment(item, monthly, { countAsMonthlyInstallment: true })}
-                      >
-                        {(t('debtRecordMonthlyPayment') || 'Înregistrează rata').replace('{amount}', formatMoney(monthly, currency, locale))}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="ghost small"
-                      onClick={() => {
-                        const raw = window.prompt(t('debtRecordPaymentPrompt') || 'Suma plătită (EUR):', monthly > 0 ? String(monthly) : '')
-                        if (raw === null || raw === '') return
-                        const extra = toNumber(String(raw).replace(',', '.'))
-                        if (extra <= 0) return
-                        const asMonthly = monthly > 0 && Math.abs(extra - monthly) < 0.02
-                        recordDebtPayment(item, extra, { countAsMonthlyInstallment: asMonthly })
-                      }}
-                    >
-                      {t('debtRecordPaymentCustom')}
-                    </button>
-                  </div>
-                )
-              }}
+              renderActions={(item) => (
+                item.status === 'active' ? (
+                  <DebtPaymentControls
+                    item={item}
+                    t={t}
+                    currency={currency}
+                    locale={locale}
+                    onPay={recordDebtPayment}
+                  />
+                ) : null
+              )}
             />
           </>
         )}
