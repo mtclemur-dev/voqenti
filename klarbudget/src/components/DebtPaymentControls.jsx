@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DebtPaymentHistory } from './DebtPaymentHistory'
 import { buildManualDebtPaymentPatch } from '../lib/debtAutoPay'
+import { debtPaidSummary } from '../lib/debtPayments'
 import { debtRemainingTotal, formatMoney, toNumber } from '../lib/finance'
 
 export function DebtPaymentControls({
@@ -8,7 +9,7 @@ export function DebtPaymentControls({
   onAddPaymentLog, onUpdatePaymentLog, onDeletePaymentLog, onResyncPaymentLog,
 }) {
   const monthly = toNumber(item.monthly_payment)
-  const totalLeft = debtRemainingTotal(item)
+  const totalLeft = debtPaidSummary(item, payments).left
   const [customOpen, setCustomOpen] = useState(false)
   const [amountText, setAmountText] = useState(monthly > 0 ? String(monthly) : '')
   const [countAsMonthly, setCountAsMonthly] = useState(true)

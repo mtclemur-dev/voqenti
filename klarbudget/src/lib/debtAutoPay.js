@@ -28,10 +28,14 @@ export function dueDateInMonth(year, monthIndex, dueDay) {
   return new Date(year, monthIndex, day)
 }
 
-/** First unpaid due date on/after debt creation, not after today. */
+/** First unpaid due date on/after plan start, not after today. */
 export function firstEligibleDueDate(debt, dueDay, today = new Date()) {
-  const created = debt.created_at ? new Date(debt.created_at) : today
-  const start = new Date(created.getFullYear(), created.getMonth(), created.getDate())
+  const planStart = debt.first_payment_date
+    ? parseLocalDate(debt.first_payment_date)
+    : debt.created_at
+      ? startOfDay(new Date(debt.created_at))
+      : startOfDay(today)
+  const start = planStart || startOfDay(today)
   let cursor = new Date(start.getFullYear(), start.getMonth(), 1)
 
   while (cursor <= today) {

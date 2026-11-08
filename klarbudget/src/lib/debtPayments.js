@@ -1,5 +1,5 @@
 import { applyDebtInstallment } from './debtAutoPay'
-import { debtRemainingTotal, formatMoney, isoDate, toNumber } from './finance'
+import { debtRemainingTotal, formatMoney, isoDate, parseLocalDate, startOfDay, toNumber } from './finance'
 
 export function debtPaymentsForId(payments = [], debtId) {
   return payments
@@ -11,53 +11,97 @@ export function sumDebtPayments(payments = [], debtId) {
   return debtPaymentsForId(payments, debtId).reduce((sum, row) => sum + toNumber(row.amount), 0)
 }
 
-/** Total contract ≈ plătit + rămas (funcționează și fără istoric complet). */
-export function debtTotalOriginal(debt, payments = []) {
+/** Sold la deschiderea planului (principal + Schlussrate). */
+export function debtOpeningBalances(debt) {
+  const starting = debtStartingTotal(debt, [])
+  const storedFinal = toNumber(debt.initial_final_payment ?? debt.final_payment)
+  const storedPrincipal = toNumber(debt.initial_amount)
+  if (toNumber(debt.starting_total) > 0) {
+    const finalPart = Math.min(storedFinal, starting)
+    let principalPart = starting - finalPart
+    if (principalPart < 0) {
+      principalPart = starting
+      return { remaining_balance: principalPart, final_payment: 0 }
+    }
+    return { remaining_balance: principalPart, final_payment: finalPart }
+  }
+  if (storedPrincipal + storedFinal > 0) {
+    return { remaining_balance: storedPrincipal, final_payment: storedFinal }
+  }
+  const left = debtRemainingTotal(debt)
+  return { remaining_balance: left, final_payment: 0 }
+}
+
+/** Total contract: starting_total sau initial + plăți + sold curent. */
+export function debtStartingTotal(debt, payments = []) {
+  const explicit = toNumber(debt.starting_total)
+  if (explicit > 0) return explicit
   const paid = sumDebtPayments(payments, debt.id)
   const left = debtRemainingTotal(debt)
   if (paid > 0) return paid + left
   const initFinal = toNumber(debt.initial_final_payment ?? debt.final_payment)
-  return toNumber(debt.initial_amount) + initFinal
+  const fromInitial = toNumber(debt.initial_amount) + initFinal
+  if (fromInitial > 0) return fromInitial
+  return left
 }
 
 export function debtPaidSummary(debt, payments = []) {
+  const total = debtStartingTotal(debt, payments)
   const paidFromLog = sumDebtPayments(payments, debt.id)
-  const left = debtRemainingTotal(debt)
-  const paid = paidFromLog > 0 ? paidFromLog : Math.max(0, debtTotalOriginal(debt, payments) - left)
-  const total = paid + left
+  const leftStored = debtRemainingTotal(debt)
+  let paid = paidFromLog
+  let left = leftStored
+
+  if (paidFromLog > 0) {
+    left = Math.max(0, Math.round((total - paidFromLog) * 100) / 100)
+  } else {
+    paid = Math.max(0, Math.round((total - leftStored) * 100) / 100)
+  }
+
+  if (left > total) left = total
+  if (paid > total) paid = total
+
   const percent = total > 0 ? Math.round((paid / total) * 100) : 0
-  return { paid, total, left, percent }
+  return { paid, total, left, percent, paidFromLog }
 }
 
-export function syncDebtBalancesFromPayments(debt, paymentRows = []) {
-  const initFinal = toNumber(debt.initial_final_payment ?? debt.final_payment)
-  let working = {
-    remaining_balance: toNumber(debt.initial_amount),
-    final_payment: initFinal,
-    status: 'active',
-  }
+export function balancesAfterPayments(debt, paymentRows = []) {
+  let working = { ...debtOpeningBalances(debt), status: debt.status }
   const sorted = [...paymentRows]
     .filter((row) => row.payment_type === 'debt')
     .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)))
+
   for (const row of sorted) {
     Object.assign(working, applyDebtInstallment(working, toNumber(row.amount)))
   }
+  return working
+}
+
+export function syncDebtBalancesFromPayments(debt, paymentRows = []) {
+  const working = balancesAfterPayments(debt, paymentRows)
   const totalLeft = toNumber(working.remaining_balance) + toNumber(working.final_payment)
-  working.status = totalLeft <= 0.005 ? 'paid' : debt.status === 'paused' ? 'paused' : 'active'
+  const status = totalLeft <= 0.005 ? 'paid' : debt.status === 'paused' ? 'paused' : 'active'
   return {
     remaining_balance: working.remaining_balance,
     final_payment: working.final_payment,
-    status: working.status,
+    status,
   }
+}
+
+/** Verifică dacă soldul din DB diferă de istoricul plăților. */
+export function debtBalanceMismatch(debt, payments = []) {
+  const expected = balancesAfterPayments(debt, payments)
+  const diffPrincipal = Math.abs(toNumber(debt.remaining_balance) - toNumber(expected.remaining_balance))
+  const diffFinal = Math.abs(toNumber(debt.final_payment) - toNumber(expected.final_payment))
+  return diffPrincipal > 0.02 || diffFinal > 0.02
 }
 
 export function formatDebtProgressLine(debt, payments, currency, locale, t) {
   const { paid, total, percent } = debtPaidSummary(debt, payments)
-  const label = (t?.('debtPaidProgress') || 'Plătit {paid} din {total} ({percent}%)')
+  return (t?.('debtPaidProgress') || 'Plătit {paid} din {total} ({percent}%)')
     .replace('{paid}', formatMoney(paid, currency, locale))
     .replace('{total}', formatMoney(total, currency, locale))
     .replace('{percent}', String(percent))
-  return label
 }
 
 export function buildDebtPaymentRow(debt, amount, paymentDate, userId, notes = '') {
@@ -82,4 +126,10 @@ export function autoPaymentRowsFromSteps(steps = [], userId) {
     payment_type: 'debt',
     notes: 'auto',
   }))
+}
+
+export function debtPlanStartDate(debt) {
+  if (debt.first_payment_date) return parseLocalDate(debt.first_payment_date)
+  if (debt.created_at) return startOfDay(new Date(debt.created_at))
+  return null
 }

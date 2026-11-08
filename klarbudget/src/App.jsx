@@ -31,6 +31,8 @@ import {
 import {
   autoPaymentRowsFromSteps,
   buildDebtPaymentRow,
+  debtBalanceMismatch,
+  debtPaidSummary,
   formatDebtProgressLine,
   syncDebtBalancesFromPayments,
 } from './lib/debtPayments'
@@ -54,7 +56,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-06-26f — istoric plăți'
+const BUILD_LABEL = 'KlarBudget build 2026-06-27 — total + prima rată'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -399,8 +401,16 @@ function App() {
 
   const saveRow = async (table, payload, currentItem = null) => {
     const prepared = preparePayload(payload)
-    if (table === 'kb_debts' && !currentItem) {
-      prepared.initial_final_payment = prepared.final_payment ?? 0
+    if (table === 'kb_debts') {
+      if (!currentItem) {
+        prepared.initial_final_payment = prepared.final_payment ?? 0
+      }
+      if (!toNumber(prepared.starting_total)) {
+        prepared.starting_total = toNumber(prepared.remaining_balance) + toNumber(prepared.final_payment)
+      }
+      if (!toNumber(prepared.initial_amount) && toNumber(prepared.starting_total)) {
+        prepared.initial_amount = Math.max(0, toNumber(prepared.starting_total) - toNumber(prepared.final_payment))
+      }
     }
     const query = currentItem
       ? supabase.from(table).update(prepared).eq('id', currentItem.id).eq('user_id', dbUserId)
@@ -1591,11 +1601,18 @@ function App() {
               emptyText={t('noData')}
               editText={t('edit')}
               deleteText={t('delete')}
-              renderMainAmount={(item) => formatMoney(debtRemainingTotal(item), currency, locale)}
+              renderMainAmount={(item) => formatMoney(debtPaidSummary(item, debtPaymentLog).left, currency, locale)}
               renderSubAmount={(item) => {
                 const pending = item.status === 'active' ? countPendingDebtInstallments(item) : 0
+                const summary = debtPaidSummary(item, debtPaymentLog)
                 const parts = [formatDebtProgressLine(item, debtPaymentLog, currency, locale, t)]
-                const totalLeft = debtRemainingTotal(item)
+                if (toNumber(item.starting_total) > 0) {
+                  parts.push(`${t('debtStartingTotalShort')}: ${formatMoney(item.starting_total, currency, locale)}`)
+                }
+                if (debtBalanceMismatch(item, debtPaymentLog)) {
+                  parts.push(t('debtBalanceMismatchHint'))
+                }
+                const totalLeft = summary.left
                 const monthly = toNumber(item.monthly_payment)
                 if (toNumber(item.final_payment) > 0) {
                   parts.push(`${t('remainingBalance')}: ${formatMoney(item.remaining_balance, currency, locale)}`)
@@ -2936,8 +2953,8 @@ function AccountLists({ accounts, currency, language, locale, t, onDelete, onEdi
 }
 
 function preparePayload(payload) {
-  const numberFields = ['amount', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price', 'desired_quantity', 'price', 'old_price', 'discount_percent', 'distance_km', 'fuel_cost_estimate']
-  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'entry_date', 'valid_from', 'valid_until']
+  const numberFields = ['amount', 'starting_total', 'initial_amount', 'remaining_balance', 'final_payment', 'monthly_payment', 'interest_rate', 'current_balance', 'overdraft_limit', 'overdraft_interest', 'quantity', 'unit_price', 'desired_quantity', 'price', 'old_price', 'discount_percent', 'distance_km', 'fuel_cost_estimate']
+  const dateFields = ['occurrence_date', 'due_date', 'estimated_end_date', 'first_payment_date', 'entry_date', 'valid_from', 'valid_until']
   const result = { ...payload }
 
   if ('priority' in result) {
