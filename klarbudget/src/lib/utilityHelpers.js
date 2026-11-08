@@ -184,3 +184,40 @@ export function computeUtilityData(readings = [], settings = {}) {
 
   return data
 }
+
+/** Consum și cost acumulat în anul calendaristic (per citire înregistrată în acel an). */
+export function computeAnnualUtilityTotals(readings = [], settings = {}, referenceDate = new Date()) {
+  const year = referenceDate.getFullYear()
+  const data = computeUtilityData(readings, settings)
+  const types = ['electricity', 'gas', 'water']
+  const byType = {}
+  let grandTotalCost = 0
+  let grandTotalConsumption = { electricity: 0, gas: 0, water: 0 }
+
+  types.forEach((type) => {
+    const typeData = data[type]
+    let consumption = 0
+    let cost = 0
+    let periods = 0
+
+    typeData.readings.forEach((row) => {
+      if (row.isBaseline || row.isError || !row.reading_date) return
+      if (new Date(row.reading_date).getFullYear() !== year) return
+      if (row.consumption <= 0 && row.cost <= 0) return
+      consumption += Math.max(0, Number(row.consumption) || 0)
+      cost += Math.max(0, Number(row.cost) || 0)
+      periods += 1
+    })
+
+    byType[type] = {
+      consumption,
+      cost,
+      periods,
+      unit: typeData.unit,
+    }
+    grandTotalCost += cost
+    grandTotalConsumption[type] = consumption
+  })
+
+  return { year, byType, grandTotalCost, hasAnyData: grandTotalCost > 0 || types.some((t) => byType[t].consumption > 0) }
+}

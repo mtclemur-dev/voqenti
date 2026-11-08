@@ -38,7 +38,7 @@ import {
   debtUsesSchedule,
 } from './lib/debtPayments'
 import { missingSchedulePaymentSlots, prepareDebtSaveFields } from './lib/debtSchedule'
-import { computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
+import { computeAnnualUtilityTotals, computeLatestPeriodStats, isMeterReset } from './lib/utilityHelpers'
 import { buildInsights } from './lib/insights'
 import { hasSupabaseConfig, supabase } from './supabaseClient'
 const defaultSettings = {
@@ -58,7 +58,7 @@ const defaultSettings = {
 
 // const navItems = ['dashboard', 'journal', 'shopping', 'workAbsence', 'accounts', 'incomes', 'expenses', 'debts', 'calendar', 'insights', 'aiActions', 'kids']
 
-const BUILD_LABEL = 'KlarBudget build 2026-11-08 — calcul automat datorii'
+const BUILD_LABEL = 'KlarBudget build 2026-11-08 — acumulat anual utilități'
 
 function App() {
   const { motion, cycleMotion } = useMotionSettings()
@@ -2086,6 +2086,10 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
   const gasData = getUtilityData('gas');
   const electricityData = getUtilityData('electricity');
   const waterData = getUtilityData('water');
+  const annualTotals = useMemo(
+    () => computeAnnualUtilityTotals(readings, settings, new Date()),
+    [readings, settings],
+  );
 
   const configs = {
     gas: {
@@ -2502,6 +2506,115 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
 
   const elecTitle = language === 'ro' ? 'Curent' : 'Strom';
 
+  const annualTiles = [
+    { type: 'electricity', title: elecTitle, icon: '⚡', ...annualTotals.byType.electricity },
+    { type: 'gas', title: t('gas'), icon: '🔥', ...annualTotals.byType.gas },
+    { type: 'water', title: t('water'), icon: '💧', ...annualTotals.byType.water },
+  ];
+
+  const renderAnnualSummary = () => (
+    <section
+      className="utility-annual-summary"
+      style={{
+        marginTop: '1.5rem',
+        marginBottom: '0.25rem',
+        background: 'linear-gradient(135deg, #f8faf8 0%, #eef5f0 48%, #e8f0ff 100%)',
+        borderRadius: '20px',
+        border: '1px solid #d5e3d8',
+        boxShadow: '0 8px 28px rgba(23, 70, 60, 0.08)',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.75rem',
+        padding: '1.1rem 1.35rem',
+        background: 'linear-gradient(90deg, rgba(23,70,60,0.08) 0%, rgba(59,130,246,0.06) 100%)',
+        borderBottom: '1px solid rgba(23,70,60,0.08)',
+      }}>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#5f7268' }}>
+            📅 {(t('utilityAnnualTitle') || 'Acumulat în {year}').replace('{year}', String(annualTotals.year))}
+          </p>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#6b7280' }}>{t('utilityAnnualHint')}</p>
+        </div>
+        <div style={{
+          background: '#17463c',
+          color: '#fff',
+          borderRadius: '14px',
+          padding: '0.55rem 1rem',
+          fontWeight: 800,
+          fontSize: '0.95rem',
+          boxShadow: '0 4px 14px rgba(23,70,60,0.25)',
+        }}>
+          {(t('utilityAnnualTotal') || 'Total')}: {formatMoney(annualTotals.grandTotalCost, currency, locale)}
+        </div>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '1rem',
+        padding: '1.25rem 1.35rem 1.4rem',
+      }}>
+        {annualTiles.map((tile) => {
+          const cfg = configs[tile.type]
+          const hasData = tile.consumption > 0 || tile.cost > 0
+          return (
+            <div
+              key={tile.type}
+              style={{
+                background: '#fff',
+                borderRadius: '16px',
+                border: `1px solid ${cfg.borderColor}`,
+                padding: '1rem 1.1rem',
+                boxShadow: `0 4px 18px ${cfg.glowColor}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
+                <span style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: cfg.gradientSoft,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.15rem',
+                }}
+                >
+                  {tile.icon}
+                </span>
+                <strong style={{ color: cfg.accentDark, fontSize: '0.95rem' }}>{tile.title}</strong>
+              </div>
+              {hasData ? (
+                <>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#15231f', lineHeight: 1.2 }}>
+                    {formatCalculatedVal(tile.consumption)}{' '}
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280' }}>{tile.unit}</span>
+                  </div>
+                  <div style={{ marginTop: '0.35rem', fontSize: '0.88rem', fontWeight: 700, color: cfg.accentColor }}>
+                    ≈ {formatMoney(tile.cost, currency, locale)}
+                  </div>
+                  {tile.periods > 0 && (
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.72rem', color: '#9ca3af' }}>
+                      {(t('utilityAnnualPeriods') || '{count} perioade').replace('{count}', String(tile.periods))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#9ca3af' }}>{t('utilityAnnualNoData')}</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  );
+
   return (
     <>
       {/* Page Header */}
@@ -2610,6 +2723,8 @@ function UtilityReadings({ readings, currency, editing, formOpen, language, loca
           />
         </div>
       )}
+
+      {renderAnnualSummary()}
 
       {/* 3 Main Cards */}
       <div style={{
