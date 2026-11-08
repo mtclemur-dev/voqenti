@@ -11,6 +11,7 @@ import {
   confirmationKind,
   fillText,
   formatClock,
+  jobAuthorLine,
   jobConfirmationKind,
   jobTone,
   longWeekdayDate,
@@ -516,6 +517,7 @@ export default function AdminPlanBoard({
                 const plannedHours = hourly ? splitHourlyNote(job.notes_text).hours : ''
                 const serviceText = hourly ? '' : serviceName
                 const why = String(job.task_text || '').replace(/\s+/g, ' ').trim()
+                const authorLine = jobAuthorLine(job, t)
                 const work = hourly ? why : String(why || turnusForDate(object, job.work_date) || '').replace(/\s+/g, ' ').trim()
                 const tone = jobTone(job)
                 const statusLabel = jobStatusLabel(job, t)
@@ -573,6 +575,9 @@ export default function AdminPlanBoard({
                                 : (focusWorkerId ? (work || focusName) : (peopleNames.join(', ') || t('adminJobUnassigned'))),
                             ].filter(Boolean).join(' · ')}
                           </span>
+                          {authorLine ? (
+                            <span className="mt-0.5 block text-[11px] font-medium leading-snug text-slate-400">{authorLine}</span>
+                          ) : null}
                           {!statusLabel && (
                             <span className="mt-1 flex sm:hidden">
                               <ConfirmBadge kind={confirm} t={t} />

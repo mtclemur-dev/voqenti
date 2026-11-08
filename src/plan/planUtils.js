@@ -431,6 +431,15 @@ export function jobDurationLabel(job, t) {
   return minutes ? minutesLabel(minutes, t) : null
 }
 
+export function jobAuthorLine(job, t) {
+  const created = String(job?.created_by_name || '').trim()
+  const changed = String(job?.updated_by_name || '').trim()
+  const parts = []
+  if (created) parts.push(String(t('jobAddedBy')).replace('{name}', created))
+  if (changed) parts.push(String(t('jobChangedBy')).replace('{name}', changed))
+  return parts.filter(Boolean).join(' · ')
+}
+
 export function jobTone(job) {
   if (job?.status === 'cancelled' || job?.status === 'canceled') return 'idle'
   const people = job?.work_job_assignees ?? []
